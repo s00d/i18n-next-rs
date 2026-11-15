@@ -32,6 +32,9 @@ pub i18n_next::Error::Config
 pub i18n_next::Error::Config::path: alloc::string::String
 pub i18n_next::Error::Config::reason: &'static str
 pub i18n_next::Error::DisabledLocale(alloc::string::String)
+pub i18n_next::Error::Fetch
+pub i18n_next::Error::Fetch::message: alloc::string::String
+pub i18n_next::Error::Fetch::path: alloc::string::String
 pub i18n_next::Error::Io
 pub i18n_next::Error::Io::path: alloc::string::String
 pub i18n_next::Error::Io::source: core::io::error::Error
@@ -41,6 +44,7 @@ pub i18n_next::Error::Json::offset: usize
 pub i18n_next::Error::Json::path: alloc::string::String
 pub i18n_next::Error::NotObject
 pub i18n_next::Error::NotObject::path: alloc::string::String
+pub i18n_next::Error::UnknownFile(alloc::string::String)
 pub i18n_next::Error::UnknownLocale(alloc::string::String)
 pub i18n_next::Error::UnknownPage(alloc::string::String)
 impl core::error::Error for i18n_next::Error
@@ -72,19 +76,36 @@ pub fn i18n_next::Builder::build(self) -> core::result::Result<i18n_next::I18n, 
 pub fn i18n_next::Builder::config(self, impl core::convert::AsRef<std::path::Path>) -> Self
 pub fn i18n_next::Builder::config_json(self, &str) -> Self
 pub fn i18n_next::Builder::dir(self, impl core::convert::AsRef<std::path::Path>) -> Self
+pub fn i18n_next::Builder::evict_pages(self, usize) -> Self
+pub fn i18n_next::Builder::extend<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
 pub fn i18n_next::Builder::fallback(self, &str) -> Self
 pub fn i18n_next::Builder::fallback_for(self, &str, &str) -> Self
 pub fn i18n_next::Builder::files<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
 pub fn i18n_next::Builder::iso(self, &str, &str) -> Self
+pub fn i18n_next::Builder::lazy_dir(self, impl core::convert::AsRef<std::path::Path>) -> Self
+pub fn i18n_next::Builder::lazy_files<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
 pub fn i18n_next::Builder::locale(self, &str) -> Self
 pub fn i18n_next::Builder::messages(self, &str, core::option::Option<&str>, &str) -> Self
 pub fn i18n_next::Builder::missing(self, impl core::ops::function::Fn(&str, &str, &str) + core::marker::Send + core::marker::Sync + 'static) -> Self
 pub fn i18n_next::Builder::page_alias(self, &str, &str) -> Self
 pub fn i18n_next::Builder::pages(self, bool) -> Self
+pub fn i18n_next::Builder::pin_page(self, &str) -> Self
+pub fn i18n_next::Builder::remote<I>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::AsRef<str>
 impl core::default::Default for i18n_next::Builder
 pub fn i18n_next::Builder::default() -> i18n_next::Builder
 impl core::fmt::Debug for i18n_next::Builder
 pub fn i18n_next::Builder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct i18n_next::Change
+pub i18n_next::Change::locale: alloc::sync::Arc<str>
+pub i18n_next::Change::version: u64
+impl core::clone::Clone for i18n_next::Change
+pub fn i18n_next::Change::clone(&self) -> i18n_next::Change
+impl core::cmp::Eq for i18n_next::Change
+impl core::cmp::PartialEq for i18n_next::Change
+pub fn i18n_next::Change::eq(&self, &i18n_next::Change) -> bool
+impl core::fmt::Debug for i18n_next::Change
+pub fn i18n_next::Change::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for i18n_next::Change
 pub struct i18n_next::Count(_)
 impl core::clone::Clone for i18n_next::Count
 pub fn i18n_next::Count::clone(&self) -> i18n_next::Count
@@ -108,6 +129,10 @@ impl core::marker::Copy for i18n_next::Count
 impl core::marker::StructuralPartialEq for i18n_next::Count
 pub struct i18n_next::I18n
 impl i18n_next::I18n
+pub fn i18n_next::I18n::add_file(&self, &str, &[u8]) -> core::result::Result<(), i18n_next::Error>
+pub async fn i18n_next::I18n::ensure_async<F, Fut, E>(&self, &str, core::option::Option<&str>, F) -> core::result::Result<(), i18n_next::Error> where F: core::ops::function::Fn(alloc::string::String) -> Fut, Fut: core::future::future::Future<Output = core::result::Result<alloc::vec::Vec<u8>, E>>, E: core::fmt::Display
+pub fn i18n_next::I18n::missing_files(&self, &str, core::option::Option<&str>) -> alloc::vec::Vec<alloc::string::String>
+impl i18n_next::I18n
 pub fn i18n_next::I18n::add_messages(&self, &str, core::option::Option<&str>, &str) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::I18n::builder() -> i18n_next::Builder
 pub fn i18n_next::I18n::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
@@ -116,6 +141,7 @@ pub fn i18n_next::I18n::locale(&self) -> alloc::sync::Arc<str>
 pub fn i18n_next::I18n::locales(&self) -> alloc::vec::Vec<i18n_next::LocaleInfo>
 pub fn i18n_next::I18n::page(&self, &str) -> i18n_next::View
 pub fn i18n_next::I18n::pages(&self) -> alloc::vec::Vec<alloc::string::String>
+pub fn i18n_next::I18n::reload(&self) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::I18n::set_locale(&self, &str) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::I18n::t(&self, &str) -> alloc::string::String
 pub fn i18n_next::I18n::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
@@ -124,6 +150,8 @@ pub fn i18n_next::I18n::tc_with(&self, &str, impl core::convert::Into<i18n_next:
 pub fn i18n_next::I18n::try_t(&self, &str) -> core::option::Option<alloc::string::String>
 pub fn i18n_next::I18n::version(&self) -> u64
 pub fn i18n_next::I18n::with_locale(&self, &str) -> i18n_next::View
+impl i18n_next::I18n
+pub fn i18n_next::I18n::subscribe(&self, impl core::ops::function::Fn(&i18n_next::Change) + core::marker::Send + core::marker::Sync + 'static) -> i18n_next::Subscription
 impl core::clone::Clone for i18n_next::I18n
 pub fn i18n_next::I18n::clone(&self) -> i18n_next::I18n
 impl core::fmt::Debug for i18n_next::I18n
@@ -141,6 +169,11 @@ pub fn i18n_next::LocaleInfo::eq(&self, &i18n_next::LocaleInfo) -> bool
 impl core::fmt::Debug for i18n_next::LocaleInfo
 pub fn i18n_next::LocaleInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for i18n_next::LocaleInfo
+pub struct i18n_next::Subscription
+impl core::fmt::Debug for i18n_next::Subscription
+pub fn i18n_next::Subscription::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::ops::drop::Drop for i18n_next::Subscription
+pub fn i18n_next::Subscription::drop(&mut self)
 pub struct i18n_next::View
 impl i18n_next::View
 pub fn i18n_next::View::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>

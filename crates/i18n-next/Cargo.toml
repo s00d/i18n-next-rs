@@ -29,6 +29,8 @@ bench = false
 # No runtime dependencies (DESIGN 2.3). Integrations come only behind features,
 # off by default; CI (`deps` job) fails if the default build gains one.
 [dependencies]
+# `tracing` feature only (DESIGN 8b.17): misses and loads as events, off by default.
+tracing = { version = "0.1", optional = true, default-features = false }
 
 [features]
 default = ["std", "format", "tz", "global"]
@@ -37,7 +39,7 @@ format = []
 tz = []
 global = []
 serde = []
-tracing = []
+tracing = ["dep:tracing"]
 watch = []
 tzdb = []
 currency-names = []
@@ -57,12 +59,18 @@ serde_json = "1.0.154"
 serde = "1.0.229"
 foldhash = "0.2"
 rustc-hash = "2.1"
+# tests/tracing.rs: `with_default` needs `std` (the library dep stays without it).
+tracing = { version = "0.1", features = ["std"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 gungraun = "0.20"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
+# `ensure_async` with the platform's real `fetch` in tests/wasm.rs (no web-sys).
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
 
 [[bench]]
 name = "lookup"
@@ -78,4 +86,8 @@ harness = false
 
 [[bench]]
 name = "plural"
+harness = false
+
+[[bench]]
+name = "sources"
 harness = false

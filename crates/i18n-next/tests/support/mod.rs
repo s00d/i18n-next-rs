@@ -4,10 +4,18 @@
 //! - [`Locales`]: the locale file tree, handed out as `files()` or as a real directory;
 //! - [`Clock`]: virtual time (M3 `watch`, M6 `tdr`);
 //! - [`Guard`]: records every `missing` call and fails the test on an unexpected one;
-//! - `FakeFetch` (M3) and the manual executor for `scope().wrap()` (M4) come later.
+//! - [`FakeFetch`]: the fetch closure of `ensure_async`; requests wait until the test
+//!   answers them, in any order, with bytes or an error;
+//! - [`Executor`]: polls futures in the order a test chooses, no runtime (M4 reuses it for
+//!   `scope().wrap()`);
+//! - [`loads`]: lazy and remote loads of an instance (its `Debug`).
 //!
 //! Nothing here sleeps or reads the wall clock: time moves only when a test moves it.
 #![allow(dead_code)] // each test binary uses a part
+
+mod fetch;
+#[allow(unused_imports)] // each test binary uses a part
+pub use fetch::{Executor, FakeFetch, loads};
 
 use std::cell::Cell;
 use std::collections::BTreeMap;

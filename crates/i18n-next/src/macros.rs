@@ -6,7 +6,8 @@
 /// - `t!("key")`: the implicit instance (nearest [`scope`](crate::scope()), else the
 ///   global one; without either the key shows, with one debug warning);
 /// - `t!(i18n => "key", …)`: an explicit [`I18n`](crate::I18n) or [`View`](crate::View);
-/// - `name = value`: the argument `{name}`; `count = n`: the plural form, as `tc`;
+/// - `name = value`: the argument `{name}` (`r#type = ..` fills `{type}`); `count = n`:
+///   the plural form, as `tc`;
 /// - `[a, b]`: positional `{0}`, `{1}`;
 /// - options with `@`, so `{page}` stays a parameter: `@page = ..`, `@locale = ..`,
 ///   `@or = ..` (default), `@html`. `@number` / `@date` / `@relative` are reserved for the
@@ -68,7 +69,7 @@ macro_rules! t {
         }) ; $($($rest)*)?)
     };
     (@opts $t:expr ; $name:ident = $v:expr $(, $($rest:tt)*)?) => {
-        $crate::t!(@opts $t.arg(::core::stringify!($name), $v) ; $($($rest)*)?)
+        $crate::t!(@opts $t.arg(const { $crate::__ident(::core::stringify!($name)) }, $v) ; $($($rest)*)?)
     };
     ($i18n:expr => $key:expr $(, $($rest:tt)*)?) => {
         $crate::t!(@opts ($i18n).text($key) ; $($($rest)*)?)
@@ -76,6 +77,19 @@ macro_rules! t {
     ($key:expr $(, $($rest:tt)*)?) => {
         $crate::t!(@opts $crate::t($key) ; $($($rest)*)?)
     };
+}
+
+/// The argument name of an identifier: `r#type` is `type`.
+#[doc(hidden)]
+#[must_use]
+pub const fn __ident(name: &'static str) -> &'static str {
+    match name.as_bytes() {
+        [b'r', b'#', rest @ ..] => match core::str::from_utf8(rest) {
+            Ok(s) => s,
+            Err(_) => name,
+        },
+        _ => name,
+    }
 }
 
 /// `t!` with the count second, the JS habit: `tc!("apples", n, name = ..)` is

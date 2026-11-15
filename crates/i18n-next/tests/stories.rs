@@ -932,6 +932,7 @@ fn plurals_follow_the_iso_tag() {
     // step 5: a negative or fractional count → the last form, `{count}` as JS prints it
     i18n.set_locale("ua").unwrap();
     assert_eq!(i18n.tc("apples", -1), "-1 яблук");
+    #[cfg(feature = "format")]
     assert_eq!(i18n.tc("apples", 1.5), "1.5 яблук");
 }
 
@@ -1219,4 +1220,282 @@ impl std::future::Future for Pending {
             std::task::Poll::Pending
         }
     }
+}
+
+/// Given `Accept-Language` headers with refused tags (`q=0`), scripts and malformed
+/// weights, when they are negotiated, then a refused tag is never chosen (not by `*`, not
+/// by shortening, not as the same language), a tag's script is preferred, and an entry with
+/// a malformed weight is dropped (RFC 9110).
+#[test]
+fn negotiate_refusals_scripts_and_bad_weights() {
+    use i18n_next::negotiate;
+    // step 1: `*` with a refused tag → the first available one that is not refused
+    assert_eq!(negotiate("*, en;q=0", ["en", "de"]).as_deref(), Some("de"));
+    assert_eq!(negotiate("en;q=0, *", ["en"]), None);
+    // step 2: a refused language is not reached by shortening or the same-language step
+    assert_eq!(negotiate("de;q=0, de-AT", ["de", "en"]), None);
+    assert_eq!(
+        negotiate("de;q=0, de-AT, en;q=0.5", ["de", "en"]).as_deref(),
+        Some("en")
+    );
+    assert_eq!(negotiate("de-at;q=0, de", ["de-AT"]), None);
+    assert_eq!(negotiate("de-AT;q=0, de", ["de"]).as_deref(), Some("de"));
+    // step 3: same language → the same script first, then any
+    let zh = ["zh-hans", "zh-hant-hk"];
+    assert_eq!(negotiate("zh-Hant-TW", zh).as_deref(), Some("zh-hant-hk"));
+    assert_eq!(negotiate("zh-Hans-SG", zh).as_deref(), Some("zh-hans"));
+    assert_eq!(negotiate("zh-TW", zh).as_deref(), Some("zh-hans"));
+    assert_eq!(negotiate("zh-Latn", zh).as_deref(), Some("zh-hans"));
+    // step 4: spaces around `=`, a weight out of range, another parameter → dropped
+    let both = ["de", "en"];
+    assert_eq!(
+        negotiate("de;q = 0.5, en;q=0.4", both).as_deref(),
+        Some("en")
+    );
+    assert_eq!(
+        negotiate("de;q= 0.5, en;q=0.4", both).as_deref(),
+        Some("en")
+    );
+    assert_eq!(negotiate("de;q=2, en;q=0.4", both).as_deref(), Some("en"));
+    assert_eq!(
+        negotiate("de;level=1, en;q=0.4", both).as_deref(),
+        Some("en")
+    );
+    assert_eq!(
+        negotiate("de ; q=0.5 , en;q=0.4", both).as_deref(),
+        Some("de")
+    );
+    assert_eq!(negotiate("de;Q=0.5, en;q=0.4", both).as_deref(), Some("de"));
+}
+
+fn nesting_catalog() -> I18n {
+    I18n::builder()
+        .locale("en")
+        .fallback("en")
+        .messages(
+            "en",
+            None,
+            r#"{"outer": "Outer {x}", "inner": "inner-en", "bold": "<b>{y}</b>", "leaf": "L", "wrap": "({x})"}"#,
+        )
+        .messages("de", None, r#"{"outer": "Außen {x}", "inner": "inner-de"}"#)
+        .messages("en", Some("cart"), r#"{"inner": "inner-cart"}"#)
+        .build()
+        .unwrap()
+}
+
+/// Given an outer `Text` with its own locale or page (or a scope's) and a nested `Text`
+/// without, when the outer is shown, then the nested one resolves in the outer's locale,
+/// page and instance; its own options still win.
+#[test]
+fn nested_text_inherits_the_outer_locale_page_and_instance() {
+    let i18n = nesting_catalog();
+    let inner = || i18n.text("inner");
+    // step 1: the outer's own locale / page → the nested text follows
+    assert_eq!(
+        i18n.text("outer").locale("de").arg("x", inner()),
+        "Außen inner-de"
+    );
+    assert_eq!(
+        i18n.text("outer").page("cart").arg("x", inner()),
+        "Outer inner-cart"
+    );
+    let shown = i18n
+        .text("outer")
+        .locale("de")
+        .arg("x", inner())
+        .to_string();
+    assert_eq!(shown, "Außen inner-de");
+    // step 2: a scope's locale reaches both, an inner own locale wins
+    let out = scope().locale("de").run(|| {
+        i18n.text("outer")
+            .arg("x", inner().locale("en"))
+            .to_string()
+    });
+    assert_eq!(out, "Außen inner-en");
+    // step 3: an implicit nested text (`t!`) takes the outer's instance
+    assert_eq!(
+        i18n.text("outer").locale("de").arg("x", t!("inner")),
+        "Außen inner-de"
+    );
+    // step 4: deeper levels inherit through each level
+    let two = i18n
+        .text("outer")
+        .locale("de")
+        .arg("x", i18n.text("outer").arg("x", inner()));
+    assert_eq!(two, "Außen Außen inner-de");
+}
+
+/// Given an `html` outer text, when a nested `Text` is shown in it, then a plain nested
+/// text is escaped once and an `html` one (markup already, its own args escaped) is not.
+#[test]
+fn nested_html_text_is_escaped_once() {
+    let i18n = nesting_catalog();
+    let bold = || i18n.text("bold").arg("y", "<i>");
+    // step 1: html in html → as is
+    assert_eq!(
+        i18n.text("outer").html().arg("x", bold().html()),
+        "Outer <b>&lt;i&gt;</b>"
+    );
+    // step 2: plain in html → escaped
+    assert_eq!(
+        i18n.text("outer").html().arg("x", bold()),
+        "Outer &lt;b&gt;&lt;i&gt;&lt;/b&gt;"
+    );
+    // step 3: html in plain → as the inner shows it
+    assert_eq!(
+        i18n.text("outer").arg("x", bold().html()),
+        "Outer <b>&lt;i&gt;</b>"
+    );
+}
+
+/// Given a `Text` and a `Key`, when they are formatted with width, fill and precision,
+/// then the text is padded and cut like a `str`; without them nothing changes.
+#[test]
+fn display_honours_width_fill_and_precision() {
+    let i18n = nesting_catalog();
+    let t = i18n.text("inner");
+    // step 1: width, alignment, precision
+    assert_eq!(
+        format!("[{:>10}] [{:<10}] [{:.2}] [{:*^12}]", t, t, t, t),
+        "[  inner-en] [inner-en  ] [in] [**inner-en**]"
+    );
+    assert_eq!(format!("{t}"), "inner-en");
+    // step 2: a key, through a scope
+    const INNER: i18n_next::Key = i18n_next::key!("inner");
+    let out = scope()
+        .instance(i18n.clone())
+        .run(|| format!("[{INNER:>9}]"));
+    assert_eq!(out, "[ inner-en]");
+}
+
+/// Given values of more kinds, when they are arguments, then each shows as JS `String`
+/// shows it: integers past 2^53 rounded to the nearest `f64`, a `char`, any `Display`
+/// through `Arg::display`; a raw identifier names its argument without `r#`.
+#[test]
+fn more_argument_kinds_and_raw_names() {
+    use i18n_next::Arg;
+    let i18n = I18n::builder()
+        .messages("en", None, r#"{"n": "[{n}]", "kw": "{type}/{match}"}"#)
+        .build()
+        .unwrap();
+    let n = |a: Arg<'static>| i18n.text("n").arg("n", a).to_string();
+    // step 1: u64 → exact up to 2^53, the nearest f64 past it
+    assert_eq!(n(Arg::from(7u64)), "[7]");
+    assert_eq!(n(Arg::from((1u64 << 53) + 1)), "[9007199254740992]");
+    assert_eq!(n(Arg::from(u64::MAX)), "[18446744073709552000]");
+    // step 2: u128 / i128 → the same rule, an exponent from 1e21 (feature `format`)
+    #[cfg(feature = "format")]
+    {
+        assert_eq!(n(Arg::from(42u128)), "[42]");
+        assert_eq!(n(Arg::from(10u128.pow(21))), "[1e+21]");
+        assert_eq!(n(Arg::from(-(1i128 << 60))), "[-1152921504606847000]");
+        assert_eq!(n(Arg::from(-5i128)), "[-5]");
+        assert_eq!(n(Arg::from(u128::MAX)), "[3.402823669209385e+38]");
+    }
+    // step 3: char, Display
+    assert_eq!(n(Arg::from('é')), "[é]");
+    let path = std::path::Path::new("/tmp/a.json");
+    assert_eq!(n(Arg::display(path.display())), "[/tmp/a.json]");
+    assert_eq!(
+        i18n.t_with("n", &i18n_next::Args::new().arg("n", Arg::display(1.5f32))),
+        "[1.5]"
+    );
+    // step 4: raw identifiers in `t!`
+    assert_eq!(t!(i18n => "kw", r#type = "a", r#match = 'b'), "a/b");
+}
+
+/// Given a `Text` nested 10 000 levels deep (each level wraps the previous one), when it
+/// is shown, turned into a string, cloned and dropped on a normal test thread, then nothing
+/// overflows the stack: nesting stops at 64 levels and a deeper argument's placeholder
+/// shows as written.
+#[test]
+fn deep_nesting_is_capped() {
+    let i18n = nesting_catalog();
+    let mut t = i18n.text("leaf");
+    for _ in 0..10_000 {
+        t = i18n.text("wrap").arg("x", t);
+    }
+    // step 1: shown → at most 65 levels, the innermost kept one is a raw placeholder
+    let s = t.to_string();
+    let open = s.bytes().take_while(|&b| b == b'(').count();
+    assert!((1..=65).contains(&open), "{open} levels");
+    assert_eq!(s, format!("{}{{x}}{}", "(".repeat(open), ")".repeat(open)));
+    assert_eq!(format!("{t}"), s);
+    assert!(t == s.as_str());
+    // step 2: cloned and dropped → no recursion past the cap
+    let c = t.clone();
+    assert_eq!(c.to_string(), s);
+    drop(c);
+    drop(t);
+    // step 3: exactly 64 levels are kept, a 65th is dropped
+    let mut t = i18n.text("leaf");
+    for _ in 0..64 {
+        t = i18n.text("wrap").arg("x", t);
+    }
+    assert_eq!(
+        t.to_string(),
+        format!("{}L{}", "(".repeat(64), ")".repeat(64))
+    );
+    let list = i18n.text("wrap").args([t.clone()]).arg("x", t.clone());
+    assert_eq!(list.to_string(), "({x})");
+    // step 4: the deepest kept text shows on a 1 MiB stack (a wasm default)
+    let shown = std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(move || t.to_string())
+        .unwrap()
+        .join()
+        .unwrap();
+    assert_eq!(shown.len(), 129);
+}
+
+/// Given a `missing` handler, when texts with misses are shown (a nested one under
+/// `hide_if_empty`, hidden or not, into a writer that fails, compared), then each miss is
+/// reported exactly once per display, never by a comparison.
+#[test]
+fn missing_is_reported_once_per_display() {
+    use std::fmt::Write as _;
+    use std::sync::{Arc, Mutex};
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let log = seen.clone();
+    let i18n = I18n::builder()
+        .locale("en")
+        .messages("en", None, r#"{"after": "{x}y", "only": "{x}"}"#)
+        .missing(move |_, k, _| log.lock().unwrap().push(k.to_owned()))
+        .build()
+        .unwrap();
+    let take = || std::mem::take(&mut *seen.lock().unwrap());
+    let blank_miss = || i18n.text("nope").or("  ");
+    // step 1: hide_if_empty, the nested miss is blank and the outer is not → once
+    let t = i18n.text("after").hide_if_empty().arg("x", blank_miss());
+    assert_eq!(t.to_string(), "  y");
+    assert_eq!(take(), ["nope"]);
+    assert_eq!(format!("{t}"), "  y");
+    assert_eq!(take(), ["nope"]);
+    // step 2: hidden → the nested miss still once
+    let hidden = i18n.text("only").hide_if_empty().arg("x", blank_miss());
+    assert_eq!(hidden.to_string(), "");
+    assert_eq!(take(), ["nope"]);
+    assert_eq!(hidden.resolve(), None);
+    assert_eq!(take(), ["nope"]);
+    assert!(hidden.parts().next().is_none());
+    assert_eq!(take(), ["nope"]);
+    // step 3: a writer that fails on any text → the miss is still reported
+    struct Fail;
+    impl std::fmt::Write for Fail {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            if s.is_empty() {
+                Ok(())
+            } else {
+                Err(std::fmt::Error)
+            }
+        }
+    }
+    assert!(write!(Fail, "{}", i18n.text("gone")).is_err());
+    assert_eq!(take(), ["gone"]);
+    assert!(write!(Fail, "{}", i18n.text("only").arg("x", i18n.text("gone"))).is_err());
+    assert_eq!(take(), ["gone"]);
+    // step 4: a comparison reports nothing
+    assert!(i18n.text("gone") == "gone");
+    assert!(t == "  y");
+    assert!(take().is_empty());
 }

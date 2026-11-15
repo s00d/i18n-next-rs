@@ -7,38 +7,13 @@
 //! snapshot (no copy), parameters go through a stack buffer, so `Display` into a reused
 //! buffer allocates nothing and `to_string` allocates once (a sizing pass first).
 
-use crate::args::{Arg, Args, Count, Small, escape_html};
+use crate::args::{Arg, Args, Count, Hit, Small, escape_html};
 use crate::catalog::{Entry, Msg, hole_ranges, is_js_space};
 use crate::i18n::{I18n, View};
-use crate::scope;
+use crate::scope::{self, Code};
 use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
-
-/// A locale or page name: a literal, or shared (a `View`'s, an owned string).
-#[derive(Clone, Debug, PartialEq)]
-enum Name {
-    Static(&'static str),
-    Shared(Arc<str>),
-}
-
-impl Name {
-    fn as_str(&self) -> &str {
-        match self {
-            Name::Static(s) => s,
-            Name::Shared(s) => s,
-        }
-    }
-}
-
-impl From<Cow<'static, str>> for Name {
-    fn from(s: Cow<'static, str>) -> Self {
-        match s {
-            Cow::Borrowed(s) => Name::Static(s),
-            Cow::Owned(s) => Name::Shared(Arc::from(s)),
-        }
-    }
-}
 
 /// The custom plural rule of [`Text::plural_rule`].
 type Rule = Arc<dyn Fn(&PluralCtx<'_>) -> Option<String> + Send + Sync>;
@@ -76,19 +51,29 @@ type Rule = Arc<dyn Fn(&PluralCtx<'_>) -> Option<String> + Send + Sync>;
 /// - [`html`](Text::html): text arguments are escaped (numbers and booleans are not), the
 ///   translation is trusted, a key standing in for it is escaped;
 /// - [`hide_if_empty`](Text::hide_if_empty): blank text resolves to `None` and displays
-///   as the default (or nothing), as `<i18n-t>` renders it.
+///   as the default (or nothing), as `<i18n-t>` renders it;
+/// - a `Text` argument without its own locale or page resolves in the outer one's (and on
+///   its instance, when it has none); under `html` it is escaped unless it is `html`
+///   itself; `missing` is called once per display, for the outer and the inner alike;
+/// - nesting stops at 64 levels: a deeper `Text` argument is dropped, so its
+///   placeholder shows as written (showing, cloning and dropping never recurse deeper).
+///
+/// `Display` honours width, fill and precision (`{:>8}`, `{:.2}`), building the string
+/// first; without them it writes straight into the formatter.
 #[derive(Clone)]
 pub struct Text {
     key: Cow<'static, str>,
     i18n: Option<I18n>,
-    locale: Option<Name>,
-    page: Option<Name>,
+    locale: Option<Code>,
+    page: Option<Code>,
     args: Args<'static>,
     count: Option<Count>,
     default: Option<Cow<'static, str>>,
     rule: Option<Rule>,
     html: bool,
     hide: bool,
+    /// Levels of `Text` arguments below this one (0: none), at most `MAX_NESTING`.
+    pub(crate) depth: u8,
     /// [`Text::emit`], reached through this pointer from `Args` (a `Text` argument of
     /// `t_with`): an app that never builds a `Text` does not link its resolution (~8 KB of
     /// `.wasm`).
@@ -110,6 +95,8 @@ pub struct PluralCtx<'a> {
     i18n: &'a I18n,
     view: Option<&'a str>,
     page: Option<&'a str>,
+    /// A comparison or a quiet frame: a miss is not reported.
+    quiet: bool,
 }
 
 impl PluralCtx<'_> {
@@ -132,8 +119,10 @@ impl PluralCtx<'_> {
             Ok(Some(t)) => t,
             Ok(None) => key_text(key, self.text.html),
             Err(active) => {
-                self.i18n
-                    .report(Some(self.view.unwrap_or(&active)), self.page, key);
+                if !self.quiet && !scope::quiet() {
+                    self.i18n
+                        .report(Some(self.view.unwrap_or(&active)), self.page, key);
+                }
                 match self.text.default_text() {
                     Some(d) => d.to_owned(),
                     None => key_text(key, self.text.html),
@@ -186,9 +175,13 @@ impl Key {
 
 impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.args().emit(f)
+        self.args().fmt(f)
     }
 }
+
+/// Levels of nested `Text` arguments kept (see [`Text`]): enough for any real message, few
+/// enough that showing one never overflows a 1 MiB stack.
+pub(crate) const MAX_NESTING: u8 = 64;
 
 /// The text of a template, read inside the snapshot: placeholders found at load (a range
 /// of the raw text and its holes), found now (a default, the key), or none.
@@ -250,6 +243,7 @@ impl<'s> Tpl<'s> {
     /// character that is not JS whitespace.
     fn blank(self, p: Params<'_>) -> Result<bool, fmt::Error> {
         let mut probe = NonBlank(false);
+        let p = Params { quiet: true, ..p };
         match self.write(&mut probe, p) {
             Err(_) if probe.0 => Ok(false),
             Err(e) => Err(e),
@@ -299,6 +293,17 @@ struct Params<'x> {
     html: bool,
     /// Sizing pass: a nested `Text` writes nothing.
     measure: bool,
+    /// Blank check or comparison: a nested `Text` reports no miss.
+    quiet: bool,
+    /// What a nested `Text` inherits.
+    outer: &'x Outer<'x>,
+}
+
+/// The instance, locale and page the outer `Text` resolves in.
+struct Outer<'x> {
+    i18n: Option<&'x I18n>,
+    locale: Option<&'x Code>,
+    page: Option<&'x Code>,
 }
 
 impl Params<'_> {
@@ -316,11 +321,28 @@ impl Params<'_> {
         } else {
             self.args.find(name)
         };
-        match value {
-            Some(v) if self.measure && matches!(*v, Arg::Text(_)) => Ok(true),
-            Some(v) => v.emit(out, self.html).map(|()| true),
-            None => Ok(false),
+        let v = match value {
+            Some(Hit::Arg(v)) => v,
+            Some(Hit::Len(n)) => return Arg::Int(n).emit(out, false).map(|()| true),
+            None => return Ok(false),
+        };
+        match v {
+            Arg::Text(_) if self.measure => Ok(true),
+            Arg::Text(_) => self.nested(v, out).map(|()| true),
+            v => v.emit(out, self.html).map(|()| true),
         }
+    }
+}
+
+impl Params<'_> {
+    /// A nested `Text`, written in a frame of the outer one's instance, locale and page.
+    /// Out of line: `put` stays small enough to inline into every hole.
+    #[inline(never)]
+    fn nested(&self, v: &Arg<'_>, out: &mut dyn fmt::Write) -> fmt::Result {
+        let o = self.outer;
+        scope::nest(o.i18n, o.locale, o.page, self.quiet, || {
+            v.emit(out, self.html)
+        })
     }
 }
 
@@ -392,6 +414,7 @@ impl Text {
             rule: None,
             html: false,
             hide: false,
+            depth: 0,
             shown: Text::emit,
         }
     }
@@ -409,7 +432,14 @@ impl Text {
         name: impl Into<Cow<'static, str>>,
         value: impl Into<Arg<'static>>,
     ) -> Self {
-        self.args.push_named(name.into(), value.into());
+        let value = value.into();
+        if let Arg::Text(t) = &value {
+            if t.depth >= MAX_NESTING {
+                return self;
+            }
+            self.depth = self.depth.max(t.depth + 1);
+        }
+        self.args.push_named(name.into(), value);
         self
     }
 
@@ -420,7 +450,16 @@ impl Text {
         I: IntoIterator,
         I::Item: Into<Arg<'static>>,
     {
-        self.args.extend_list(items.into_iter().map(Into::into));
+        let mut depth = self.depth;
+        self.args
+            .extend_list(items.into_iter().map(Into::into).inspect(|a| {
+                if let Arg::Text(t) = a
+                    && t.depth < MAX_NESTING
+                {
+                    depth = depth.max(t.depth + 1);
+                }
+            }));
+        self.depth = depth;
         self
     }
 
@@ -474,14 +513,14 @@ impl Text {
     /// Reads this page (its layer, then the root), over any scope's page.
     #[must_use]
     pub fn page(mut self, name: impl Into<Cow<'static, str>>) -> Self {
-        self.page = Some(Name::from(name.into()));
+        self.page = Some(Code::from(name.into()));
         self
     }
 
     /// Resolves in this locale (as [`I18n::with_locale`]), over any scope's locale.
     #[must_use]
     pub fn locale(mut self, code: impl Into<Cow<'static, str>>) -> Self {
-        self.locale = Some(Name::from(code.into()));
+        self.locale = Some(Code::from(code.into()));
         self
     }
 
@@ -518,6 +557,19 @@ impl Text {
     /// Only what `out` returns.
     pub fn write_to(&self, out: &mut impl fmt::Write) -> fmt::Result {
         self.emit(out)
+    }
+
+    /// Whether `hide_if_empty` hides the text (callers check `self.hide` first). When it
+    /// does and there are `Text` arguments, they are written once more to nowhere: the
+    /// blank check is quiet, so this is where their misses are reported (once).
+    fn hidden(&self, tpl: Tpl<'_>, p: Params<'_>) -> Result<bool, fmt::Error> {
+        if !tpl.blank(p)? {
+            return Ok(false);
+        }
+        if self.depth > 0 {
+            let _ = tpl.write(&mut Len(0), p);
+        }
+        Ok(true)
     }
 
     /// The template in pieces for rich text: runs of text (arguments filled in) and
@@ -568,8 +620,8 @@ impl Text {
         let mut parts = Vec::new();
         let mut buf = String::new();
         let mut hidden = false;
-        let _ = self.with_tpl(&mut |tpl, p| {
-            if self.hide && tpl.blank(p)? {
+        let _ = self.with_tpl(false, &mut |tpl, p| {
+            if self.hide && self.hidden(tpl, p)? {
                 hidden = true;
                 return Ok(());
             }
@@ -619,9 +671,14 @@ impl Text {
 
     /// `Display`: the text, or the default when hidden.
     pub(crate) fn emit(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        self.emit_as(out, false)
+    }
+
+    /// [`Text::emit`]; `quiet`: a comparison, no miss is reported.
+    fn emit_as(&self, out: &mut dyn fmt::Write, quiet: bool) -> fmt::Result {
         let mut hidden = false;
-        self.with_tpl(&mut |tpl, p| {
-            if self.hide && tpl.blank(p)? {
+        self.with_tpl(quiet, &mut |tpl, p| {
+            if self.hide && self.hidden(tpl, p)? {
                 hidden = true;
                 return Ok(());
             }
@@ -638,8 +695,8 @@ impl Text {
     fn sized(&self) -> (String, bool, bool) {
         let mut out = String::new();
         let mut hidden = false;
-        let keyed = self.with_tpl(&mut |tpl, p| {
-            if self.hide && tpl.blank(p)? {
+        let keyed = self.with_tpl(false, &mut |tpl, p| {
+            if self.hide && self.hidden(tpl, p)? {
                 hidden = true;
                 return Ok(());
             }
@@ -671,28 +728,36 @@ impl Text {
             && self.hide == other.hide
     }
 
+    /// Whether this `Text` is `html` (a nested one is then not escaped again).
+    pub(crate) fn is_html(&self) -> bool {
+        self.html
+    }
+
     /// Resolves the template and hands it to `f` once, inside the catalog snapshot; then
-    /// reports a miss. `Ok(true)`: the key stands in for the text.
+    /// reports a miss (also when `f` failed), unless `quiet` or inside a quiet frame.
+    /// `Ok(true)`: the key stands in for the text.
     fn with_tpl(
         &self,
+        quiet: bool,
         f: &mut dyn FnMut(Tpl<'_>, Params<'_>) -> fmt::Result,
     ) -> Result<bool, fmt::Error> {
-        let (scoped, scope_locale, scope_page) = scope::current(
+        let (scoped, scope_locale, scope_page, quiet_frame) = scope::current(
             self.i18n.is_none(),
             self.locale.is_none(),
             self.page.is_none(),
         );
-        let locale = self
-            .locale
-            .as_ref()
-            .map(Name::as_str)
-            .or(scope_locale.as_deref());
-        let page = self
-            .page
-            .as_ref()
-            .map(Name::as_str)
-            .or(scope_page.as_deref());
+        let locale_code = self.locale.as_ref().or(scope_locale.as_ref());
+        let page_code = self.page.as_ref().or(scope_page.as_ref());
+        let locale = locale_code.map(Code::as_str);
+        let page = page_code.map(Code::as_str);
         let key = &*self.key;
+        let global: Option<&I18n> = scope::global_instance();
+        let instance = self.i18n.as_ref().or(scoped.as_ref()).or(global);
+        let outer = Outer {
+            i18n: instance,
+            locale: locale_code,
+            page: page_code,
+        };
         let plain = Params {
             args: &self.args,
             count: None,
@@ -700,6 +765,8 @@ impl Text {
             spread: self.html,
             html: self.html,
             measure: false,
+            quiet,
+            outer: &outer,
         };
         let params = match self.count {
             Some(c) => Params {
@@ -709,8 +776,7 @@ impl Text {
             },
             None => plain,
         };
-        let global: Option<&I18n> = scope::global_instance();
-        let Some(i18n) = self.i18n.as_ref().or(scoped.as_ref()).or(global) else {
+        let Some(i18n) = instance else {
             scope::uninstalled(key);
             return self
                 .fallback(f, params)
@@ -726,6 +792,7 @@ impl Text {
                 i18n,
                 view: locale,
                 page,
+                quiet,
             };
             let answer = rule(&ctx).unwrap_or_default();
             return f(Tpl::Literal(&answer), params).map(|()| false);
@@ -736,7 +803,7 @@ impl Text {
         }
         let mut miss = None;
         let mut keyed = false;
-        i18n.inner.read(|s| {
+        let read = i18n.inner.read(|s| {
             let found = s.lookup(locale, page, key);
             if let Some(count) = self.count {
                 let plural = match locale {
@@ -813,11 +880,14 @@ impl Text {
             }
             keyed = self.fallback(f, params)?;
             Ok(())
-        })?;
-        if let Some(active) = miss {
+        });
+        if let Some(active) = miss
+            && !quiet
+            && !quiet_frame
+        {
             i18n.report(Some(locale.unwrap_or(&active)), page, key);
         }
-        Ok(keyed)
+        read.map(|()| keyed)
     }
 
     /// The default, else the key (escaped under `html`), as the template; `Ok(true)` when
@@ -850,6 +920,9 @@ impl Text {
 
 impl fmt::Display for Text {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.width().is_some() || f.precision().is_some() {
+            return f.pad(&self.to_string());
+        }
         self.emit(f)
     }
 }
@@ -896,7 +969,7 @@ impl PartialEq<&str> for Text {
             rest: other,
             ok: true,
         };
-        let _ = self.emit(&mut same);
+        let _ = self.emit_as(&mut same, true);
         same.ok && same.rest.is_empty()
     }
 }
@@ -936,8 +1009,8 @@ impl View {
     #[must_use]
     pub fn text(&self, key: impl Into<Cow<'static, str>>) -> Text {
         let mut t = Text::new(key.into(), Some(self.i18n.clone()));
-        t.locale = self.locale.clone().map(Name::Shared);
-        t.page = self.page.clone().map(Name::Shared);
+        t.locale = self.locale.clone().map(Code::Shared);
+        t.page = self.page.clone().map(Code::Shared);
         t
     }
 }

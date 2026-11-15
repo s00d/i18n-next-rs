@@ -12,7 +12,7 @@
 //! collisions): nulls and containers stay in it as markers, so a merge knows what an
 //! incoming value replaces.
 
-use crate::args::{Args, Count, MAX_SCALAR_LEN};
+use crate::args::{Arg, Args, Count, MAX_SCALAR_LEN};
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::json::{Event, Reader, number_to_js_string};
@@ -34,7 +34,7 @@ impl Params for Args<'_> {
     fn put(&self, name: &str, out: &mut String) -> bool {
         match self.find(name) {
             Some(v) => {
-                v.write(out);
+                v.with(|v| v.write(out));
                 true
             }
             None => false,
@@ -42,7 +42,7 @@ impl Params for Args<'_> {
     }
 
     fn len_of(&self, name: &str) -> Option<usize> {
-        self.find(name).map(|v| v.len())
+        self.find(name).map(|v| v.with(Arg::len))
     }
 
     fn max_len(&self) -> usize {
@@ -65,7 +65,7 @@ impl Params for WithCount<'_, '_> {
         }
         match self.args.and_then(|a| a.spread(name)) {
             Some(v) => {
-                v.write(out);
+                v.with(|v| v.write(out));
                 true
             }
             None => false,
@@ -76,7 +76,9 @@ impl Params for WithCount<'_, '_> {
         if name == "count" {
             return Some(self.count.len());
         }
-        self.args.and_then(|a| a.spread(name)).map(|v| v.len())
+        self.args
+            .and_then(|a| a.spread(name))
+            .map(|v| v.with(Arg::len))
     }
 
     fn max_len(&self) -> usize {

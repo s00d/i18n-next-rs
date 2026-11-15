@@ -523,6 +523,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
         ]
         .map(str::to_owned)
         .to_vec();
+        want.extend(methods("Arg", &["display"]));
         want.extend(methods(
             "Args",
             &[

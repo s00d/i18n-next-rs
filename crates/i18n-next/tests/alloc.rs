@@ -5,10 +5,19 @@
 //! a red test: fix the design, do not raise the number.
 #![cfg(not(target_arch = "wasm32"))]
 
-use i18n_next::{Args, I18n};
+use i18n_next::{Arg, Args, I18n};
 
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
+
+/// `1.5`: a float with `format` (printed on the stack), else the same text borrowed, so
+/// every case also runs without the feature.
+fn one_and_a_half() -> Arg<'static> {
+    #[cfg(feature = "format")]
+    return Arg::Float(1.5);
+    #[cfg(not(feature = "format"))]
+    Arg::Str("1.5")
+}
 
 /// Blocks allocated while `f` runs.
 fn blocks(f: impl FnOnce()) -> u64 {
@@ -80,7 +89,7 @@ fn hot_path_allocations() {
         let args = Args::new()
             .str("name", "Ann")
             .int("n", 3)
-            .float("a", 1.5)
+            .arg("a", one_and_a_half())
             .bool("b", true);
         std::hint::black_box(&args);
     });
@@ -90,7 +99,7 @@ fn hot_path_allocations() {
     let args = Args::new()
         .str("name", "Ann")
         .int("n", 3)
-        .float("a", 1.5)
+        .arg("a", one_and_a_half())
         .bool("b", true);
     let n = blocks(|| {
         std::hint::black_box(i18n.t_with("greet", &args));
@@ -165,11 +174,10 @@ fn hot_path_allocations() {
         .unwrap();
     let en = ru.with_locale("en");
     let _ = (ru.tc("apples", 1), en.tc("apples", 2));
-    let cases: [(&str, &dyn Fn() -> String); 12] = [
+    let cases: [(&str, &dyn Fn() -> String); 10] = [
         ("tc unmarked", &|| ru.tc("apples", 21)),
         ("tc index", &|| ru.tc("car", 3)),
         ("tc marked", &|| ru.tc("marked", 1000)),
-        ("tc big f64", &|| ru.tc("apples", 2f64.powi(61))),
         ("tc one form", &|| ru.tc("plain", 3)),
         ("tc number", &|| ru.tc("n", 3)),
         ("tc subtree", &|| ru.tc("tree", 3)),
@@ -182,6 +190,12 @@ fn hot_path_allocations() {
                 &Args::new().str("name", long).str("a", long),
             )
         }),
+        ("view tc", &|| en.tc("apples", 21)),
+    ];
+    // float counts need `format`
+    #[cfg(feature = "format")]
+    let floats: [(&str, &dyn Fn() -> String); 2] = [
+        ("tc big f64", &|| ru.tc("apples", 2f64.powi(61))),
         ("tc_with miss default", &|| {
             ru.tc_with(
                 "nope",
@@ -189,15 +203,17 @@ fn hot_path_allocations() {
                 &Args::new().str("x", long).or("{x} {count} {x}"),
             )
         }),
-        ("view tc", &|| en.tc("apples", 21)),
     ];
-    for (what, f) in cases {
+    #[cfg(not(feature = "format"))]
+    let floats: [(&str, &dyn Fn() -> String); 0] = [];
+    for (what, f) in cases.into_iter().chain(floats) {
         let n = blocks(|| {
             std::hint::black_box(f());
         });
         assert_eq!(n, 1, "{what}: {n} blocks for {:?}", f());
     }
     assert_eq!(ru.tc("apples", 21), "21 яблоко");
+    #[cfg(feature = "format")]
     assert_eq!(ru.tc("apples", 2f64.powi(61)), "2305843009213694000 яблок");
     assert_eq!(en.tc("apples", 21), "21 apples");
 
@@ -234,7 +250,7 @@ fn hot_path_allocations() {
         .str("big", &huge)
         .str("a", "ab")
         .int("n", -12345);
-    let calls: [(&str, &dyn Fn() -> String, &str); 6] = [
+    let calls: [(&str, &dyn Fn() -> String, &str); 5] = [
         (
             "t_with",
             &|| holes.t_with("k", &args),
@@ -265,13 +281,16 @@ fn hot_path_allocations() {
             &|| holes.tc_with("nope", 7, &args.clone().or("{count}{a}{a}{a}")),
             "7ababab",
         ),
-        (
-            "float",
-            &|| holes.t_with("f", &Args::new().float("f", -1.2345678901234567e-6)),
-            "-0.0000012345678901234567",
-        ),
     ];
-    for (what, f, want) in calls {
+    #[cfg(feature = "format")]
+    let floats: [(&str, &dyn Fn() -> String, &str); 1] = [(
+        "float",
+        &|| holes.t_with("f", &Args::new().float("f", -1.2345678901234567e-6)),
+        "-0.0000012345678901234567",
+    )];
+    #[cfg(not(feature = "format"))]
+    let floats: [(&str, &dyn Fn() -> String, &str); 0] = [];
+    for (what, f, want) in calls.into_iter().chain(floats) {
         let before = dhat::HeapStats::get();
         let out = std::hint::black_box(f());
         let after = dhat::HeapStats::get();
@@ -471,7 +490,7 @@ fn hot_path_allocations() {
             .text("greet")
             .arg("name", "Ann")
             .arg("n", 3)
-            .arg("a", 1.5)
+            .arg("a", one_and_a_half())
             .arg("b", true);
         std::hint::black_box(&text);
     });
@@ -480,7 +499,7 @@ fn hot_path_allocations() {
         .text("greet")
         .arg("name", "Ann")
         .arg("n", 3)
-        .arg("a", 1.5)
+        .arg("a", one_and_a_half())
         .arg("b", true);
     let plural = ru.text("apples").count(21).arg("name", long);
     let page = settings.text("title").html().hide_if_empty().or("Default");
@@ -516,7 +535,8 @@ fn hot_path_allocations() {
     dhat::assert_eq!(n, 2);
     let n = blocks(|| {
         std::hint::black_box(
-            i18n_next::t!(i18n => "greet", name = "Ann", n = 3, a = 1.5, b = true).to_string(),
+            i18n_next::t!(i18n => "greet", name = "Ann", n = 3, a = one_and_a_half(), b = true)
+                .to_string(),
         );
     });
     dhat::assert_eq!(n, 1);

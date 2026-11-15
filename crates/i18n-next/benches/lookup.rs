@@ -8,7 +8,7 @@
 //! messages) and 100k (files, messages); readers on 1 / 4 / 16 threads while one writes.
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use i18n_next::{Args, I18n};
+use i18n_next::{Arg, Args, I18n};
 use std::hint::black_box;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -226,6 +226,9 @@ fn args(c: &mut Criterion) {
     });
     c.bench_function("args/arg/one", |b| {
         b.iter(|| black_box(Args::new().arg("a", black_box(7))))
+    });
+    c.bench_function("arg/display/int", |b| {
+        b.iter(|| black_box(Arg::display(black_box(42))))
     });
     c.bench_function("args/or/default", |b| {
         b.iter(|| black_box(Args::new().or(black_box("x"))))

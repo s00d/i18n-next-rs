@@ -77,6 +77,8 @@ js-sys = "0.3"
 [[bench]]
 name = "lookup"
 harness = false
+# float args and counts
+required-features = ["format"]
 
 [[bench]]
 name = "instructions"
@@ -101,3 +103,21 @@ harness = false
 [[bench]]
 name = "text"
 harness = false
+
+# Models and differentials that build floats (`Arg::Float`, `Count::from(f64)`) or the
+# float printer: with `--no-default-features` they are skipped, the rest still runs.
+[[test]]
+name = "text_model"
+required-features = ["format"]
+
+[[test]]
+name = "catalog_model"
+required-features = ["format"]
+
+[[test]]
+name = "compat"
+required-features = ["format"]
+
+[[test]]
+name = "json_differential"
+required-features = ["format"]

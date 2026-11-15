@@ -32,6 +32,8 @@ pub use change::{Change, Subscription};
 pub use check::{CheckItem, CheckReport, LinkError};
 pub use error::Error;
 pub use i18n::{Builder, I18n, LocaleInfo, View};
+#[doc(hidden)]
+pub use macros::__ident;
 pub use scope::{Scope, Scoped, locale, negotiate, page, scope, set_locale, t};
 #[cfg(feature = "global")]
 pub use scope::{global, install};

@@ -1,6 +1,7 @@
 //! Calls what an app would call, so the linker keeps exactly that part of i18n-next:
 //! a catalog built from embedded files (root + page), `t`, `t_with`, a page view, a
-//! plural (`tc`) and a locale switch.
+//! plural (`tc`), a locale switch, and the M4 surface a real app uses: a `Text` with an
+//! argument, `t!` / `tc!` on the instance of a `scope().run`.
 //!
 //! A binary, not a cdylib: exporting from a cdylib needs `#[unsafe(no_mangle)]` (or
 //! wasm-bindgen glue, ~26 KB), and the probe stays under `forbid(unsafe_code)`. The std
@@ -15,7 +16,7 @@ use i18n_next as _;
 
 #[cfg(not(feature = "empty"))]
 fn main() {
-    use i18n_next::{Args, I18n};
+    use i18n_next::{Args, I18n, scope, t, tc};
     use std::hint::black_box;
 
     let files: [(&str, &[u8]); 4] = [
@@ -32,6 +33,13 @@ fn main() {
     black_box(i18n.page(black_box("settings")).t(black_box("title")));
     black_box(i18n.tc(black_box("apples"), black_box(21)));
     let _ = black_box(i18n.set_locale(black_box("en")));
+    let text = i18n.text(black_box("greeting")).arg("name", black_box("Ann"));
+    black_box(text.to_string());
+    scope().instance(i18n.clone()).locale(black_box("ru")).run(|| {
+        black_box(t!("nav.home").to_string());
+        black_box(tc!("apples", black_box(5)).to_string());
+        black_box(t!(i18n => "greeting", name = black_box("Bob")).to_string());
+    });
 }
 
 /// Allocates, grows and frees once, so the allocator (dlmalloc on wasm) is part of the

@@ -323,7 +323,7 @@ i18n.subscribe(|c: &Change| …);         // Change { locale, version }
 
 ```rust
 let total = i18n.text("cart.total")      // keypath
-    .arg("name", &user.name)              // params: Display, числа, Text, Arg
+    .arg("name", &user.name)              // params: строки, числа, char, Text, Arg; Display → Arg::display
     .count(items.len())                   // plural → {count}
     .number(sum).number_as(sum, "currency")   // number → {number}
     .date(at).date_as(at, "short")        // date → {date}
@@ -401,7 +401,7 @@ QUIT.args().arg("n", 3);                        // → Text
 #[derive(thiserror::Error, Debug)]
 enum AppError {
     #[error("{}", key!("errors.not_found"))] NotFound,
-    #[error("{}", t!("errors.io", path = .0.display()))] Io(std::path::PathBuf),
+    #[error("{}", t!("errors.io", path = Arg::display(.0.display())))] Io(std::path::PathBuf),
 }
 ```
 

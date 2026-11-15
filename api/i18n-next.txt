@@ -10,6 +10,8 @@ pub i18n_next::Arg::Null
 pub i18n_next::Arg::Str(&'a str)
 pub i18n_next::Arg::String(alloc::sync::Arc<str>)
 pub i18n_next::Arg::Text(alloc::boxed::Box<i18n_next::Text>)
+impl<'a> i18n_next::Arg<'a>
+pub fn i18n_next::Arg<'a>::display(impl core::fmt::Display) -> Self
 impl core::cmp::PartialEq for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::eq(&self, &Self) -> bool
 impl core::convert::From<&alloc::string::String> for i18n_next::Arg<'_>
@@ -22,10 +24,14 @@ impl core::convert::From<alloc::sync::Arc<str>> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(alloc::sync::Arc<str>) -> Self
 impl core::convert::From<bool> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(bool) -> Self
+impl core::convert::From<char> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(char) -> Self
 impl core::convert::From<f32> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(f32) -> Self
 impl core::convert::From<f64> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(f64) -> Self
+impl core::convert::From<i128> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i128) -> Self
 impl core::convert::From<i16> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(i16) -> Self
 impl core::convert::From<i18n_next::Key> for i18n_next::Arg<'_>
@@ -38,10 +44,14 @@ impl core::convert::From<i64> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(i64) -> Self
 impl core::convert::From<i8> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(i8) -> Self
+impl core::convert::From<u128> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(u128) -> Self
 impl core::convert::From<u16> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(u16) -> Self
 impl core::convert::From<u32> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(u32) -> Self
+impl core::convert::From<u64> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(u64) -> Self
 impl core::convert::From<u8> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(u8) -> Self
 impl core::convert::From<usize> for i18n_next::Arg<'_>

@@ -6,7 +6,7 @@
 use crate::json::push_js_number;
 use crate::json::{Out, push_u64, u64_len};
 use crate::plural::{Whole, shortest_whole};
-use crate::text::{Key, Text};
+use crate::text::{Key, MAX_NESTING, Text};
 use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
@@ -14,8 +14,9 @@ use std::sync::Arc;
 /// One parameter value, printed like JS `String(value)`.
 ///
 /// A [`Text`] takes `Arg<'static>`: literals, owned strings (`String`, `&String` is
-/// copied), numbers, booleans, and other `Text` / [`Key`] values, resolved when the outer
-/// text is shown. [`Args`] also borrows (`Arg::Str`).
+/// copied), numbers, booleans, a `char`, and other `Text` / [`Key`] values, resolved when
+/// the outer text is shown; any other [`Display`](fmt::Display) value through
+/// [`Arg::display`]. [`Args`] also borrows (`Arg::Str`).
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Arg<'a> {
@@ -159,7 +160,8 @@ impl Arg<'_> {
             Arg::String(s) if html => escape_html(out, s),
             Arg::Str(s) => out.write_str(s),
             Arg::String(s) => out.write_str(s),
-            Arg::Text(t) if html => t.emit(&mut Escape(out)),
+            // an `html` Text is markup already; a plain one is text to escape
+            Arg::Text(t) if html && !t.is_html() => t.emit(&mut Escape(out)),
             Arg::Text(t) => t.emit(out),
             other => {
                 let mut b = Small::new();
@@ -235,6 +237,80 @@ macro_rules! int_args {
     )*};
 }
 int_args!(i8, i16, i32, i64, u8, u16, u32);
+
+/// Past 2^53 the value is what JS would hold, the nearest `f64`, as for [`Count`]:
+/// `2^53 + 1` shows `9007199254740992`, `u64::MAX` `18446744073709552000`.
+impl From<u64> for Arg<'_> {
+    fn from(n: u64) -> Self {
+        if n <= SAFE {
+            Arg::Int(n as i64)
+        } else {
+            big(n as f64)
+        }
+    }
+}
+
+/// Past ±2^53 the nearest `f64`, printed as JS prints it (`1e+21` and up with an exponent),
+/// as for `u64`. Feature `format` (float printing).
+#[cfg(feature = "format")]
+impl From<u128> for Arg<'_> {
+    fn from(n: u128) -> Self {
+        match u64::try_from(n) {
+            Ok(n) => Arg::from(n),
+            Err(_) => Arg::Float(n as f64),
+        }
+    }
+}
+
+/// Like `u128`. Feature `format` (float printing).
+#[cfg(feature = "format")]
+impl From<i128> for Arg<'_> {
+    fn from(n: i128) -> Self {
+        if n.unsigned_abs() <= u128::from(SAFE) {
+            Arg::Int(n as i64)
+        } else {
+            Arg::Float(n as f64)
+        }
+    }
+}
+
+/// The character as text (one allocation).
+impl From<char> for Arg<'_> {
+    fn from(c: char) -> Self {
+        Arg::String(Arc::from(&*c.encode_utf8(&mut [0; 4])))
+    }
+}
+
+/// An integer past 2^53 as JS holds it: a float with `format`, else its digits as text
+/// (below 2^64 a rounded whole number never needs an exponent).
+fn big(x: f64) -> Arg<'static> {
+    #[cfg(feature = "format")]
+    return Arg::Float(x);
+    #[cfg(not(feature = "format"))]
+    {
+        let mut s = String::new();
+        Count(CountRepr::Big(x)).write(&mut s);
+        Arg::String(Arc::from(s))
+    }
+}
+
+impl<'a> Arg<'a> {
+    /// Any [`Display`](fmt::Display) value as text, formatted now (one allocation): a
+    /// path, an error, a type of your own.
+    ///
+    /// ```
+    /// use i18n_next::{Arg, I18n, t};
+    ///
+    /// let i18n = I18n::builder().messages("en", None, r#"{"io": "Cannot read {path}"}"#).build()?;
+    /// let path = std::path::Path::new("/tmp/a.json");
+    /// assert_eq!(t!(i18n => "io", path = Arg::display(path.display())), "Cannot read /tmp/a.json");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn display(value: impl fmt::Display) -> Self {
+        Arg::String(Arc::from(value.to_string()))
+    }
+}
 
 /// Past `i64::MAX` (only on a 128-bit `usize`) the value saturates.
 impl From<usize> for Arg<'_> {
@@ -424,6 +500,26 @@ impl From<f64> for Count {
     }
 }
 
+/// What [`Args::find`] found: a stored value, or the `{length}` of a list. `Copy`, not a
+/// `Cow`: a lookup has no drop glue, so the callers' `put` stays inlined (~2 ns a
+/// placeholder, `t_with` with ten arguments -10 ns).
+#[derive(Clone, Copy)]
+pub(crate) enum Hit<'x, 'a> {
+    Arg(&'x Arg<'a>),
+    Len(i64),
+}
+
+impl<'a> Hit<'_, 'a> {
+    /// Runs `f` on the value (`{length}` as an [`Arg::Int`]).
+    #[inline]
+    pub(crate) fn with<R>(self, f: impl FnOnce(&Arg<'a>) -> R) -> R {
+        match self {
+            Hit::Arg(a) => f(a),
+            Hit::Len(n) => f(&Arg::Int(n)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum Name<'a> {
     Named(&'a str),
@@ -517,7 +613,10 @@ impl<'a> Args<'a> {
     pub(crate) fn extend_list(&mut self, items: impl Iterator<Item = Arg<'a>>) {
         let mut n = self.list_len.unwrap_or(0);
         for item in items {
-            self.push(Name::Index(n), item);
+            // too deep a `Text` (see `Text`): dropped, `{n}` shows as written
+            if !matches!(&item, Arg::Text(t) if t.depth >= MAX_NESTING) {
+                self.push(Name::Index(n), item);
+            }
             n += 1;
         }
         self.list_len = Some(n);
@@ -623,20 +722,22 @@ impl<'a> Args<'a> {
 
     /// The value of placeholder `name`: the newest named match, a list item for a canonical
     /// index (`0`, `12`, never `01`), or the list length for `length`.
-    pub(crate) fn find(&self, name: &str) -> Option<Cow<'_, Arg<'a>>> {
+    #[inline]
+    pub(crate) fn find(&self, name: &str) -> Option<Hit<'_, 'a>> {
         self.lookup(name, true)
     }
 
     /// What JS `{ ...args }` holds under `name`: [`Args::find`] without `length` (a spread
     /// array has none).
-    pub(crate) fn spread(&self, name: &str) -> Option<Cow<'_, Arg<'a>>> {
+    #[inline]
+    pub(crate) fn spread(&self, name: &str) -> Option<Hit<'_, 'a>> {
         self.lookup(name, false)
     }
 
     // One function for both: as two (`spread` + a `length` fallback) `t_with` with one
     // argument took +20 ns.
     #[inline]
-    fn lookup(&self, name: &str, length: bool) -> Option<Cow<'_, Arg<'a>>> {
+    fn lookup(&self, name: &str, length: bool) -> Option<Hit<'_, 'a>> {
         // Only `list` makes index slots.
         let index = self.list_len.and_then(|_| canonical_index(name));
         for (slot, value) in self.slots().iter().rev() {
@@ -646,11 +747,11 @@ impl<'a> Args<'a> {
                 Name::Index(i) => index == Some(*i),
             };
             if hit {
-                return Some(Cow::Borrowed(value));
+                return Some(Hit::Arg(value));
             }
         }
         match self.list_len {
-            Some(n) if length && name == "length" => Some(Cow::Owned(Arg::Int(n as i64))),
+            Some(n) if length && name == "length" => Some(Hit::Len(n as i64)),
             _ => None,
         }
     }

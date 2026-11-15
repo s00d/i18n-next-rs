@@ -96,8 +96,8 @@ pub fn set_locale(code: &str) -> Result<(), Error> {
 /// instance's active locale; `None` without an instance.
 #[must_use]
 pub fn locale() -> Option<Arc<str>> {
-    let (i18n, locale, _) = current(true, true, false);
-    locale.or_else(|| {
+    let (i18n, locale, ..) = current(true, true, false);
+    locale.map(Code::arc).or_else(|| {
         i18n.or_else(|| global_instance().cloned())
             .map(|i| i.locale())
     })
@@ -107,20 +107,56 @@ pub fn locale() -> Option<Arc<str>> {
 /// `None` without an instance.
 #[must_use]
 pub fn page(name: &str) -> Option<View> {
-    let (i18n, locale, _) = current(true, true, false);
+    let (i18n, locale, ..) = current(true, true, false);
     let i18n = i18n.or_else(|| global_instance().cloned())?;
     Some(View {
         i18n,
-        locale,
+        locale: locale.map(Code::arc),
         page: Some(Arc::from(name)),
     })
+}
+
+/// A locale or page name: a literal, or shared (a `View`'s, an owned string). A literal
+/// goes on the scope stack without allocating.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Code {
+    Static(&'static str),
+    Shared(Arc<str>),
+}
+
+impl Code {
+    pub(crate) fn as_str(&self) -> &str {
+        match self {
+            Code::Static(s) => s,
+            Code::Shared(s) => s,
+        }
+    }
+
+    fn arc(self) -> Arc<str> {
+        match self {
+            Code::Static(s) => Arc::from(s),
+            Code::Shared(s) => s,
+        }
+    }
+}
+
+impl From<Cow<'static, str>> for Code {
+    fn from(s: Cow<'static, str>) -> Self {
+        match s {
+            Cow::Borrowed(s) => Code::Static(s),
+            Cow::Owned(s) => Code::Shared(Arc::from(s)),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
 struct Frame {
     instance: Option<I18n>,
-    locale: Option<Arc<str>>,
-    page: Option<Arc<str>>,
+    locale: Option<Code>,
+    page: Option<Code>,
+    /// Pushed around a nested `Text` written for a sizing or blank check, or a comparison:
+    /// its misses are not reported (the outer reports once, when it is shown).
+    quiet: bool,
 }
 
 thread_local! {
@@ -128,19 +164,19 @@ thread_local! {
 }
 
 /// What the scope stack sets, each from its nearest frame; only the parts asked for are
-/// cloned. An empty stack costs one thread-local read.
+/// cloned; last, whether a frame is quiet. An empty stack costs one thread-local read.
 pub(crate) fn current(
     instance: bool,
     locale: bool,
     page: bool,
-) -> (Option<I18n>, Option<Arc<str>>, Option<Arc<str>>) {
+) -> (Option<I18n>, Option<Code>, Option<Code>, bool) {
     STACK
         .try_with(|cell| {
             let Ok(stack) = cell.try_borrow() else {
-                return (None, None, None);
+                return (None, None, None, false);
             };
             if stack.is_empty() {
-                return (None, None, None);
+                return (None, None, None, false);
             }
             let frames = || stack.iter().rev();
             (
@@ -152,9 +188,34 @@ pub(crate) fn current(
                     .flatten(),
                 page.then(|| frames().find_map(|f| f.page.clone()))
                     .flatten(),
+                frames().any(|f| f.quiet),
             )
         })
-        .unwrap_or((None, None, None))
+        .unwrap_or((None, None, None, false))
+}
+
+/// Whether a frame says a miss is not reported now (see `Frame::quiet`).
+pub(crate) fn quiet() -> bool {
+    current(false, false, false).3
+}
+
+/// Runs `f` with a frame of the outer `Text`'s instance, locale and page on top: a nested
+/// `Text` without its own resolves in the outer one's (JS: the inner `<i18n-t>` inherits).
+pub(crate) fn nest<R>(
+    instance: Option<&I18n>,
+    locale: Option<&Code>,
+    page: Option<&Code>,
+    quiet: bool,
+    f: impl FnOnce() -> R,
+) -> R {
+    let frame = Frame {
+        instance: instance.cloned(),
+        locale: locale.cloned(),
+        page: page.cloned(),
+        quiet,
+    };
+    let _pushed = Pushed::new(frame, None);
+    f()
 }
 
 /// Pushes a frame; dropping it truncates the stack back, handing the frame to `back`.
@@ -221,13 +282,13 @@ impl Scope {
     /// The locale implicit and explicit-instance `Text` resolve in (unless the `Text` sets
     /// its own).
     pub fn locale(mut self, code: impl AsRef<str>) -> Self {
-        self.frame.locale = Some(Arc::from(code.as_ref()));
+        self.frame.locale = Some(Code::Shared(Arc::from(code.as_ref())));
         self
     }
 
     /// The page `Text` reads (unless it sets its own).
     pub fn page(mut self, name: impl AsRef<str>) -> Self {
-        self.frame.page = Some(Arc::from(name.as_ref()));
+        self.frame.page = Some(Code::Shared(Arc::from(name.as_ref())));
         self
     }
 
@@ -282,10 +343,13 @@ impl<F: Future> Future for Scoped<F> {
 }
 
 /// The best of `available` for an `Accept-Language` header or a comma-separated list of
-/// tags (`navigator.languages` joined): entries by `q` (ties keep their order, `q=0` is
-/// never chosen), each tried as is, then shortened (`de-AT` → `de`), then as any
-/// `available` of the same language (`de` → `de-at`); `*` takes the first available.
-/// Case-insensitive, `_` equals `-`. Returns the code as `available` spells it.
+/// tags (`navigator.languages` joined): entries by `q` (ties keep their order), each tried
+/// as is, then shortened (`de-AT` → `de`), then as any `available` of the same language
+/// (`de` → `de-at`, one with the same script first: `zh-Hant-TW` → `zh-hant-hk` over
+/// `zh-hans`); `*` takes the first available. A tag with `q=0` is refused: never chosen,
+/// not by `*` and not by shortening or the same-language step. An entry with a malformed
+/// weight (`q=2`, `q = 0.5`, any other parameter) is dropped (RFC 9110). Case-insensitive,
+/// `_` equals `-`. Returns the code as `available` spells it.
 ///
 /// ```
 /// use i18n_next::negotiate;
@@ -294,6 +358,7 @@ impl<F: Future> Future for Scoped<F> {
 /// assert_eq!(negotiate("de-AT,de;q=0.9,en;q=0.5", available).as_deref(), Some("de"));
 /// assert_eq!(negotiate("fr, pt;q=0.8", available).as_deref(), Some("pt-br"));
 /// assert_eq!(negotiate("en;q=0.1, DE", available).as_deref(), Some("de"));
+/// assert_eq!(negotiate("*, en;q=0", available).as_deref(), Some("de"));
 /// assert_eq!(negotiate("fr", available), None);
 /// ```
 pub fn negotiate<I>(accept: &str, available: I) -> Option<String>
@@ -302,6 +367,7 @@ where
     I::Item: AsRef<str>,
 {
     let available: Vec<I::Item> = available.into_iter().collect();
+    let mut refused: Vec<&str> = Vec::new();
     let mut entries: Vec<(&str, u16)> = accept
         .split(',')
         .filter_map(|entry| {
@@ -309,38 +375,66 @@ where
             let tag = fields.next()?.trim();
             let mut q = 1000;
             for f in fields {
-                let f = f.trim();
-                if let Some(v) = f.strip_prefix("q=").or_else(|| f.strip_prefix("Q=")) {
-                    q = quality(v.trim())?;
-                }
+                let f = f.trim_matches([' ', '\t']);
+                // `weight = OWS ";" OWS "q=" qvalue`: nothing else, no space around `=`.
+                let v = f.strip_prefix("q=").or_else(|| f.strip_prefix("Q="))?;
+                q = quality(v)?;
             }
-            (!tag.is_empty() && q > 0).then_some((tag, q))
+            if tag.is_empty() {
+                return None;
+            }
+            if q == 0 {
+                refused.push(tag);
+                return None;
+            }
+            Some((tag, q))
         })
         .collect();
     entries.sort_by_key(|e| std::cmp::Reverse(e.1));
-    let pick = |i: usize| available.get(i).map(|a| a.as_ref().to_owned());
+    let ok = |a: &str| !refused.iter().any(|r| same_tag(a, r));
+    let find = |hit: &dyn Fn(&str) -> bool| {
+        available
+            .iter()
+            .map(AsRef::as_ref)
+            .find(|a| ok(a) && hit(a))
+            .map(str::to_owned)
+    };
     for (tag, _) in entries {
         if tag == "*" {
-            return pick(0);
+            if let Some(a) = find(&|_| true) {
+                return Some(a);
+            }
+            continue;
         }
         let mut t = tag;
         loop {
-            if let Some(i) = available.iter().position(|a| same_tag(a.as_ref(), t)) {
-                return pick(i);
+            if ok(t)
+                && let Some(a) = find(&|a| same_tag(a, t))
+            {
+                return Some(a);
             }
             match t.rfind(['-', '_']) {
                 Some(cut) => t = t.get(..cut).unwrap_or(""),
                 None => break,
             }
         }
-        if let Some(i) = available
-            .iter()
-            .position(|a| same_tag(primary(a.as_ref()), t))
+        let want = script(tag);
+        let same_lang = |a: &str| same_tag(primary(a), t);
+        if let Some(a) = want
+            .and_then(|s| find(&|a| same_lang(a) && script(a).is_some_and(|x| same_tag(x, s))))
+            .or_else(|| find(&same_lang))
         {
-            return pick(i);
+            return Some(a);
         }
     }
     None
+}
+
+/// The script subtag (`Hant` of `zh-Hant-TW`): four letters right after the language.
+fn script(tag: &str) -> Option<&str> {
+    tag.split(['-', '_'])
+        .nth(1)
+        .filter(|s| s.len() == 4 && s.bytes().all(|b| b.is_ascii_alphabetic()))
 }
 
 /// `q` as thousandths: `0`–`1` with up to three decimals (RFC 9110); anything else is no

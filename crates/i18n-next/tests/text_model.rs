@@ -35,13 +35,16 @@ enum Val {
     Tree,
 }
 
-/// `(locale, page)` → key → value; `nest` is a plain string in `en`'s root only (nested
-/// texts read it and never miss).
+/// `(locale, page)` → key → value; `nest` is a plain string in `en`'s root, maybe also in
+/// `de` and the page `p` (nested texts read it in the outer text's locale and page, and
+/// never miss).
 type Cat = BTreeMap<(&'static str, Option<&'static str>), BTreeMap<&'static str, Val>>;
 
 #[derive(Debug, Clone)]
 enum Arg {
     S(String),
+    /// Borrowed text: `Arg::Str`.
+    Str(&'static str),
     I(i64),
     F(f64),
     B(bool),
@@ -132,9 +135,12 @@ fn chunk() -> impl Strategy<Value = BTreeMap<&'static str, Val>> {
     prop::collection::btree_map(prop::sample::select(KEYS), value(), 0..5)
 }
 
+const SAMPLES: &[&str] = &["Ann", "", "  ", "<i>", "a&'\"b", "{a}"];
+
 fn arg() -> impl Strategy<Value = Arg> {
     prop_oneof![
-        3 => prop::sample::select(vec!["Ann", "", "  ", "<i>", "a&'\"b", "{a}"]).prop_map(|s| Arg::S(s.to_owned())),
+        2 => prop::sample::select(SAMPLES).prop_map(|s| Arg::S(s.to_owned())),
+        1 => prop::sample::select(SAMPLES).prop_map(Arg::Str),
         1 => (-3i64..30).prop_map(Arg::I),
         1 => Just(Arg::F(1.5)),
         1 => any::<bool>().prop_map(Arg::B),
@@ -193,17 +199,27 @@ fn spec() -> impl Strategy<Value = Spec> {
 fn case() -> impl Strategy<Value = Case> {
     (
         (chunk(), chunk(), chunk(), chunk()),
-        template(),
+        (
+            template(),
+            prop::option::of(template()),
+            prop::option::of(template()),
+            prop::option::of(template()),
+        ),
         prop::sample::select(vec!["en", "de"]),
         prop::option::of(prop::sample::select(vec!["en", "de", "xx"])),
         prop::option::of(prop::sample::select(vec!["p", "index"])),
         prop::collection::vec(spec(), 1..8),
     )
         .prop_map(
-            |((er, ep, dr, dp), nest, active, scope_locale, scope_page, texts)| {
+            |((er, ep, dr, dp), nests, active, scope_locale, scope_page, texts)| {
                 let mut cat = Cat::new();
-                let mut er = er;
-                er.insert("nest", Val::S(nest));
+                let (mut er, mut ep, mut dr, mut dp) = (er, ep, dr, dp);
+                er.insert("nest", Val::S(nests.0));
+                for (chunk, nest) in [(&mut ep, nests.1), (&mut dr, nests.2), (&mut dp, nests.3)] {
+                    if let Some(n) = nest {
+                        chunk.insert("nest", Val::S(n));
+                    }
+                }
                 cat.insert(("en", None), er);
                 cat.insert(("en", Some("p")), ep);
                 cat.insert(("de", None), dr);
@@ -307,25 +323,30 @@ impl Model<'_> {
         None
     }
 
-    /// What a nested `i18n.text("nest")` shows: no locale of its own, so the scope's.
-    fn nested(&self) -> String {
-        let locale = self.scope_locale.unwrap_or(self.active);
-        match self.lookup(locale, self.scope_page, "nest") {
+    /// What a nested `i18n.text("nest")` shows: no locale or page of its own, so the outer
+    /// text's (its own, else the scope's, else the active locale and the root).
+    fn nested(&self, s: &Spec) -> String {
+        let locale = s.locale.or(self.scope_locale).unwrap_or(self.active);
+        let page = s.page.or(self.scope_page);
+        match self.lookup(locale, page, "nest") {
             Some(Val::S(s)) => s,
             other => panic!("nest is a string: {other:?}"),
         }
     }
 
-    fn arg(&self, a: &Arg, html: bool) -> String {
+    fn arg(&self, a: &Arg, s: &Spec) -> String {
+        let html = s.html;
         match a {
-            Arg::S(s) if html => escape(s),
-            Arg::S(s) => s.clone(),
+            Arg::S(t) if html => escape(t),
+            Arg::S(t) => t.clone(),
+            Arg::Str(t) if html => escape(t),
+            Arg::Str(t) => (*t).to_owned(),
             Arg::I(n) => n.to_string(),
             Arg::F(_) => "1.5".to_owned(),
             Arg::B(b) => b.to_string(),
             Arg::Null => "null".to_owned(),
-            Arg::Nested if html => escape(&self.nested()),
-            Arg::Nested => self.nested(),
+            Arg::Nested if html => escape(&self.nested(s)),
+            Arg::Nested => self.nested(s),
         }
     }
 
@@ -333,7 +354,7 @@ impl Model<'_> {
         let mut p = Params::new();
         if let Some(list) = &s.list {
             for (i, a) in list.iter().enumerate() {
-                p.insert(i.to_string(), self.arg(a, s.html));
+                p.insert(i.to_string(), self.arg(a, s));
             }
             // a JS array's own `length`; `escapeParams` and a spread drop it
             if !s.html && s.count.is_none() {
@@ -341,7 +362,7 @@ impl Model<'_> {
             }
         }
         for (name, a) in &s.args {
-            p.insert((*name).to_owned(), self.arg(a, s.html));
+            p.insert((*name).to_owned(), self.arg(a, s));
         }
         if let Some(n) = s.count {
             p.insert("count".to_owned(), js_num(n));
@@ -568,6 +589,7 @@ fn json_of(chunk: &BTreeMap<&'static str, Val>) -> String {
 fn crate_arg(i18n: &I18n, a: &Arg) -> i18n_next::Arg<'static> {
     match a {
         Arg::S(s) => s.clone().into(),
+        Arg::Str(s) => i18n_next::Arg::Str(s),
         Arg::I(n) => (*n).into(),
         Arg::F(v) => (*v).into(),
         Arg::B(b) => (*b).into(),

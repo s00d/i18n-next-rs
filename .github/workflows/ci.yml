@@ -55,6 +55,16 @@ jobs:
       - name: Tests (nextest, ci profile)
         run: cargo nextest run --workspace --locked --profile ci
 
+      # `Serialize for Text` exists only with the feature.
+      - name: Tests with serde (nextest)
+        run: cargo nextest run -p i18n-next --locked --features serde --profile ci
+
+      # The micro build: no std-only, float or global code may leak into it.
+      - name: Clippy (no default features)
+        run: cargo clippy -p i18n-next --no-default-features --all-targets --locked -- -D warnings
+      - name: Tests (no default features, nextest)
+        run: cargo nextest run -p i18n-next --no-default-features --locked --profile ci
+
       - name: Doctests
         run: cargo test --doc --workspace --locked
 

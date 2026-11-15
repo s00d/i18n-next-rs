@@ -9,7 +9,10 @@ repository.workspace = true
 authors.workspace = true
 keywords = ["i18n", "localization", "translation", "tauri", "wasm"]
 categories = ["internationalization", "localization", "wasm"]
-include = ["/src/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/README.md"]
+include = ["/src/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md",
+    # Workspace check, not a crate test: reads the root Cargo.toml, the other members and
+    # the plugin package.json, which do not exist in the published package.
+    "!/tests/version_sync.rs"]
 
 [lints]
 workspace = true

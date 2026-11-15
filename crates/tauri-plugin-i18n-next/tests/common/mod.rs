@@ -15,8 +15,16 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         use tauri_plugin_i18n_next::commands::*;
+        Self::with_handler(tauri::generate_handler![ping])
+    }
+
+    /// A mock app with the given commands (e.g. a test command that fails with the
+    /// plugin's error type).
+    pub fn with_handler(
+        handler: impl Fn(tauri::ipc::Invoke<MockRuntime>) -> bool + Send + Sync + 'static,
+    ) -> Self {
         let app = tauri::test::mock_builder()
-            .invoke_handler(tauri::generate_handler![ping])
+            .invoke_handler(handler)
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
         let w = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())

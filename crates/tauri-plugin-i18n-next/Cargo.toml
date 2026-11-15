@@ -9,7 +9,9 @@ repository.workspace = true
 authors.workspace = true
 keywords = ["tauri", "plugin", "i18n", "localization", "translation"]
 categories = ["internationalization", "localization"]
-include = ["/src/**/*", "/permissions/**/*", "/tests/**/*.rs", "/build.rs", "/windows-test-manifest.xml", "/Cargo.toml", "/README.md"]
+include = ["/src/**/*", "/permissions/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/build.rs", "/windows-test-manifest.xml", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md",
+    # Pulls the shared inventory logic from crates/i18n-next/tests/support by path.
+    "!/tests/bench_inventory.rs"]
 links = "tauri-plugin-i18n-next"
 
 [lints]
@@ -19,7 +21,7 @@ workspace = true
 # Pinned to the same release (DESIGN 8b.13, checked by tests/version_sync.rs).
 i18n-next = { version = "=0.1.0", path = "../i18n-next" }
 tauri = "2.12"
-serde = { version = "1.0", features = ["derive"] }
+serde = "1.0"
 # serde_json joins [dependencies] with the payload commands (M7); nothing uses it yet.
 
 [build-dependencies]
@@ -28,3 +30,8 @@ tauri-plugin = { version = "2.7", features = ["build"] }
 [dev-dependencies]
 tauri = { version = "2.12", features = ["test"] }
 serde_json = "1.0"
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "ipc"
+harness = false

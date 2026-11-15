@@ -3837,6 +3837,7 @@ dependencies = [
 name = "tauri-plugin-i18n-next"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "i18n-next",
  "serde",
  "serde_json",

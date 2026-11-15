@@ -82,6 +82,10 @@ jobs:
         run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown
       - name: Build wasm32-unknown-unknown (no default features)
         run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown --no-default-features
+      - name: Build wasm32-unknown-unknown (tauri-guest)
+        run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown --features tauri-guest
+      - name: Build wasm32-unknown-unknown (without tz)
+        run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown --no-default-features --features std,format,global
       - name: Build wasm32-wasip1
         run: cargo build -p i18n-next --locked --target wasm32-wasip1
 
@@ -148,14 +152,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: cargo tree must list only i18n-next itself
+      # Every target (`--target all`), so a `cfg(windows)` or wasm-only dependency counts too.
+      - name: cargo tree must list only allowlisted dependencies
         run: |
-          tree=$(cargo tree -e normal -p i18n-next --depth 1 --locked --prefix none)
+          # Allowed direct runtime dependencies, one name per entry. Empty in M0. DESIGN 2.3
+          # allows only `wasm-bindgen` and `js-sys`, for wasm32 with `tz` / `tauri-guest`:
+          # add them here (one line) when they arrive.
+          allow=()
+          tree=$(cargo tree -e normal -p i18n-next --depth 1 --target all --locked --prefix none)
           echo "$tree"
-          extra=$(echo "$tree" | grep -v '^i18n-next v' || true)
-          if [ -n "$extra" ]; then
-            echo "::error::i18n-next gained runtime dependencies (DESIGN 2.3, owner decision required):"
-            echo "$extra"
+          bad=()
+          for dep in $(echo "$tree" | grep -v '^i18n-next v' | cut -d' ' -f1 | sort -u); do
+            [[ " ${allow[*]} " == *" ${dep} "* ]] || bad+=("$dep")
+          done
+          if (( ${#bad[@]} )); then
+            echo "::error::i18n-next gained runtime dependencies (DESIGN 2.3, owner decision required): ${bad[*]}"
             exit 1
           fi
 
@@ -271,8 +282,17 @@ jobs:
             echo "::error::public API changed: regenerate api/*.txt with cargo public-api and commit the diff"
             exit 1
           }
-      # cargo-semver-checks compares with the last version on crates.io. Nothing is
-      # published yet, so there is no baseline: skipped until CRATES_PUBLISHED is "true".
-      - name: Semver checks
+      # cargo-semver-checks: until the first crates.io release there is no registry
+      # baseline, so PRs compare with their base commit; after it (CRATES_PUBLISHED =
+      # "true") the last published version is the baseline.
+      - name: Semver checks (against the PR base commit)
+        if: env.CRATES_PUBLISHED != 'true' && github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          cargo semver-checks -p i18n-next --baseline-rev "$BASE_SHA"
+          cargo semver-checks -p tauri-plugin-i18n-next --baseline-rev "$BASE_SHA"
+      - name: Semver checks (against crates.io)
         if: env.CRATES_PUBLISHED == 'true'
         run: cargo semver-checks --workspace

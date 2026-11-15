@@ -275,6 +275,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -C scripts cldr
       - run: git diff --exit-code crates/i18n-next/src/plural/rules.rs fixtures/compat/__golden__/plural-categories.md
+      - run: pnpm -C scripts casing
+      - run: git diff --exit-code crates/i18n-next/src/linked/case_data.rs
       - run: pnpm -C scripts compat
       - run: git diff --exit-code fixtures/compat
 

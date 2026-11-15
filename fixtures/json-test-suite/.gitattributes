@@ -1,0 +1,2 @@
+# Byte-exact test inputs (CR, NUL, invalid UTF-8): never normalize line endings.
+* -text

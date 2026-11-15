@@ -4,6 +4,7 @@
 //! more than 3% extra instructions fails the job. Counts do not depend on machine load.
 //!
 //! Elsewhere the bench is an empty binary, so `cargo bench` / clippy work on every host.
+//! `main!` expands to the binary's own `fn main`, so it must stay at item level.
 
 #[cfg(target_os = "linux")]
 use gungraun::{library_benchmark, library_benchmark_group, main};
@@ -17,7 +18,8 @@ fn version() -> &'static str {
 #[cfg(target_os = "linux")]
 library_benchmark_group!(name = lookup; benchmarks = version);
 
-fn main() {
-    #[cfg(target_os = "linux")]
-    main!(library_benchmark_groups = lookup);
-}
+#[cfg(target_os = "linux")]
+main!(library_benchmark_groups = lookup);
+
+#[cfg(not(target_os = "linux"))]
+fn main() {}

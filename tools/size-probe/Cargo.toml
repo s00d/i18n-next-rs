@@ -1,25 +1,28 @@
 [package]
 name = "size-probe"
-description = "cdylib probe for the CI size job: how many .wasm bytes i18n-next adds (DESIGN 2.4)"
+description = "wasm probe for the CI size job: how many .wasm bytes i18n-next adds (DESIGN 2.4)"
 version = "0.0.0"
 edition = "2024"
 publish = false
 
 # Its own workspace and lock: excluded from the main one so `cargo test --workspace`
-# never builds a cdylib with release-for-size settings.
+# never builds the probe with release-for-size settings.
 [workspace]
 
-# No workspace lints on purpose: exporting a symbol from a cdylib needs
-# `#[unsafe(no_mangle)]`, which `unsafe_code = "forbid"` rejects. The probe holds no
-# other code; the crates it measures stay under forbid.
+# Same rule as the workspace: no unsafe anywhere (see src/main.rs for why a binary).
+[lints.rust]
+unsafe_code = "forbid"
 
-[lib]
-crate-type = ["cdylib"]
-path = "src/lib.rs"
+[[bin]]
+name = "size_probe"
+path = "src/main.rs"
 
 [features]
 # micro build: i18n-next with default-features = false; `full` turns the defaults on.
 full = ["i18n-next/default"]
+# The probe without any call into i18n-next: the constant std runtime that
+# tools/size-check.sh subtracts from the other variants.
+empty = []
 
 [dependencies]
 i18n-next = { path = "../../crates/i18n-next", default-features = false }

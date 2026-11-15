@@ -170,10 +170,15 @@ impl<'a> Args<'a> {
     }
 
     fn push(&mut self, name: Name<'a>, value: Arg<'a>) {
-        if self.len < INLINE {
-            self.inline[self.len] = (name, value);
+        if let Some(slot) = self.inline.get_mut(self.len) {
+            *slot = (name, value);
             self.len += 1;
         } else {
+            // A fifth parameter moves all of them to the `Vec`, so lookups scan one slice.
+            if self.overflow.is_empty() {
+                self.overflow.reserve(2 * INLINE);
+                self.overflow.extend_from_slice(&self.inline);
+            }
             self.overflow.push((name, value));
         }
     }
@@ -228,18 +233,28 @@ impl<'a> Args<'a> {
         self.default.filter(|d| !d.is_empty())
     }
 
-    /// Every parameter, oldest first.
-    fn slots(&self) -> impl DoubleEndedIterator<Item = &Slot<'a>> {
-        self.inline[..self.len].iter().chain(&self.overflow)
+    /// Every parameter, oldest first: the inline ones, or all of them in the `Vec` once
+    /// there are more than four.
+    fn slots(&self) -> &[Slot<'a>] {
+        if self.overflow.is_empty() {
+            self.inline.get(..self.len).unwrap_or(&[])
+        } else {
+            &self.overflow
+        }
     }
 
     /// The value of placeholder `name`: the newest named match, a list item for a canonical
     /// index (`0`, `12`, never `01`), or the list length for `length`.
     pub(crate) fn find(&self, name: &str) -> Option<Arg<'a>> {
-        let index = canonical_index(name);
-        for (slot, value) in self.slots().rev() {
+        // Only `list` makes index slots.
+        let index = self.list_len.and_then(|_| canonical_index(name));
+        for (slot, value) in self.slots().iter().rev() {
             let hit = match *slot {
-                Name::Named(n) => n == name,
+                // An inlined byte loop: names are short, and a `memcmp` call per slot
+                // made many parameters cost ~25 ns each.
+                Name::Named(n) => {
+                    n.len() == name.len() && n.bytes().zip(name.bytes()).all(|(a, b)| a == b)
+                }
                 Name::Index(i) => index == Some(i),
             };
             if hit {
@@ -254,7 +269,11 @@ impl<'a> Args<'a> {
 
     /// Bytes the parameters add at most when every one is written once.
     pub(crate) fn max_value_len(&self) -> usize {
-        self.slots().map(|(_, v)| v.max_len()).max().unwrap_or(0)
+        self.slots()
+            .iter()
+            .map(|(_, v)| v.max_len())
+            .max()
+            .unwrap_or(0)
     }
 }
 

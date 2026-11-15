@@ -452,7 +452,7 @@ pub(crate) fn write_str(out: &mut String, s: &str) {
             _ => continue,
         };
         // `i` and `run` sit at ASCII bytes, so the slice is on char boundaries.
-        out.push_str(&s[run..i]);
+        out.push_str(s.get(run..i).unwrap_or(""));
         if short.is_empty() {
             out.push_str("\\u00");
             out.push(char::from(HEX[usize::from(b >> 4)]));
@@ -462,7 +462,7 @@ pub(crate) fn write_str(out: &mut String, s: &str) {
         }
         run = i + 1;
     }
-    out.push_str(&s[run..]);
+    out.push_str(s.get(run..).unwrap_or(""));
     out.push('"');
 }
 
@@ -478,8 +478,8 @@ pub(crate) fn number_to_js_string(raw: &str) -> String {
     let mut out = String::new();
     let negative = raw.starts_with('-');
     let body = raw.trim_start_matches('-');
-    let (mantissa, exp) = match body.find(['e', 'E']) {
-        Some(i) => (&body[..i], body[i + 1..].trim_start_matches('+')),
+    let (mantissa, exp) = match body.split_once(['e', 'E']) {
+        Some((m, e)) => (m, e.trim_start_matches('+')),
         None => (body, "0"),
     };
     let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
@@ -516,7 +516,8 @@ pub(crate) fn number_to_js_string(raw: &str) -> String {
 /// trailing zeros): plain digits up to 21 integer digits, `0.000ddd` down to 1e-7,
 /// exponent form (`1e+21`, `1.5e-7`) outside.
 fn layout(out: &mut String, negative: bool, digits: &str, n: i32) {
-    let (d0, rest) = digits.split_at(1);
+    // `_checked`: ASCII digits never fail, and no slice panic (with its `fmt` code) is linked.
+    let (d0, rest) = digits.split_at_checked(1).unwrap_or((digits, ""));
     let k = digits.len() as i32;
     if negative {
         out.push('-');
@@ -525,7 +526,7 @@ fn layout(out: &mut String, negative: bool, digits: &str, n: i32) {
         out.push_str(digits);
         out.extend(std::iter::repeat_n('0', (n - k) as usize));
     } else if 0 < n && n <= 21 {
-        let (a, b) = digits.split_at(n as usize);
+        let (a, b) = digits.split_at_checked(n as usize).unwrap_or((digits, ""));
         out.push_str(a);
         out.push('.');
         out.push_str(b);

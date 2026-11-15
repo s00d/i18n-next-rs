@@ -4,16 +4,17 @@
 //! up to four `(instance, version, Arc<Snapshot>)` in a `thread_local!` cache (spike S1),
 //! so a hit takes no lock and touches no reference count. A write builds a new snapshot,
 //! swaps it under the write lock and bumps the version; a reader holding the old `Arc`
-//! never sees a change.
+//! never sees a change. A locale switch shares the data and chain maps of the previous
+//! snapshot (`Arc` clones): only the active pointer changes.
 
 use crate::args::Args;
-use crate::catalog::{Chunk, Entry, Msg, Template, Tree};
+use crate::catalog::{Chunk, Entry, Msg, Tree, interpolate_once};
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::loader::{self, Config, Kind};
 use std::cell::RefCell;
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 type Missing = Box<dyn Fn(&str, &str, &str) + Send + Sync>;
@@ -47,7 +48,8 @@ struct Meta {
     iso: FastMap<Arc<str>, Arc<str>>,
     /// `i18n.json` `locales[]`, in file order.
     configured: Vec<loader::LocaleEntry>,
-    /// Locales the app named itself (`.locale`, `defaultLocale`).
+    /// Locales the app named itself: the start locale, `defaultLocale`, both ends of every
+    /// fallback link, the global fallback and `iso` codes. Each is known, with its chain.
     declared: Vec<Arc<str>>,
     aliases: FastMap<Arc<str>, Arc<str>>,
     /// Raw `numberFormats` / `datetimeFormats` of `i18n.json`, for M5 / M6.
@@ -67,50 +69,48 @@ impl Meta {
         (p != "index").then_some(p)
     }
 
-    /// `code`, its `fallback_for` links, then the global fallback and its links.
+    /// `code` and its `fallback_for` links to their end, then the global fallback alone,
+    /// never expanded through its own links (`utils` `buildFallbackLocaleChain`). A cycle
+    /// (`a → b → a`) stops at the first repeat.
     fn chain(&self, data: &FastMap<Arc<str>, Arc<LocaleData>>, code: &str) -> Chain {
-        fn follow<'a>(
-            links: &'a FastMap<Arc<str>, Arc<str>>,
-            start: &'a str,
-            codes: &mut Vec<&'a str>,
-        ) {
-            let mut next = Some(start);
-            while let Some(c) = next {
-                if codes.contains(&c) {
-                    break;
-                }
-                codes.push(c);
-                next = links.get(c).map(|s| &**s);
-            }
-        }
         let mut codes: Vec<&str> = Vec::new();
-        follow(&self.links, code, &mut codes);
-        if let Some(fb) = &self.fallback {
-            follow(&self.links, fb, &mut codes);
+        let mut next = Some(code);
+        while let Some(c) = next {
+            if codes.contains(&c) {
+                break;
+            }
+            codes.push(c);
+            next = self.links.get(c).map(|s| &**s);
+        }
+        if let Some(fb) = self.fallback.as_deref()
+            && !codes.contains(&fb)
+        {
+            codes.push(fb);
         }
         codes.iter().filter_map(|c| data.get(*c).cloned()).collect()
     }
 }
 
+type DataMap = FastMap<Arc<str>, Arc<LocaleData>>;
+
 struct Snapshot {
     version: u64,
     locale: Arc<str>,
-    data: FastMap<Arc<str>, Arc<LocaleData>>,
-    /// Chains of the active locale and every enabled known locale.
-    chains: FastMap<Arc<str>, Chain>,
+    /// Shared between snapshots that differ only in the active locale.
+    data: Arc<DataMap>,
+    /// Chains of every enabled known locale: the keys are exactly the locales `set_locale`
+    /// accepts.
+    chains: Arc<FastMap<Arc<str>, Chain>>,
     active: Chain,
+    /// The active locale's own chunks (what `has` reads), `None` when it has no data.
+    own: Option<Arc<LocaleData>>,
     /// The global fallback's chain: what a locale that is not known reads.
     fallback: Chain,
     meta: Arc<Meta>,
 }
 
 impl Snapshot {
-    fn new(
-        meta: Arc<Meta>,
-        data: FastMap<Arc<str>, Arc<LocaleData>>,
-        locale: Arc<str>,
-        version: u64,
-    ) -> Snapshot {
+    fn new(meta: Arc<Meta>, data: DataMap, locale: Arc<str>, version: u64) -> Snapshot {
         let mut chains = FastMap::default();
         let names = meta
             .configured
@@ -134,19 +134,14 @@ impl Snapshot {
         };
         Snapshot {
             version,
+            own: data.get(&*locale).cloned(),
             locale,
-            data,
-            chains,
+            data: Arc::new(data),
+            chains: Arc::new(chains),
             active,
             fallback,
             meta,
         }
-    }
-
-    fn known(&self, code: &str) -> bool {
-        self.data.contains_key(code)
-            || self.meta.configured.iter().any(|l| l.code == code)
-            || self.meta.declared.iter().any(|l| &**l == code)
     }
 
     /// The layers of `locale` (the active one when `None`). A locale that is not known,
@@ -167,27 +162,43 @@ impl Snapshot {
 
     /// Only the locale itself, page then root: no fallback (JS `has`).
     fn has(&self, locale: Option<&str>, page: Option<&str>, key: &str) -> bool {
-        let code = locale.unwrap_or(&self.locale);
-        if !self.chains.contains_key(code) {
-            return false;
-        }
-        let page = self.meta.page(page);
-        self.data
-            .get(code)
-            .is_some_and(|d| d.get(page, key).is_some())
+        let own = match locale {
+            None => self.own.as_deref(),
+            Some(code) if self.chains.contains_key(code) => self.data.get(code).map(|d| &**d),
+            Some(_) => None,
+        };
+        own.is_some_and(|d| d.get(self.meta.page(page), key).is_some())
     }
 }
 
-/// Cached snapshots of this thread: `(instance id, version, snapshot)`, and the slot to
-/// evict next.
-type CacheSlot = Option<(u64, u64, Arc<Snapshot>)>;
+/// One cached snapshot of this thread.
+struct Slot {
+    id: u64,
+    version: u64,
+    snap: Arc<Snapshot>,
+    /// Cleared when the instance is dropped.
+    alive: Arc<AtomicBool>,
+}
+
+/// Cached snapshots of this thread, the slot to evict next, and the [`DROPS`] value the
+/// slots were last checked against.
+struct Cache {
+    slots: [Option<Slot>; 4],
+    next: usize,
+    drops: u64,
+}
 
 thread_local! {
-    static CACHE: RefCell<([CacheSlot; 4], usize)> =
-        const { RefCell::new(([const { None }; 4], 0)) };
+    static CACHE: RefCell<Cache> = const {
+        RefCell::new(Cache { slots: [const { None }; 4], next: 0, drops: 0 })
+    };
 }
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+/// Bumped by every dropped instance: the next read on a thread that sees a new value drops
+/// the cached snapshots of dead instances.
+static DROPS: AtomicU64 = AtomicU64::new(0);
 
 struct Inner {
     id: u64,
@@ -196,6 +207,15 @@ struct Inner {
     /// Serializes writers; readers never take it.
     writer: Mutex<()>,
     missing: Option<Missing>,
+    alive: Arc<AtomicBool>,
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        self.alive.store(false, Ordering::Relaxed);
+        // Release: a reader that sees the new count sees `alive` cleared.
+        DROPS.fetch_add(1, Ordering::Release);
+    }
 }
 
 impl Inner {
@@ -207,41 +227,81 @@ impl Inner {
     }
 
     /// `f` on the current snapshot: the thread cache when it is fresh, else one read lock.
-    /// ponytail: a cached snapshot of a dropped instance lives until its slot is reused
-    /// (at most 4 per thread).
+    /// A hit is two atomic loads and a scan of four slots, no reference count.
     fn read<R>(&self, mut f: impl FnMut(&Snapshot) -> R) -> R {
         let version = self.version.load(Ordering::Acquire);
-        let cached = CACHE.try_with(|cell| {
-            if let Ok(cache) = cell.try_borrow()
-                && let Some((_, _, snap)) = cache
-                    .0
-                    .iter()
-                    .flatten()
-                    .find(|(id, v, _)| *id == self.id && *v == version)
-            {
-                return f(snap);
+        // Relaxed: only compared here (a plain load on ARM); `refresh` acquires it.
+        let drops = DROPS.load(Ordering::Relaxed);
+        let hit = CACHE.try_with(|cell| {
+            let cache = cell.try_borrow().ok()?;
+            if cache.drops != drops {
+                return None;
             }
-            let snap = self.load();
-            if let Ok(mut cache) = cell.try_borrow_mut() {
-                let (slots, next) = &mut *cache;
-                let at = slots
-                    .iter()
-                    .position(|s| s.as_ref().is_some_and(|(id, _, _)| *id == self.id))
-                    .or_else(|| slots.iter().position(Option::is_none))
-                    .unwrap_or_else(|| {
-                        let at = *next;
-                        *next = (at + 1) % slots.len();
-                        at
-                    });
-                slots[at] = Some((self.id, snap.version, snap.clone()));
-            }
-            f(&snap)
+            let slot = cache
+                .slots
+                .iter()
+                .flatten()
+                .find(|s| s.id == self.id && s.version == version)?;
+            Some(f(&slot.snap))
         });
-        match cached {
-            Ok(r) => r,
-            // Thread-local storage is gone (a thread-exit destructor calls in).
-            Err(_) => f(&self.load()),
+        if let Ok(Some(r)) = hit {
+            return r;
         }
+        let (snap, gone) = self.refresh();
+        let r = f(&snap);
+        // Slots that left the cache are dropped after `f`: freeing an old catalog does
+        // not delay the read.
+        drop(gone);
+        r
+    }
+
+    /// The miss path of [`Inner::read`], not generic: loads the snapshot under the read
+    /// lock, caches it, and hands back the slots that left the cache (a stale version of
+    /// this instance, an evicted one, those of dropped instances).
+    #[inline(never)]
+    fn refresh(&self) -> (Arc<Snapshot>, [Option<Slot>; 4]) {
+        // Acquire: pairs with the release in `Inner::drop`, so `alive` reads below see it.
+        let drops = DROPS.load(Ordering::Acquire);
+        let snap = self.load();
+        let mut gone: [Option<Slot>; 4] = [const { None }; 4];
+        // Thread-local storage can be gone (a thread-exit destructor calls in): no caching.
+        let _ = CACHE.try_with(|cell| {
+            let Ok(mut cache) = cell.try_borrow_mut() else {
+                return;
+            };
+            let cache = &mut *cache;
+            if cache.drops != drops {
+                for (slot, out) in cache.slots.iter_mut().zip(&mut gone) {
+                    if slot
+                        .as_ref()
+                        .is_some_and(|s| !s.alive.load(Ordering::Relaxed))
+                    {
+                        *out = slot.take();
+                    }
+                }
+                cache.drops = drops;
+            }
+            let slots = &mut cache.slots;
+            let at = slots
+                .iter()
+                .position(|s| s.as_ref().is_some_and(|s| s.id == self.id))
+                .or_else(|| slots.iter().position(Option::is_none))
+                .unwrap_or_else(|| {
+                    let at = cache.next;
+                    cache.next = (at + 1) % slots.len();
+                    at
+                });
+            let new = Slot {
+                id: self.id,
+                version: snap.version,
+                snap: snap.clone(),
+                alive: self.alive.clone(),
+            };
+            if let Some(old) = slots[at].replace(new) {
+                gone[at] = Some(old);
+            }
+        });
+        (snap, gone)
     }
 
     /// Builds the next snapshot from the current one and publishes it; `None` = no change.
@@ -277,6 +337,11 @@ enum Found {
 }
 
 /// The translation catalog: `Arc` inside, cheap to clone, `Send + Sync + 'static`.
+///
+/// Each thread caches up to four snapshots (one per instance it read last), so a read
+/// takes no lock. When the last handle is dropped, the next read on every other thread
+/// frees that thread's cached snapshot of it; a thread that never reads again keeps at
+/// most four snapshots until it reads or exits.
 ///
 /// ```
 /// use i18n_next::I18n;
@@ -382,7 +447,7 @@ impl I18n {
                     missing(code, key, page);
                 }
                 match args.and_then(|a| a.default_text().map(|d| (a, d))) {
-                    Some((a, d)) => Template::new(d).interpolate(a),
+                    Some((a, d)) => interpolate_once(d, a),
                     None => key.to_owned(),
                 }
             }
@@ -476,25 +541,30 @@ impl I18n {
             if s.meta.disabled(code) {
                 return Err(Error::DisabledLocale(code.to_owned()));
             }
-            if !s.known(code) {
+            let Some((locale, active)) = s.chains.get_key_value(code) else {
                 return Err(Error::UnknownLocale(code.to_owned()));
-            }
+            };
             if &*s.locale == code {
                 return Ok(None);
             }
-            Ok(Some(Snapshot::new(
-                s.meta.clone(),
-                s.data.clone(),
-                Arc::from(code),
-                s.version + 1,
-            )))
+            // Same data, same chains: only the active pointer moves (no rebuild).
+            Ok(Some(Snapshot {
+                version: s.version + 1,
+                locale: locale.clone(),
+                data: s.data.clone(),
+                chains: s.chains.clone(),
+                active: active.clone(),
+                own: s.data.get(code).cloned(),
+                fallback: s.fallback.clone(),
+                meta: s.meta.clone(),
+            }))
         })
     }
 
-    /// The active locale.
+    /// The active locale, shared: no allocation.
     #[must_use]
-    pub fn locale(&self) -> String {
-        self.inner.read(|s| String::from(&*s.locale))
+    pub fn locale(&self) -> Arc<str> {
+        self.inner.read(|s| s.locale.clone())
     }
 
     /// Known locales that are not disabled: `i18n.json` order first, then the rest by code.
@@ -558,7 +628,7 @@ impl I18n {
         chunk_names(locale, page)?;
         let tree = Tree::parse(json.as_bytes(), &messages_path(locale, page))?;
         self.inner.write(|s| {
-            let mut data = s.data.clone();
+            let mut data = DataMap::clone(&s.data);
             let mut slot = data
                 .get(locale)
                 .map(|d| LocaleData::clone(d))
@@ -581,7 +651,8 @@ impl I18n {
     }
 }
 
-/// Merges `tree` into the root (`None`) or page chunk of `slot`.
+/// Merges `tree` into a copy of the root (`None`) or page chunk of `slot`: the old chunk
+/// stays as it is for readers of older snapshots.
 fn merge_into(slot: &mut LocaleData, page: Option<&str>, tree: Tree) {
     let chunk = match page {
         None => slot.root.as_ref(),
@@ -690,11 +761,11 @@ impl View {
         }
     }
 
-    /// The locale this view reads: its own, or the active one.
+    /// The locale this view reads: its own, or the active one. Shared: no allocation.
     #[must_use]
-    pub fn locale(&self) -> String {
+    pub fn locale(&self) -> Arc<str> {
         match &self.locale {
-            Some(l) => String::from(&**l),
+            Some(l) => l.clone(),
             None => self.i18n.locale(),
         }
     }
@@ -751,14 +822,16 @@ impl fmt::Debug for Builder {
 }
 
 impl Builder {
-    /// The active locale at start (else `defaultLocale` of `i18n.json`, else `en`).
+    /// The active locale at start (else `defaultLocale` of `i18n.json`, else `en`). It is a
+    /// known locale even with no file of its own: it reads its chain.
     #[must_use]
     pub fn locale(mut self, code: &str) -> Self {
         self.locale = Some(code.to_owned());
         self
     }
 
-    /// The global fallback: the weakest layer of every chain.
+    /// The global fallback: the weakest layer of every chain. The code becomes a known
+    /// locale (listed by `locales`, accepted by `set_locale`).
     #[must_use]
     pub fn fallback(mut self, code: &str) -> Self {
         self.fallback = Some(code.to_owned());
@@ -766,14 +839,17 @@ impl Builder {
     }
 
     /// A chain step: `locale` falls back to `fallback` before the global fallback
-    /// (`de-at → de → en`).
+    /// (`de-at → de → en`). Both codes become known locales, so a regional locale with no
+    /// file of its own (`de-ch → de`) can be the active one. A cycle (`a → b → a`) stops
+    /// at the first repeat.
     #[must_use]
     pub fn fallback_for(mut self, locale: &str, fallback: &str) -> Self {
         self.links.push((locale.to_owned(), fallback.to_owned()));
         self
     }
 
-    /// The BCP 47 tag of a locale code (`ua` → `uk-UA`) for plurals and formats.
+    /// The BCP 47 tag of a locale code (`ua` → `uk-UA`) for plurals and formats. The code
+    /// becomes a known locale.
     #[must_use]
     pub fn iso(mut self, code: &str, tag: &str) -> Self {
         self.iso.push((code.to_owned(), tag.to_owned()));
@@ -813,8 +889,9 @@ impl Builder {
         self
     }
 
-    /// `false` folds page files into the root chunk (`disablePageLocales`); a page file
-    /// wins over the root file on the same key.
+    /// `false` folds page files into the root chunk (`disablePageLocales`): files merge in
+    /// path order (JS `<`), and a page file wins over the root file on the same key in
+    /// either order. A [`Builder::page_alias`] then names nothing: it reads the root.
     #[must_use]
     pub fn pages(mut self, enabled: bool) -> Self {
         self.no_pages = !enabled;
@@ -908,12 +985,27 @@ impl Builder {
                 .or(config.default_locale.as_deref())
                 .unwrap_or("en"),
         );
+        let mut declared = Vec::new();
+        let mut declare = |code: &str| {
+            if !declared.iter().any(|d: &Arc<str>| &**d == code) {
+                declared.push(Arc::from(code));
+            }
+        };
         for code in [self.locale.as_deref(), config.default_locale.as_deref()]
             .into_iter()
             .flatten()
         {
-            meta.declared.push(Arc::from(code));
+            declare(code);
         }
+        declare(&locale);
+        for (code, fallback) in &meta.links {
+            declare(code);
+            declare(fallback);
+        }
+        for code in meta.fallback.iter().chain(meta.iso.keys()) {
+            declare(code);
+        }
+        meta.declared = declared;
         if meta.disabled(&locale) {
             return Err(Error::DisabledLocale(String::from(&*locale)));
         }
@@ -938,40 +1030,53 @@ impl Builder {
             let shown = rel.clone();
             files.push((rel, bytes, shown));
         }
-        // Path order (JS `<`), page files after root files: a page file folded into the
-        // root wins. The index makes the order total, so an unstable sort is stable.
-        let rank: Vec<bool> = files
-            .iter()
-            .map(|f| matches!(loader::classify(&f.0), Kind::Page(..)))
-            .collect();
+        // Path order (JS `<`), as the JS loader reads them. The index makes the order total,
+        // so an unstable sort is stable.
         let mut order: Vec<usize> = (0..files.len()).collect();
-        order.sort_unstable_by(|&a, &b| {
-            rank[a]
-                .cmp(&rank[b])
-                .then_with(|| loader::js_order(&files[a].0, &files[b].0))
-                .then(a.cmp(&b))
-        });
+        order.sort_unstable_by(|&a, &b| loader::js_order(&files[a].0, &files[b].0).then(a.cmp(&b)));
 
-        let mut chunks: Vec<((String, Option<String>), Tree)> = Vec::new();
-        let mut add = |locale: &str, page: Option<&str>, tree: Tree| {
-            let page = page.filter(|p| *p != "index");
-            match chunks
-                .iter_mut()
-                .find(|((l, p), _)| l == locale && p.as_deref() == page)
-            {
-                Some((_, t)) => t.merge(tree),
-                None => chunks.push(((locale.to_owned(), page.map(str::to_owned)), tree)),
+        let mut data: FastMap<Arc<str>, LocaleData> = FastMap::default();
+        // Merges `tree` over what the chunk holds, or `under` it.
+        let mut add = |locale: &str, page: Option<&str>, tree: Tree, under: bool| {
+            if !data.contains_key(locale) {
+                data.insert(Arc::from(locale), LocaleData::default());
+            }
+            let Some(slot) = data.get_mut(locale) else {
+                return;
+            };
+            let chunk = match page.filter(|p| *p != "index") {
+                None => slot.root.get_or_insert_with(Arc::default),
+                Some(p) => {
+                    if !slot.pages.contains_key(p) {
+                        slot.pages.insert(Arc::from(p), Arc::default());
+                    }
+                    let Some(c) = slot.pages.get_mut(p) else {
+                        return;
+                    };
+                    c
+                }
+            };
+            // Only `build` holds these chunks yet: `get_mut` always succeeds (no copy).
+            if let Some(chunk) = Arc::get_mut(chunk) {
+                if under {
+                    let above = std::mem::replace(chunk, tree);
+                    chunk.merge(above);
+                } else {
+                    chunk.merge(tree);
+                }
             }
         };
         for &i in &order {
             let (rel, bytes, shown) = &files[i];
-            let (locale, page) = match loader::classify(rel) {
+            // A root file goes under what came before it (`utils` `storeLoadedTranslationFile`):
+            // with folded pages, a page file wins over the root in either order.
+            let (locale, page, under) = match loader::classify(rel) {
                 Kind::Ignore => continue,
-                Kind::Root(l) => (l, None),
-                Kind::Page(_, l) if self.no_pages => (l, None),
-                Kind::Page(p, l) => (l, Some(p)),
+                Kind::Root(l) => (l, None, true),
+                Kind::Page(_, l) if self.no_pages => (l, None, false),
+                Kind::Page(p, l) => (l, Some(p), false),
             };
-            add(locale, page.as_deref(), Tree::parse(bytes, shown)?);
+            add(locale, page.as_deref(), Tree::parse(bytes, shown)?, under);
         }
         for (from, to) in &self.aliases {
             meta.aliases.insert(Arc::from(&**from), Arc::from(&**to));
@@ -980,27 +1085,18 @@ impl Builder {
             let page = page.as_deref();
             chunk_names(locale, page)?;
             let tree = Tree::parse(json.as_bytes(), &messages_path(locale, page))?;
-            add(locale, meta.page(page), tree);
+            add(locale, meta.page(page), tree, false);
         }
-        for to in meta.aliases.values() {
-            let defined =
-                &**to == "index" || chunks.iter().any(|((_, p), _)| p.as_deref() == Some(&**to));
-            if !defined {
-                return Err(Error::UnknownPage(String::from(&**to)));
-            }
-        }
-
-        let mut data: FastMap<Arc<str>, LocaleData> = FastMap::default();
-        for ((locale, page), tree) in chunks {
-            let slot = data.entry(Arc::from(locale)).or_default();
-            let chunk = Arc::new(tree);
-            match page {
-                None => slot.root = Some(chunk),
-                Some(p) => {
-                    slot.pages.insert(Arc::from(p), chunk);
+        // Folded pages: an alias resolves to a page with no chunk, which reads the root.
+        if !self.no_pages {
+            for to in meta.aliases.values() {
+                let defined = &**to == "index" || data.values().any(|d| d.pages.contains_key(to));
+                if !defined {
+                    return Err(Error::UnknownPage(String::from(&**to)));
                 }
             }
         }
+
         let data = data.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
         let snapshot = Snapshot::new(Arc::new(meta), data, locale, 0);
         Ok(I18n {
@@ -1010,6 +1106,7 @@ impl Builder {
                 state: RwLock::new(Arc::new(snapshot)),
                 writer: Mutex::new(()),
                 missing: self.missing,
+                alive: Arc::new(AtomicBool::new(true)),
             }),
         })
     }

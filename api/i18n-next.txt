@@ -91,7 +91,7 @@ pub fn i18n_next::I18n::add_messages(&self, &str, core::option::Option<&str>, &s
 pub fn i18n_next::I18n::builder() -> i18n_next::Builder
 pub fn i18n_next::I18n::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
 pub fn i18n_next::I18n::has(&self, &str) -> bool
-pub fn i18n_next::I18n::locale(&self) -> alloc::string::String
+pub fn i18n_next::I18n::locale(&self) -> alloc::sync::Arc<str>
 pub fn i18n_next::I18n::locales(&self) -> alloc::vec::Vec<i18n_next::LocaleInfo>
 pub fn i18n_next::I18n::page(&self, &str) -> i18n_next::View
 pub fn i18n_next::I18n::pages(&self) -> alloc::vec::Vec<alloc::string::String>
@@ -122,7 +122,7 @@ pub struct i18n_next::View
 impl i18n_next::View
 pub fn i18n_next::View::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
 pub fn i18n_next::View::has(&self, &str) -> bool
-pub fn i18n_next::View::locale(&self) -> alloc::string::String
+pub fn i18n_next::View::locale(&self) -> alloc::sync::Arc<str>
 pub fn i18n_next::View::page(&self, &str) -> i18n_next::View
 pub fn i18n_next::View::t(&self, &str) -> alloc::string::String
 pub fn i18n_next::View::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String

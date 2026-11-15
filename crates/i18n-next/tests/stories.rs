@@ -172,12 +172,12 @@ fn unknown_and_bad_names() {
             matches!(&err, Error::UnknownLocale(c) if c == name),
             "{err:?}"
         );
-        assert_eq!(i18n.locale(), "de");
+        assert_eq!(&*i18n.locale(), "de");
         // step 2: with_locale → the global fallback answers, `has` is false
         let view = i18n.with_locale(name);
         assert_eq!(view.t("a"), "A");
         assert!(!view.has("a"));
-        assert_eq!(view.locale(), name);
+        assert_eq!(&*view.locale(), name);
         // step 3: a page of that name → just the root
         assert_eq!(i18n.page(name).t("a"), "Ä");
     }
@@ -219,6 +219,7 @@ fn disabled_locale() {
     // step 2: set_locale refuses it, with_locale reads nothing of its own
     assert!(matches!(i18n.set_locale("es"), Err(Error::DisabledLocale(c)) if c == "es"));
     assert_eq!(i18n.with_locale("es").try_t("a"), None);
+    assert!(!i18n.with_locale("es").has("a"));
     assert_eq!(i18n.version(), 0);
 
     // step 3: it cannot be the start locale either
@@ -309,7 +310,7 @@ fn config_drives_locales_and_fallbacks() {
         .iso("ar", "ar-EG")
         .build()
         .unwrap();
-    assert_eq!(i18n.locale(), "de-at");
+    assert_eq!(&*i18n.locale(), "de-at");
     assert_eq!([i18n.t("a"), i18n.t("b"), i18n.t("c")], ["at", "de", "en"]);
 
     // step 2: locales() in file order, then the rest; builder iso wins
@@ -516,4 +517,284 @@ fn simulator_skeleton() {
 fn guard_fails_on_unexpected_event() {
     let guard = Guard::new();
     guard.record("nav.typo");
+}
+
+fn codes(i18n: &I18n) -> Vec<String> {
+    i18n.locales().into_iter().map(|l| l.code).collect()
+}
+
+/// Given locales that only builder calls name (both ends of a `fallback_for` link, the
+/// global fallback, an `iso` code, the implicit default `en`), when the app views them,
+/// switches to them and lists locales, then each is a known locale reading its own chain.
+#[test]
+fn locales_named_only_by_the_builder_are_known() {
+    let i18n = I18n::builder()
+        .locale("de")
+        .fallback("en")
+        .fallback_for("de-ch", "de")
+        .fallback_for("x-src", "x-dst")
+        .iso("ua", "uk-UA")
+        .messages("en", None, r#"{"a": "en", "b": "en"}"#)
+        .messages("de", None, r#"{"a": "de"}"#)
+        .build()
+        .unwrap();
+
+    // step 1: a link key with no file → a view reads de, then the global fallback
+    let ch = i18n.with_locale("de-ch");
+    assert_eq!([ch.t("a"), ch.t("b")], ["de", "en"]);
+    assert!(!ch.has("a")); // nothing of its own
+
+    // step 2: set_locale accepts it; the active chain is de-ch → de → en
+    i18n.set_locale("de-ch").unwrap();
+    assert_eq!(&*i18n.locale(), "de-ch");
+    assert_eq!([i18n.t("a"), i18n.t("b")], ["de", "en"]);
+    assert!(!i18n.has("a"));
+
+    // step 3: a link target, an iso code → known, reading the global fallback
+    for code in ["x-dst", "x-src", "ua"] {
+        i18n.set_locale(code).unwrap();
+        assert_eq!(i18n.t("a"), "en");
+    }
+
+    // step 4: locales() lists all of them, by code; the iso tag stays
+    assert_eq!(codes(&i18n), ["de", "de-ch", "en", "ua", "x-dst", "x-src"]);
+    let ua = i18n.locales().into_iter().find(|l| l.code == "ua").unwrap();
+    assert_eq!(ua.iso.as_deref(), Some("uk-UA"));
+
+    // step 5: the global fallback with no file of its own is known too
+    let i18n = I18n::builder()
+        .locale("de")
+        .fallback("en")
+        .messages("de", None, r#"{"a": "de"}"#)
+        .build()
+        .unwrap();
+    assert_eq!(codes(&i18n), ["de", "en"]);
+    i18n.set_locale("en").unwrap();
+    assert_eq!(i18n.try_t("a"), None);
+
+    // step 6: the implicit default `en`, active with no file → known and switchable back
+    let i18n = I18n::builder()
+        .messages("de", None, r#"{"a": "de"}"#)
+        .build()
+        .unwrap();
+    assert_eq!(&*i18n.locale(), "en");
+    assert_eq!(codes(&i18n), ["de", "en"]);
+    i18n.set_locale("de").unwrap();
+    i18n.set_locale("en").unwrap();
+    assert_eq!(i18n.version(), 2);
+
+    // step 7: an `i18n.json` fallback target no entry lists → known with its chain
+    let i18n = I18n::builder()
+        .config_json(r#"{"locales": [{"code": "de-ch", "fallbackLocale": "de"}]}"#)
+        .locale("de-ch")
+        .messages("de", None, r#"{"a": "de"}"#)
+        .build()
+        .unwrap();
+    assert_eq!(i18n.t("a"), "de");
+    assert_eq!(codes(&i18n), ["de-ch", "de"]);
+}
+
+/// Given `pages(false)` and a `page_alias`, when the app builds and reads the alias, then
+/// the build succeeds and the alias reads the root, like every page name when pages fold.
+#[test]
+fn page_alias_with_pages_folded() {
+    // step 1: the alias target has no page chunk (pages fold) → no UnknownPage
+    let i18n = I18n::builder()
+        .pages(false)
+        .page_alias("about-us", "about")
+        .files([
+            ("en.json", br#"{"k": "root"}"#.as_slice()),
+            ("pages/about/en.json", br#"{"t": "About"}"#),
+        ])
+        .build()
+        .unwrap();
+    // step 2: the alias and its target read the root, which holds the folded page
+    assert_eq!(i18n.page("about-us").t("t"), "About");
+    assert_eq!(i18n.page("about").t("k"), "root");
+}
+
+/// Given `pages(false)` and a root file that sorts after two page files of its locale
+/// (`ru.json` after `pages/a/ru.json`, `pages/b/ru.json`), when the app builds, then the
+/// files merge in JS path order and the root goes under what the pages merged, exactly
+/// as `@i18n-micro/utils` does (values from the JS loader).
+#[test]
+fn pages_false_merges_in_js_order() {
+    // step 1: build the auditor's `nopages_ru_triple` tree
+    let i18n = I18n::builder()
+        .pages(false)
+        .locale("ru")
+        .files([
+            (
+                "ru.json",
+                br#"{"k":{"y":"R"},"m":{"y":"R"},"same":"root"}"#.as_slice(),
+            ),
+            ("pages/a/ru.json", br#"{"k":"s","m":null,"same":"pa"}"#),
+            ("pages/b/ru.json", br#"{"k":{"x":"B"},"m":{"x":"B"}}"#),
+        ])
+        .build()
+        .unwrap();
+    // step 2: page b over page a, then the root under both
+    assert_eq!(i18n.try_t("k"), None);
+    assert!(i18n.has("k"));
+    assert_eq!(
+        [i18n.t("k.x"), i18n.t("k.y"), i18n.t("m.x"), i18n.t("m.y")],
+        ["B", "R", "B", "R"]
+    );
+    assert_eq!(i18n.t("same"), "pa");
+}
+
+/// Given fallback links that form a cycle, through the builder and through `i18n.json`,
+/// when the app looks up a key nothing has, then the lookup ends with a miss report and
+/// keys on the cycle still resolve.
+#[test]
+fn fallback_cycles_end() {
+    let guard = Guard::new();
+    // step 1: a → b → a with b as the global fallback, plus a self-link
+    let i18n = I18n::builder()
+        .locale("a")
+        .fallback("b")
+        .fallback_for("a", "b")
+        .fallback_for("b", "a")
+        .fallback_for("c", "c")
+        .messages("b", None, r#"{"x": "B"}"#)
+        .missing(guard.missing())
+        .build()
+        .unwrap();
+    assert_eq!(i18n.t("x"), "B");
+    guard.allow("a|index|nope");
+    guard.allow("c|index|nope");
+    assert_eq!(i18n.t("nope"), "nope");
+    assert_eq!(i18n.with_locale("c").t("nope"), "nope");
+    assert_eq!(i18n.with_locale("c").t("x"), "B");
+
+    // step 2: the same cycle from `i18n.json`
+    let i18n = I18n::builder()
+        .config_json(
+            r#"{"defaultLocale": "a", "fallbackLocale": "a",
+                "locales": [{"code": "a", "fallbackLocale": "b"},
+                            {"code": "b", "fallbackLocale": "a"}]}"#,
+        )
+        .messages("a", None, r#"{"y": "A"}"#)
+        .missing(guard.missing())
+        .build()
+        .unwrap();
+    guard.allow("b|index|nope");
+    assert_eq!(i18n.with_locale("b").t("y"), "A");
+    assert_eq!(i18n.with_locale("b").t("nope"), "nope");
+    assert_eq!(
+        guard.seen(),
+        ["a|index|nope", "c|index|nope", "b|index|nope"]
+    );
+}
+
+/// Given a global fallback that has a `fallback_for` link of its own, when the app reads a
+/// key only that link's target has, then it misses: the global fallback is the weakest
+/// step, taken alone (`utils` `buildFallbackLocaleChain`); the fallback itself still
+/// follows its link when it is the active locale.
+#[test]
+fn global_fallback_is_the_last_step_alone() {
+    let i18n = I18n::builder()
+        .locale("de-at")
+        .fallback("en")
+        .fallback_for("de-at", "de")
+        .fallback_for("en", "fr")
+        .messages("fr", None, r#"{"only_fr": "fr"}"#)
+        .messages("en", None, r#"{"a": "en"}"#)
+        .messages("de", None, r#"{"b": "de"}"#)
+        .build()
+        .unwrap();
+    // step 1: de-at → de → en, never en → fr
+    assert_eq!([i18n.t("a"), i18n.t("b")], ["en", "de"]);
+    assert_eq!(i18n.try_t("only_fr"), None);
+    // step 2: en active → en → fr
+    i18n.set_locale("en").unwrap();
+    assert_eq!(i18n.t("only_fr"), "fr");
+}
+
+/// Given documents whose dotted paths would multiply their size in memory (a deep prefix
+/// of long keys over many leaves), when the app loads them, then the build fails at
+/// once with a `Json` error, before storing anything large; a path at the limit loads.
+#[test]
+fn oversized_key_paths_are_refused() {
+    let json_kind = |json: &str| match I18n::builder().messages("en", None, json).build() {
+        Err(Error::Json { kind, .. }) => kind,
+        other => panic!("{other:?}"),
+    };
+    // step 1: the audit's 137 KB document (it took 2.2 GB) → refused at the first long path
+    let key = "k".repeat(1000);
+    let mut deep = String::new();
+    for _ in 0..100 {
+        deep.push_str(&format!("{{\"{key}\":"));
+    }
+    deep.push('[');
+    deep.push_str(&vec!["0"; 20_000].join(","));
+    deep.push(']');
+    deep.push_str(&"}".repeat(100));
+    assert_eq!(json_kind(&deep), "key path longer than 4096 bytes");
+
+    // step 2: every path under the limit, but together far more than the document
+    let prefix = format!("{{\"{}\":{{\"{}\":", "p".repeat(2000), "q".repeat(2000));
+    let leaves = vec!["0"; 1_000].join(",");
+    let wide = format!("{prefix}[{leaves}]}}}}");
+    assert_eq!(json_kind(&wide), "key paths too long for the document size");
+
+    // step 3: a key of exactly 4096 bytes loads; one byte more does not
+    let at_limit = "a".repeat(4096);
+    let i18n = I18n::builder()
+        .messages("en", None, &format!("{{\"{at_limit}\": \"ok\"}}"))
+        .build()
+        .unwrap();
+    assert_eq!(i18n.t(&at_limit), "ok");
+    let over = format!("{{\"{at_limit}b\": \"no\"}}");
+    assert_eq!(json_kind(&over), "key path longer than 4096 bytes");
+    // `add_messages` checks the same, and changes nothing
+    assert!(matches!(
+        i18n.add_messages("en", None, &over),
+        Err(Error::Json { path, .. }) if path == "messages:en/index"
+    ));
+    assert_eq!(i18n.version(), 0);
+}
+
+/// Given duplicate keys and patches that replace containers (empty and not), when the
+/// app loads and patches, then a replaced subtree is gone and a merged object keeps the
+/// children of both; thousands of duplicate empty objects load like any document.
+#[test]
+fn replaced_containers_drop_their_subtree() {
+    // step 1: duplicates in one document → the last value wins, its subtree only
+    let i18n = I18n::builder()
+        .messages(
+            "en",
+            None,
+            r#"{"a": {"b": "x"}, "a": {}, "c": {}, "c": {"d": "y"}, "e": [1], "e": []}"#,
+        )
+        .build()
+        .unwrap();
+    assert_eq!(i18n.try_t("a.b"), None);
+    assert!(i18n.has("a"));
+    assert_eq!(i18n.t("c.d"), "y");
+    assert_eq!(i18n.try_t("e.0"), None);
+
+    // step 2: an empty object merged over a full one keeps the children…
+    i18n.add_messages("en", None, r#"{"c": {}}"#).unwrap();
+    assert_eq!(i18n.t("c.d"), "y");
+    // …so a later scalar over it still drops them
+    i18n.add_messages("en", None, r#"{"c": "flat"}"#).unwrap();
+    assert_eq!(i18n.t("c"), "flat");
+    assert_eq!(i18n.try_t("c.d"), None);
+    // an empty object, then children merged into it, then replaced
+    i18n.add_messages("en", None, r#"{"a": {"z": "1"}}"#)
+        .unwrap();
+    assert_eq!(i18n.t("a.z"), "1");
+    i18n.add_messages("en", None, r#"{"a": []}"#).unwrap();
+    assert_eq!(i18n.try_t("a.z"), None);
+
+    // step 3: 5k keys and 20k duplicate empty objects (the audit's quadratic case)
+    let mut doc: String = (0..5_000).map(|i| format!("\"k{i}\":\"v\",")).collect();
+    doc.push_str(&"\"x\":{},".repeat(20_000));
+    let i18n = I18n::builder()
+        .messages("en", None, &format!("{{{doc}\"end\":\"e\"}}"))
+        .build()
+        .unwrap();
+    assert_eq!([i18n.t("k4999"), i18n.t("end")], ["v", "e"]);
+    assert!(i18n.has("x"));
 }

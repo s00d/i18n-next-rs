@@ -21,15 +21,18 @@ pub(crate) fn classify(rel: &str) -> Kind<'_> {
     let Some(stem) = rel.strip_suffix(".json") else {
         return Kind::Ignore;
     };
-    let slash = stem.rfind('/');
-    let locale = &stem[slash.map_or(0, |s| s + 1)..];
+    // Split, not sliced: no slice panic (and its `fmt` code) in the binary.
+    let (dir, locale) = match stem.rsplit_once('/') {
+        Some((dir, locale)) => (Some(dir), locale),
+        None => (None, stem),
+    };
     if locale.is_empty() || locale == "__proto__" {
         return Kind::Ignore;
     }
-    match slash {
+    match dir.map(|d| d.strip_prefix("pages/")) {
         None => Kind::Root(locale),
-        Some(slash) if rel.starts_with("pages/") && slash >= 7 => {
-            let page = stem[6..slash].replace('/', "-");
+        Some(Some(page)) if !page.is_empty() => {
+            let page = page.replace('/', "-");
             if page == "__proto__" {
                 Kind::Ignore
             } else {

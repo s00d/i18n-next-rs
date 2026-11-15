@@ -20,6 +20,11 @@ include = ["/src/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/R
 [lints]
 workspace = true
 
+# The lib has no criterion benches: without this, `cargo bench -p i18n-next -- --quick`
+# hands `--quick` to the libtest harness of the lib, which rejects it.
+[lib]
+bench = false
+
 # No runtime dependencies (DESIGN 2.3). Integrations come only behind features,
 # off by default; CI (`deps` job) fails if the default build gains one.
 [dependencies]

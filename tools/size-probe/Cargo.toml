@@ -20,8 +20,9 @@ path = "src/main.rs"
 [features]
 # micro build: i18n-next with default-features = false; `full` turns the defaults on.
 full = ["i18n-next/default"]
-# The probe without any call into i18n-next: the constant std runtime that
-# tools/size-check.sh subtracts from the other variants.
+# The probe without any call into i18n-next (it allocates once, so the allocator counts
+# as runtime): the constant std runtime that tools/size-check.sh subtracts from the other
+# variants.
 empty = []
 
 [dependencies]

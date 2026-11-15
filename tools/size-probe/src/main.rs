@@ -4,8 +4,8 @@
 //!
 //! A binary, not a cdylib: exporting from a cdylib needs `#[unsafe(no_mangle)]` (or
 //! wasm-bindgen glue, ~26 KB), and the probe stays under `forbid(unsafe_code)`. The std
-//! runtime of a wasm binary is a constant ~13 KB; `tools/size-check.sh` subtracts it by
-//! also building with `--features empty` (no call into i18n-next).
+//! runtime of a wasm binary (with its allocator) is a constant ~14 KB; `tools/size-check.sh`
+//! subtracts it by also building with `--features empty` (no call into i18n-next).
 #![forbid(unsafe_code)]
 
 // The `empty` build links i18n-next without calling it (nothing of it is kept), so the
@@ -33,5 +33,12 @@ fn main() {
     let _ = black_box(i18n.set_locale(black_box("en")));
 }
 
+/// Allocates, grows and frees once, so the allocator (dlmalloc on wasm) is part of the
+/// runtime that is subtracted, not charged to i18n-next: any app that allocates has it.
 #[cfg(feature = "empty")]
-fn main() {}
+fn main() {
+    use std::hint::black_box;
+    let mut v: Vec<u8> = Vec::with_capacity(black_box(1));
+    v.extend_from_slice(black_box(b"grow past the first capacity"));
+    black_box(v);
+}

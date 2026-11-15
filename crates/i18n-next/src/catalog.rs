@@ -103,26 +103,81 @@ impl Template {
         let mut out = String::with_capacity(raw.len() + self.holes.len() * args.max_value_len());
         let mut from = 0;
         for &(s, e) in &self.holes {
-            let (s, e) = (s as usize, e as usize);
-            if let Some(value) = args.find(&raw[s..e]) {
-                out.push_str(&raw[from..s - 1]);
-                value.write(&mut out);
-                from = e + 1;
-            }
+            from = substitute(raw, from, s as usize, e as usize, args, &mut out);
         }
-        out.push_str(&raw[from..]);
+        out.push_str(raw.get(from..).unwrap_or(""));
         out
     }
+}
+
+/// Copies `raw[from..]` up to the hole `{raw[s..e]}` and writes its value, when `args` has
+/// one; returns where the next copy starts. `.get` instead of indexing: the ranges are
+/// char boundaries by construction, and no slice panic (with its `fmt` code) is linked.
+fn substitute(
+    raw: &str,
+    from: usize,
+    s: usize,
+    e: usize,
+    args: &Args<'_>,
+    out: &mut String,
+) -> usize {
+    match raw.get(s..e).and_then(|name| args.find(name)) {
+        Some(value) => {
+            out.push_str(raw.get(from..s - 1).unwrap_or(""));
+            value.write(out);
+            e + 1
+        }
+        None => from,
+    }
+}
+
+/// [`Template::new`] + [`Template::interpolate`] in one pass, for text used once (the
+/// default of `t_with`): no `Template` is built.
+pub(crate) fn interpolate_once(raw: &str, args: &Args<'_>) -> String {
+    let mut out = String::with_capacity(raw.len() + args.max_value_len());
+    let mut from = 0;
+    let mut open = None;
+    for (i, c) in raw.char_indices() {
+        match c {
+            '{' => open = Some(i + 1),
+            '}' => {
+                if let Some(s) = open.take()
+                    && i > s
+                {
+                    from = substitute(raw, from, s, i, args, &mut out);
+                }
+            }
+            c if is_js_space(c) => open = None,
+            _ => {}
+        }
+    }
+    out.push_str(raw.get(from..).unwrap_or(""));
+    out
 }
 
 /// A node of the tree as stored by path.
 #[derive(Debug, Clone)]
 pub(crate) enum Node {
-    Obj,
-    Arr,
+    /// `kids: false`: nothing is stored under it, so replacing it scans nothing.
+    Obj {
+        kids: bool,
+    },
+    Arr {
+        kids: bool,
+    },
     Null,
     Leaf(Entry),
 }
+
+/// The longest dotted path (`a.b.0.c`) a document may reach, in bytes. Every leaf stores
+/// its full path, so a deep prefix over many leaves multiplies the input (a 137 KB file
+/// took 2.2 GB); real keys, gettext-style sentence keys included, are far shorter.
+const MAX_PATH: usize = 4096;
+
+/// Stored path bytes allowed per input byte, plus [`PATH_SLACK`]: bounds the memory of
+/// one document by its size even when every path stays under [`MAX_PATH`].
+const PATH_RATIO: usize = 64;
+const PATH_SLACK: usize = 1 << 20;
 
 /// One `(locale, page)` chunk by dotted path. `walk` holds what the dotted walk reaches
 /// (keys without dots, array indices); `own` holds root keys with a dot, which only an
@@ -155,6 +210,8 @@ struct Frame {
     array: bool,
     next_index: usize,
     live: bool,
+    /// Whether anything reachable was stored under it.
+    kids: bool,
 }
 
 impl Tree {
@@ -167,7 +224,7 @@ impl Tree {
         fn read<'a>(map: &'a FastMap<Arc<str>, Node>, key: &str) -> Option<&'a Entry> {
             match map.get(key)? {
                 Node::Null => None,
-                Node::Obj | Node::Arr => Some(&NODE),
+                Node::Obj { .. } | Node::Arr { .. } => Some(&NODE),
                 Node::Leaf(e) => Some(e),
             }
         }
@@ -185,22 +242,27 @@ impl Tree {
 
     /// Removes `path` and everything under it from the walk.
     fn remove_subtree(&mut self, path: &str) {
-        if let Some(Node::Obj | Node::Arr) = self.walk.remove(path) {
-            // ponytail: one O(chunk) scan, only when a container is replaced (a duplicate
-            // key, an array patched over); keep children lists if patches ever get hot.
+        if let Some(Node::Obj { kids: true } | Node::Arr { kids: true }) = self.walk.remove(path) {
+            // ponytail: one O(chunk) scan, only when a container with children is replaced
+            // (a duplicate key, an array patched over); an empty one scans nothing, so a
+            // repeated `"x": {}` stays linear. Many duplicate non-empty containers in one
+            // document still scan once each: keep children lists if that ever matters.
             self.walk.retain(|k, _| {
-                !(k.len() > path.len() && k.starts_with(path) && k.as_bytes()[path.len()] == b'.')
+                !(k.len() > path.len()
+                    && k.starts_with(path)
+                    && k.as_bytes().get(path.len()) == Some(&b'.'))
             });
         }
     }
 
     /// Reads a JSON object document. `path` names the source in errors.
     pub(crate) fn parse(bytes: &[u8], path: &str) -> Result<Tree, Error> {
-        let json_err = |e: crate::json::JsonError| Error::Json {
+        let error = |offset: usize, kind: &'static str| Error::Json {
             path: path.to_owned(),
-            offset: e.offset,
-            kind: e.kind.as_str(),
+            offset,
+            kind,
         };
+        let json_err = |e: crate::json::JsonError| error(e.offset, e.kind.as_str());
         let mut r = Reader::new(bytes);
         match r.next().map_err(json_err)? {
             Some(Event::ObjectStart) => {}
@@ -214,11 +276,16 @@ impl Tree {
         }
         let mut tree = Tree::default();
         let mut buf = String::new();
+        let mut budget = bytes
+            .len()
+            .saturating_mul(PATH_RATIO)
+            .saturating_add(PATH_SLACK);
         let mut stack = vec![Frame {
             len: 0,
             array: false,
             next_index: 0,
             live: true,
+            kids: false,
         }];
         let mut key = None;
         while let Some(event) = r.next().map_err(json_err)? {
@@ -228,11 +295,20 @@ impl Tree {
                     continue;
                 }
                 Event::ObjectEnd | Event::ArrayEnd => {
-                    stack.pop();
+                    // An empty reachable container (not the root) says so.
+                    if let Some(f) = stack.pop()
+                        && f.live
+                        && !f.kids
+                        && !stack.is_empty()
+                        && let Some(Node::Obj { kids } | Node::Arr { kids }) =
+                            buf.get(..f.len).and_then(|p| tree.walk.get_mut(p))
+                    {
+                        *kids = false;
+                    }
                     continue;
                 }
-                Event::ObjectStart => (Some(false), Node::Obj),
-                Event::ArrayStart => (Some(true), Node::Arr),
+                Event::ObjectStart => (Some(false), Node::Obj { kids: true }),
+                Event::ArrayStart => (Some(true), Node::Arr { kids: true }),
                 Event::Str(s) => (None, Node::Leaf(Entry::Msg(Msg::Text(Template::new(&s))))),
                 Event::Num(n) => (
                     None,
@@ -275,6 +351,19 @@ impl Tree {
             };
             let live = match target {
                 Target::Walk => {
+                    parent.kids = true;
+                    if buf.len() > MAX_PATH {
+                        return Err(error(r.offset(), "key path longer than 4096 bytes"));
+                    }
+                    budget = match budget.checked_sub(buf.len()) {
+                        Some(left) => left,
+                        None => {
+                            return Err(error(
+                                r.offset(),
+                                "key paths too long for the document size",
+                            ));
+                        }
+                    };
                     // A duplicate key replaces, it does not merge (`JSON.parse`).
                     tree.remove_subtree(&buf);
                     tree.walk.insert(Arc::from(buf.as_str()), node);
@@ -292,6 +381,7 @@ impl Tree {
                     array,
                     next_index: 0,
                     live,
+                    kids: false,
                 });
             }
         }
@@ -307,14 +397,19 @@ impl Tree {
         }
         // Two passes, so the map's order does not matter: first drop everything an
         // incoming value replaces (an object over an object replaces nothing), then insert.
-        for (k, node) in &incoming.walk {
-            if !(matches!(node, Node::Obj) && matches!(self.walk.get(k), Some(Node::Obj))) {
-                self.remove_subtree(k);
+        let mut incoming = incoming;
+        for (k, node) in &mut incoming.walk {
+            match (node, self.walk.get(k)) {
+                // Object over object: the merged one holds the children of both.
+                (Node::Obj { kids }, Some(Node::Obj { kids: had })) => *kids |= *had,
+                _ => self.remove_subtree(k),
             }
         }
         self.walk.extend(incoming.walk);
         for (k, node) in incoming.own {
-            if !(matches!(node, Node::Obj) && matches!(self.own.get(&k), Some(Node::Obj))) {
+            let both_obj = matches!(node, Node::Obj { .. })
+                && matches!(self.own.get(&k), Some(Node::Obj { .. }));
+            if !both_obj {
                 self.own.insert(k, node);
             }
         }

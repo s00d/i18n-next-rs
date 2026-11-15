@@ -1,2 +1,135 @@
 pub mod i18n_next
+#[non_exhaustive] pub enum i18n_next::Arg<'a>
+pub i18n_next::Arg::Bool(bool)
+pub i18n_next::Arg::Float(f64)
+pub i18n_next::Arg::Int(i64)
+pub i18n_next::Arg::Null
+pub i18n_next::Arg::Str(&'a str)
+impl core::convert::From<bool> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(bool) -> Self
+impl core::convert::From<f64> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(f64) -> Self
+impl core::convert::From<i32> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i32) -> Self
+impl core::convert::From<i64> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i64) -> Self
+impl core::convert::From<u32> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(u32) -> Self
+impl<'a> core::clone::Clone for i18n_next::Arg<'a>
+pub fn i18n_next::Arg<'a>::clone(&self) -> i18n_next::Arg<'a>
+impl<'a> core::cmp::PartialEq for i18n_next::Arg<'a>
+pub fn i18n_next::Arg<'a>::eq(&self, &i18n_next::Arg<'a>) -> bool
+impl<'a> core::convert::From<&'a alloc::string::String> for i18n_next::Arg<'a>
+pub fn i18n_next::Arg<'a>::from(&'a alloc::string::String) -> Self
+impl<'a> core::convert::From<&'a str> for i18n_next::Arg<'a>
+pub fn i18n_next::Arg<'a>::from(&'a str) -> Self
+impl<'a> core::fmt::Debug for i18n_next::Arg<'a>
+pub fn i18n_next::Arg<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for i18n_next::Arg<'a>
+impl<'a> core::marker::StructuralPartialEq for i18n_next::Arg<'a>
+#[non_exhaustive] pub enum i18n_next::Error
+pub i18n_next::Error::Config
+pub i18n_next::Error::Config::path: alloc::string::String
+pub i18n_next::Error::Config::reason: &'static str
+pub i18n_next::Error::DisabledLocale(alloc::string::String)
+pub i18n_next::Error::Io
+pub i18n_next::Error::Io::path: alloc::string::String
+pub i18n_next::Error::Io::source: core::io::error::Error
+pub i18n_next::Error::Json
+pub i18n_next::Error::Json::kind: &'static str
+pub i18n_next::Error::Json::offset: usize
+pub i18n_next::Error::Json::path: alloc::string::String
+pub i18n_next::Error::NotObject
+pub i18n_next::Error::NotObject::path: alloc::string::String
+pub i18n_next::Error::UnknownLocale(alloc::string::String)
+pub i18n_next::Error::UnknownPage(alloc::string::String)
+impl core::error::Error for i18n_next::Error
+pub fn i18n_next::Error::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for i18n_next::Error
+pub fn i18n_next::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for i18n_next::Error
+pub fn i18n_next::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::Args<'a>
+impl<'a> i18n_next::Args<'a>
+pub fn i18n_next::Args<'a>::arg(self, &'a str, impl core::convert::Into<i18n_next::Arg<'a>>) -> Self
+pub fn i18n_next::Args<'a>::bool(self, &'a str, bool) -> Self
+pub fn i18n_next::Args<'a>::float(self, &'a str, f64) -> Self
+pub fn i18n_next::Args<'a>::int(self, &'a str, i64) -> Self
+pub fn i18n_next::Args<'a>::list<I>(I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::Into<i18n_next::Arg<'a>>
+pub const fn i18n_next::Args<'a>::new() -> Self
+pub fn i18n_next::Args<'a>::null(self, &'a str) -> Self
+pub fn i18n_next::Args<'a>::or(self, &'a str) -> Self
+pub fn i18n_next::Args<'a>::str(self, &'a str, &'a str) -> Self
+impl core::default::Default for i18n_next::Args<'_>
+pub fn i18n_next::Args<'_>::default() -> Self
+impl<'a> core::clone::Clone for i18n_next::Args<'a>
+pub fn i18n_next::Args<'a>::clone(&self) -> i18n_next::Args<'a>
+impl<'a> core::fmt::Debug for i18n_next::Args<'a>
+pub fn i18n_next::Args<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::Builder
+impl i18n_next::Builder
+pub fn i18n_next::Builder::build(self) -> core::result::Result<i18n_next::I18n, i18n_next::Error>
+pub fn i18n_next::Builder::config(self, impl core::convert::AsRef<std::path::Path>) -> Self
+pub fn i18n_next::Builder::config_json(self, &str) -> Self
+pub fn i18n_next::Builder::dir(self, impl core::convert::AsRef<std::path::Path>) -> Self
+pub fn i18n_next::Builder::fallback(self, &str) -> Self
+pub fn i18n_next::Builder::fallback_for(self, &str, &str) -> Self
+pub fn i18n_next::Builder::files<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
+pub fn i18n_next::Builder::iso(self, &str, &str) -> Self
+pub fn i18n_next::Builder::locale(self, &str) -> Self
+pub fn i18n_next::Builder::messages(self, &str, core::option::Option<&str>, &str) -> Self
+pub fn i18n_next::Builder::missing(self, impl core::ops::function::Fn(&str, &str, &str) + core::marker::Send + core::marker::Sync + 'static) -> Self
+pub fn i18n_next::Builder::page_alias(self, &str, &str) -> Self
+pub fn i18n_next::Builder::pages(self, bool) -> Self
+impl core::default::Default for i18n_next::Builder
+pub fn i18n_next::Builder::default() -> i18n_next::Builder
+impl core::fmt::Debug for i18n_next::Builder
+pub fn i18n_next::Builder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::I18n
+impl i18n_next::I18n
+pub fn i18n_next::I18n::add_messages(&self, &str, core::option::Option<&str>, &str) -> core::result::Result<(), i18n_next::Error>
+pub fn i18n_next::I18n::builder() -> i18n_next::Builder
+pub fn i18n_next::I18n::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
+pub fn i18n_next::I18n::has(&self, &str) -> bool
+pub fn i18n_next::I18n::locale(&self) -> alloc::string::String
+pub fn i18n_next::I18n::locales(&self) -> alloc::vec::Vec<i18n_next::LocaleInfo>
+pub fn i18n_next::I18n::page(&self, &str) -> i18n_next::View
+pub fn i18n_next::I18n::pages(&self) -> alloc::vec::Vec<alloc::string::String>
+pub fn i18n_next::I18n::set_locale(&self, &str) -> core::result::Result<(), i18n_next::Error>
+pub fn i18n_next::I18n::t(&self, &str) -> alloc::string::String
+pub fn i18n_next::I18n::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
+pub fn i18n_next::I18n::try_t(&self, &str) -> core::option::Option<alloc::string::String>
+pub fn i18n_next::I18n::version(&self) -> u64
+pub fn i18n_next::I18n::with_locale(&self, &str) -> i18n_next::View
+impl core::clone::Clone for i18n_next::I18n
+pub fn i18n_next::I18n::clone(&self) -> i18n_next::I18n
+impl core::fmt::Debug for i18n_next::I18n
+pub fn i18n_next::I18n::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct i18n_next::LocaleInfo
+pub i18n_next::LocaleInfo::code: alloc::string::String
+pub i18n_next::LocaleInfo::dir: core::option::Option<alloc::string::String>
+pub i18n_next::LocaleInfo::display_name: core::option::Option<alloc::string::String>
+pub i18n_next::LocaleInfo::iso: core::option::Option<alloc::string::String>
+impl core::clone::Clone for i18n_next::LocaleInfo
+pub fn i18n_next::LocaleInfo::clone(&self) -> i18n_next::LocaleInfo
+impl core::cmp::Eq for i18n_next::LocaleInfo
+impl core::cmp::PartialEq for i18n_next::LocaleInfo
+pub fn i18n_next::LocaleInfo::eq(&self, &i18n_next::LocaleInfo) -> bool
+impl core::fmt::Debug for i18n_next::LocaleInfo
+pub fn i18n_next::LocaleInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for i18n_next::LocaleInfo
+pub struct i18n_next::View
+impl i18n_next::View
+pub fn i18n_next::View::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
+pub fn i18n_next::View::has(&self, &str) -> bool
+pub fn i18n_next::View::locale(&self) -> alloc::string::String
+pub fn i18n_next::View::page(&self, &str) -> i18n_next::View
+pub fn i18n_next::View::t(&self, &str) -> alloc::string::String
+pub fn i18n_next::View::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
+pub fn i18n_next::View::try_t(&self, &str) -> core::option::Option<alloc::string::String>
+pub fn i18n_next::View::with_locale(&self, &str) -> i18n_next::View
+impl core::clone::Clone for i18n_next::View
+pub fn i18n_next::View::clone(&self) -> i18n_next::View
+impl core::fmt::Debug for i18n_next::View
+pub fn i18n_next::View::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub fn i18n_next::version() -> &'static str

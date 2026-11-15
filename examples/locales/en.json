@@ -4,5 +4,6 @@
     "settings": "Settings"
   },
   "greeting": "Hello, {name}!",
+  "footer": "Made with i18n-next",
   "apples": "no apples | one apple | {count} apples"
 }

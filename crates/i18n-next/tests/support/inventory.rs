@@ -420,7 +420,45 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
             let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../api/{c}.txt"));
             public_fns(&fs::read_to_string(path).unwrap())
         };
-        assert_eq!(api("i18n-next"), set(&["version"]));
+        assert_eq!(
+            api("i18n-next"),
+            set(&[
+                "add_messages",
+                "arg",
+                "bool",
+                "build",
+                "builder",
+                "config",
+                "config_json",
+                "dir",
+                "fallback",
+                "fallback_for",
+                "files",
+                "float",
+                "get",
+                "has",
+                "int",
+                "iso",
+                "list",
+                "locale",
+                "locales",
+                "messages",
+                "missing",
+                "new",
+                "null",
+                "or",
+                "page",
+                "page_alias",
+                "pages",
+                "set_locale",
+                "str",
+                "t",
+                "t_with",
+                "try_t",
+                "version",
+                "with_locale",
+            ])
+        );
         assert_eq!(api("tauri-plugin-i18n-next"), set(&["init", "ping"]));
     }
 }

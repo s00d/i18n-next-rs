@@ -10,8 +10,14 @@ mod number;
 /// named formats of an `i18n.json`, when Rust formats the same, then every line matches.
 #[test]
 fn number_goldens_match_intl() {
+    // `num_name` lines (5.1k) run only with `currency-names` (CI: its own nextest step)
+    let floor = if cfg!(feature = "currency-names") {
+        45_000
+    } else {
+        39_900
+    };
     match number::run(number::NUMBER) {
-        Ok(n) => assert!(n > 39_000, "only {n} lines ran"),
+        Ok(n) => assert!(n > floor, "only {n} lines ran"),
         Err(diff) => panic!("number.md differs:\n{diff}"),
     }
 }
@@ -34,5 +40,20 @@ fn locales_resolve_like_intl() {
     match number::run(number::LOCALES) {
         Ok(n) => assert!(n > 2_000, "only {n} lines ran"),
         Err(diff) => panic!("number-locales.md differs:\n{diff}"),
+    }
+}
+
+/// Given a build with every locale (`I18N_NEXT_LOCALES=all`, its own CI step), when each tag
+/// derived from CLDR (and each alias, `ku-IQ` to the root) is a locale's `iso`, then it formats
+/// as `Intl` does, and every locale's `language_name` is its autonym or `None` (`ff-Latn`
+/// resets its parent's): the data and resolution below the `modern` set.
+#[test]
+fn all_locales_resolve_like_intl() {
+    if option_env!("I18N_NEXT_LOCALES") != Some("all") {
+        return;
+    }
+    match number::run(number::LOCALES_ALL) {
+        Ok(n) => assert!(n > 2_800, "only {n} lines ran"),
+        Err(diff) => panic!("number-locales-all.md differs:\n{diff}"),
     }
 }

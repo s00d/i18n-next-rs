@@ -31,9 +31,10 @@ What the JS library does, recorded so the Rust crate can be checked against it l
 | `text/` | the catalog of `text.md` |
 | `__golden__/text.md` | `resolveText` (the props of `<i18n-t>`: params, plural, defaultValue, html, hideIfEmpty, named `customPluralRule` stand-ins) as `<i18n-t>` shows it, the `missing` calls, and `foldTemplate` with slots |
 | `__golden__/plural-categories.md` | `Intl.PluralRules` itself, written by `scripts/cldr.mjs` (`pnpm -C scripts cldr`): the oracle of `tests/plural_props.rs` |
-| `__golden__/number.md` | `Intl.NumberFormat` through `FormatService.formatNumber` (22 locales × 36 values × 50 option sets, `num_name` for `currencyDisplay: name`) and named formats through `BaseI18n.tn` on the `i18n.json` of `number_config()` |
+| `__golden__/number.md` | `Intl.NumberFormat` through `FormatService.formatNumber` (22 locales × 36 values × 50 option sets, compact forms by plural, `num_name` for `currencyDisplay: name`) and named formats through `BaseI18n.tn` on the `i18n.json` of `number_config()` |
 | `__golden__/number-props.md` | 20 000 seeded random values × CLDR `modern` locales × supported options, the oracle of the property run in `tests/number_compat.rs` |
 | `__golden__/number-locales.md` | tag resolution (`locale(tag)`: a fixed set of formats) and autonyms, written by `scripts/cldr.mjs` |
+| `__golden__/number-locales-all.md` | the same for every tag and every locale ICU has: read by `tests/number_compat.rs` in a build with `I18N_NEXT_LOCALES=all` |
 
 ## File format
 
@@ -220,6 +221,20 @@ tag). Results are spelled as Rust `t` returns them: numbers and booleans as stri
 Not recorded: the warnings (`warn`). JS warns once per root cause in object-key order; Rust reports each
 message left as written once through `missing` and lists every failing link in `check()`. Known difference,
 not copied: `@:list.length` reads the JS `length` of an array.
+
+### `number.md`, `number-locales.md`
+
+`num(…)` / `num_name(…)` lines are `FormatService.formatNumber`, `locale(tag)` the formats of the header line
+for a locale whose `iso` is `tag`, `autonym(locale)` `language_name`. Known differences, left out of the
+goldens:
+
+- `currencyDisplay: name` where ICU shows the number with the currency symbol (`en-DE`, `en-BE` and the other
+  English locales of Europe) and currency spacing goes in between (a symbol of letters: `CHF`, an unknown
+  `XYZ`): ICU puts the name one character early, `CHF 1,391,522.0 Swiss francs0`. Rust writes `CHF 1,391,522.00
+  Swiss francs`: the layout ICU uses for every other currency there, not its index slip.
+- `en-US-POSIX` and `-u-va-posix` after `en-US`: ICU has an own `en_US_POSIX` (no grouping, `INF`, `-€ 0.50`);
+  Rust formats them as `en-US` (variants and `-u-` keywords other than aliases are not read).
+- `-u-nu-` and the other extensions of a tag are not read (`ar-EG-u-nu-latn` keeps Arabic digits).
 
 ## Contract for Rust
 

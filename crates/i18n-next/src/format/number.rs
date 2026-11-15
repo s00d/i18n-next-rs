@@ -111,6 +111,46 @@ impl Decimal {
         (int, frac)
     }
 
+    /// The value, correctly rounded (`digits` `e` exponent through the `f64` parser; no heap).
+    fn value(&self) -> f64 {
+        let mut buf = [0u8; 40];
+        let len = self.len.min(self.digits.len());
+        if let (Some(dst), Some(src)) = (buf.get_mut(..len), self.digits.get(..len)) {
+            dst.copy_from_slice(src);
+        }
+        let mut at = len;
+        let mut exp = self.n - len as i32;
+        if let Some(b) = buf.get_mut(at) {
+            *b = b'e';
+        }
+        at += 1;
+        if exp < 0 {
+            if let Some(b) = buf.get_mut(at) {
+                *b = b'-';
+            }
+            at += 1;
+            exp = -exp;
+        }
+        let start = at;
+        loop {
+            if let Some(b) = buf.get_mut(at) {
+                *b = b'0' + (exp % 10) as u8;
+            }
+            at += 1;
+            exp /= 10;
+            if exp == 0 {
+                break;
+            }
+        }
+        if let Some(e) = buf.get_mut(start..at) {
+            e.reverse();
+        }
+        std::str::from_utf8(buf.get(..at).unwrap_or(&[]))
+            .ok()
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(0.0)
+    }
+
     /// The plural operands of the number as shown with `frac` fraction digits.
     fn operands(&self, frac: i32) -> Operands {
         const I_MOD: u64 = 1_000_000_000_000_000_000;
@@ -129,8 +169,14 @@ impl Decimal {
         for k in 1..=w as i32 {
             t = t * 10 + u64::from(self.digit(-k) - b'0');
         }
-        // `n` only feeds range checks: integer part plus the first fraction digits suffice.
-        let n = i as f64 + f as f64 / 10f64.powi(frac.min(18));
+        // `n` is the value as a double (ICU's `toDouble`): integer part plus the first fraction
+        // digits; past 10^18 (`i` keeps the last 18 digits) the digits read as an `f64`, so
+        // `1e21` is no `n = 0` (`ro`: `other`, not `few`)
+        let n = if self.n > 18 {
+            self.value()
+        } else {
+            i as f64 + f as f64 / 10f64.powi(frac.min(18))
+        };
         Operands {
             n,
             i: i % I_MOD,
@@ -175,7 +221,14 @@ fn digit_table(loc: &Loc) -> [&'static str; 10] {
 /// ICU `currencySpacing` match `[[:^S:]&[:^Z:]]`: not a symbol nor a separator. The symbols
 /// and separators that start or end a currency symbol of CLDR are in `EDGE`.
 fn spaced(c: Option<char>) -> bool {
-    c.is_some_and(|c| !c.is_whitespace() && !data::EDGE.contains(c))
+    c.is_some_and(|c| match u8::try_from(c) {
+        // ASCII: a byte search (no char decoding of `EDGE`, whose other chars are not ASCII)
+        Ok(b) if b.is_ascii() => {
+            b.is_ascii_alphanumeric()
+                || !(b.is_ascii_whitespace() || b == 0x0b || data::EDGE.as_bytes().contains(&b))
+        }
+        _ => !c.is_whitespace() && !data::EDGE.contains(c),
+    })
 }
 
 /// Writes `affix`, `¤` replaced by `cur`; `prefix`: the number follows (spacing on the
@@ -320,7 +373,7 @@ pub(crate) fn write(v: f64, o: &NumberOptions, loc: &Loc, out: &mut dyn fmt::Wri
         let cat = if shown.special.is_some() {
             Category::Other
         } else {
-            plural::select(data::s(loc.name), &shown.d.operands(shown.frac))
+            plural::select_rule(loc.plural, &shown.d.operands(shown.frac))
         };
         let unit = |c: Category| loc.units.get(c as usize).copied().filter(|&u| u != 0);
         let pattern = data::s(unit(cat).or_else(|| unit(Category::Other)).unwrap_or(0));
@@ -361,17 +414,22 @@ fn prepare<'a>(v: f64, o: &'a NumberOptions, loc: &Loc) -> Shown<'a> {
     } else {
         None
     };
-    let own_pat = rec
-        .filter(|c| c.pattern != u16::MAX && o.display != Display::Name)
-        .map(|c| c.pattern);
+    let own_pat = rec.filter(|c| c.pattern != u16::MAX).map(|c| c.pattern);
+    // `currencyDisplay: name` shows the number by the decimal pattern, unless the currency has
+    // its own format (`EUR` in `en-150`) or the locale shows the symbol there (`en-DE`), as ICU
+    let display = match o.display {
+        #[cfg(feature = "currency-names")]
+        Display::Name if own_pat.is_some() || loc.name_cur => Display::Symbol,
+        d => d,
+    };
     let pat: &Pat = PATTERNS
-        .get(usize::from(match (o.style, o.display) {
+        .get(usize::from(match (o.style, display) {
             (Style::Percent, _) => loc.percent_pat,
             (Style::Currency, Display::Name) | (Style::Decimal, _) => loc.decimal_pat,
             (Style::Currency, _) => own_pat.unwrap_or(loc.currency_pat),
         }))
         .unwrap_or(&PATTERNS[0]);
-    let cur = match (o.style, o.display) {
+    let cur = match (o.style, display) {
         (Style::Currency, Display::Symbol) => symbol(rec, &o.currency, false),
         (Style::Currency, Display::Narrow) => symbol(rec, &o.currency, true),
         (Style::Currency, Display::Code) => code_str(&o.currency),
@@ -445,7 +503,7 @@ fn prepare<'a>(v: f64, o: &'a NumberOptions, loc: &Loc) -> Shown<'a> {
         }
         let mag = if d.is_zero() { 0 } else { d.n - 1 - mult };
         let (_, frac) = d.shape(o.min_int, o.min_frac);
-        let cat = plural::select(data::s(loc.name), &d.operands(frac));
+        let cat = plural::select_rule(loc.plural, &d.operands(frac));
         if let Some(c) = compact_pattern(list, mag, cat) {
             (shown.pp, shown.ps) = if negative {
                 (data::s(c.np), data::s(c.ns))

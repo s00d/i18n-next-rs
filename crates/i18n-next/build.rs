@@ -31,11 +31,14 @@ struct Raw {
     names: Vec<(String, u8, String)>,
 }
 
-struct File {
+pub(crate) struct File {
     modern: Vec<String>,
     edge: String,
     fractions: Vec<(String, u8)>,
-    aliases: Vec<(String, String)>,
+    /// key (`iw`, `hy-arevmda`), replacement, applies to the bare lowercase key too
+    aliases: Vec<(String, String, bool)>,
+    /// default numbering systems other than `latn`: name, digits
+    numbering: Vec<(String, String)>,
     regions: Vec<(String, String)>,
     scripts: Vec<(String, String)>,
     locales: BTreeMap<String, Raw>,
@@ -47,12 +50,13 @@ fn cat(s: &str) -> u8 {
         .unwrap_or_else(|| panic!("plural category {s}")) as u8
 }
 
-fn parse(text: &str, names: Option<&str>) -> File {
+pub(crate) fn parse(text: &str, names: Option<&str>) -> File {
     let mut f = File {
         modern: Vec::new(),
         edge: String::new(),
         fractions: Vec::new(),
         aliases: Vec::new(),
+        numbering: Vec::new(),
         regions: Vec::new(),
         scripts: Vec::new(),
         locales: BTreeMap::new(),
@@ -72,7 +76,12 @@ fn parse(text: &str, names: Option<&str>) -> File {
                 "fraction" => f
                     .fractions
                     .push((words[0].into(), words[1].parse().unwrap())),
-                "alias" => f.aliases.push((words[0].into(), words[1].into())),
+                "alias" => f.aliases.push((
+                    words[0].into(),
+                    words[1].into(),
+                    words.get(2) == Some(&"lone"),
+                )),
+                "numbering" => f.numbering.push((words[0].into(), words[1].into())),
                 "region" => f.regions.push((words[0].into(), words[1].into())),
                 "script" => f.scripts.push((words[0].into(), words[1].into())),
                 "locale" => {
@@ -295,23 +304,62 @@ fn resolve(f: &File, name: &str, memo: &mut HashMap<String, Resolved>) -> Resolv
     r
 }
 
-/// The data locale a requested tag names: exact, then (as `format/locale.rs`) the script the
-/// region implies, then shorter.
-fn find(f: &File, tag: &str) -> Option<String> {
+/// The data locale a requested tag names, as `format/locale.rs` resolves it at run time:
+/// language aliases (`iw` → `he`, `hy-arevmda` → `hyw`), region aliases, the script the region
+/// implies (`-`: the root), then exact, `lang-Script`, `lang-REGION`, `lang`.
+pub(crate) fn find(f: &File, tag: &str) -> Option<String> {
     let tag = tag.trim().replace('_', "-");
     let mut parts = tag.split('-');
-    let lang = parts.next()?.to_ascii_lowercase();
+    let mut lang = parts.next()?.to_ascii_lowercase();
     let (mut script, mut region) = (None, None);
+    let mut variants = Vec::new();
     for p in parts {
-        if p.len() == 4 && p.bytes().all(|b| b.is_ascii_alphabetic()) && script.is_none() {
+        if p.len() == 1 {
+            break;
+        }
+        if p.len() == 4
+            && p.bytes().all(|b| b.is_ascii_alphabetic())
+            && script.is_none()
+            && region.is_none()
+            && variants.is_empty()
+        {
             script = Some(format!(
                 "{}{}",
                 p[..1].to_ascii_uppercase(),
                 p[1..].to_ascii_lowercase()
             ));
-        } else if matches!(p.len(), 2 | 3) && region.is_none() {
+        } else if matches!(p.len(), 2 | 3) && region.is_none() && variants.is_empty() {
             region = Some(p.to_ascii_uppercase());
+        } else {
+            variants.push(p.to_ascii_lowercase());
         }
+    }
+    let alias = variants
+        .iter()
+        .find_map(|v| {
+            let key = format!("{lang}-{v}");
+            f.aliases.iter().find(|(k, ..)| *k == key)
+        })
+        .or_else(|| {
+            f.aliases
+                .iter()
+                .find(|(k, _, lone)| *k == lang && (*lone || tag != lang))
+        });
+    if let Some((_, to, _)) = alias {
+        let mut to = to.split('-');
+        lang = to.next().unwrap_or("").to_owned();
+        for p in to {
+            if p.len() == 4 && script.is_none() {
+                script = Some(p.to_owned());
+            } else if region.is_none() {
+                region = Some(p.to_owned());
+            }
+        }
+    }
+    if let Some(r) = &region
+        && let Some((_, to)) = f.regions.iter().find(|(k, _)| k == r)
+    {
+        region = Some(to.clone());
     }
     if script.is_none()
         && let Some(r) = &region
@@ -322,6 +370,9 @@ fn find(f: &File, tag: &str) -> Option<String> {
             .iter()
             .find(|(k, _)| *k == key)
             .map(|(_, s)| s.clone());
+    }
+    if script.as_deref() == Some("-") {
+        return Some("und".into());
     }
     let mut cands = Vec::new();
     if let (Some(s), Some(r)) = (&script, &region) {
@@ -335,6 +386,34 @@ fn find(f: &File, tag: &str) -> Option<String> {
     }
     cands.push(lang);
     cands.into_iter().find(|c| f.locales.contains_key(c))
+}
+
+/// `(key, row)` pairs sorted by key (which is byte order of the names): the length, the keys
+/// and the rows, as two arrays (a `(u128, u16)` pair would pad to 32 bytes).
+fn keyed(list: Vec<(&str, String)>) -> (usize, String, String) {
+    let mut sorted: Vec<(u128, String)> = list.into_iter().map(|(k, v)| (key(k), v)).collect();
+    sorted.sort();
+    let keys = sorted
+        .iter()
+        .map(|(k, _)| format!("{k:#x}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rows = sorted
+        .iter()
+        .map(|(_, v)| v.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    (sorted.len(), keys, rows)
+}
+
+/// A name of at most 16 bytes as a number that sorts like its bytes (big-endian, zero-padded):
+/// `format/locale.rs` binary-searches these.
+fn key(name: &str) -> u128 {
+    let b = name.as_bytes();
+    assert!(b.len() <= 16, "{name}: over 16 bytes, no key");
+    let mut a = [0u8; 16];
+    a[..b.len()].copy_from_slice(b);
+    u128::from_be_bytes(a)
 }
 
 fn main() {
@@ -362,7 +441,8 @@ fn main() {
         list => {
             for tag in list.split(',').filter(|t| !t.trim().is_empty()) {
                 match find(&f, tag) {
-                    Some(l) if l != "und" => {
+                    // `und` only where a tag's region leads ICU to the root (`ku-IQ`)
+                    Some(l) if l != "und" || !tag.trim().eq_ignore_ascii_case("und") => {
                         selected.insert(l);
                     }
                     _ => panic!(
@@ -475,19 +555,19 @@ fn main() {
         let min_grouping: u8 = get("minGrouping").parse().unwrap_or(1);
         let units_field = if names {
             format!(
-                ", units: {units:?}, names: {names_at}, names_len: {}",
-                names_out.len() - names_at
+                ", units: {units:?}, names: {names_at}, names_len: {}, name_cur: {}",
+                names_out.len() - names_at,
+                get("nameCurrency") == "1"
             )
         } else {
             String::new()
         };
         writeln!(
             locs,
-            "    Loc {{ name: {}, parent: {parent}, digits: {}, decimal: {}, group: {}, cur_decimal: {}, cur_group: {}, nan: {}, infinity: {}, \
+            "    Loc {{ parent: {parent}, digits: {}, decimal: {}, group: {}, cur_decimal: {}, cur_group: {}, nan: {}, infinity: {}, \
              decimal_pat: {decimal_pat}, percent_pat: {percent_pat}, currency_pat: {currency_pat}, \
              min_grouping: {min_grouping}, compact: {compact_at}, compact_len: {}, currencies: {cur_at}, \
-             currencies_len: {}, autonym: {}{units_field} }},",
-            s.add(l),
+             currencies_len: {}, autonym: {}, plural: {}{units_field} }},",
             s.add(get("digits")),
             s.add(get("decimal")),
             s.add(get("group")),
@@ -498,6 +578,7 @@ fn main() {
             entries.len(),
             currencies.len() - cur_at,
             s.add(get("name")),
+            get("plural").parse::<u8>().expect("plural rule of a locale"),
         )
         .unwrap();
     }
@@ -515,18 +596,45 @@ fn main() {
         )
         .unwrap();
     }
-    let pair_table = |s: &mut Strings, list: &[(String, String)]| -> String {
-        let mut sorted = list.to_vec();
-        sorted.sort();
-        sorted
-            .iter()
-            .map(|(k, v)| format!("({}, {})", s.add(k), s.add(v)))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let aliases = pair_table(&mut s, &f.aliases);
-    let regions = pair_table(&mut s, &f.regions);
-    let scripts = pair_table(&mut s, &f.scripts);
+    // Tables searched by `key`, replacement strings interned.
+    // Only rows that can change which selected locale a tag gets: an alias from or to a
+    // selected language, a script of one, a region alias onto a region they use.
+    let lang_of = |t: &str| t.split('-').next().unwrap_or("").to_owned();
+    let langs: BTreeSet<String> = order.iter().map(|l| lang_of(l)).collect();
+    let alias_rows: Vec<(&str, String)> = f
+        .aliases
+        .iter()
+        .filter(|(k, v, _)| langs.contains(&lang_of(k)) || langs.contains(&lang_of(v)))
+        .map(|(k, v, lone)| (k.as_str(), format!("({}, {lone})", s.add(v))))
+        .collect();
+    let (aliases_len, alias_keys, aliases) = keyed(alias_rows);
+    let script_rows: Vec<(&str, String)> = f
+        .scripts
+        .iter()
+        .filter(|(k, _)| langs.contains(&lang_of(k)))
+        .map(|(k, v)| (k.as_str(), s.add(v).to_string()))
+        .collect();
+    let used_regions: BTreeSet<&str> = order
+        .iter()
+        .flat_map(|l| l.split('-').skip(1))
+        .chain(script_rows.iter().filter_map(|(k, _)| k.split('-').nth(1)))
+        .collect();
+    let region_rows: Vec<(&str, String)> = f
+        .regions
+        .iter()
+        .filter(|(_, v)| used_regions.contains(v.as_str()))
+        .map(|(k, v)| (k.as_str(), s.add(v).to_string()))
+        .collect();
+    let (regions_len, region_keys, regions) = keyed(region_rows);
+    let (scripts_len, script_keys, scripts) = keyed(script_rows);
+    // the numbering systems of the selected locales' digits (`numberingSystem` at its default)
+    let mut numbering: Vec<(u32, u32)> = Vec::new();
+    for (name, digits) in &f.numbering {
+        if let Some(&d) = s.index.get(digits) {
+            numbering.push((d, s.add(name)));
+        }
+    }
+    numbering.sort();
     assert!(s.ends.len() <= u16::MAX as usize, "more than 65535 strings");
     assert!(order.len() < u16::MAX as usize, "too many locales");
 
@@ -575,21 +683,34 @@ fn main() {
     );
     let _ = writeln!(
         out,
-        "pub(crate) static ALIASES: [(u16, u16); {}] = [{aliases}];",
-        f.aliases.len()
+        "pub(crate) static ALIASES_KEYS: [u128; {aliases_len}] = [{alias_keys}];\npub(crate) static ALIASES: [(u16, bool); {aliases_len}] = [{aliases}];"
     );
     let _ = writeln!(
         out,
-        "pub(crate) static REGIONS: [(u16, u16); {}] = [{regions}];",
-        f.regions.len()
+        "pub(crate) static REGIONS_KEYS: [u128; {regions_len}] = [{region_keys}];\npub(crate) static REGIONS: [u16; {regions_len}] = [{regions}];"
     );
     let _ = writeln!(
         out,
-        "pub(crate) static SCRIPTS: [(u16, u16); {}] = [{scripts}];",
-        f.scripts.len()
+        "pub(crate) static SCRIPTS_KEYS: [u128; {scripts_len}] = [{script_keys}];\npub(crate) static SCRIPTS: [u16; {scripts_len}] = [{scripts}];"
     );
     let _ = writeln!(out, "pub(crate) static EDGE: &str = {:?};", f.edge);
     let _ = writeln!(out, "pub(crate) const EN: usize = {};", pos["en"]);
+    let _ = writeln!(out, "pub(crate) const UND: usize = {};", pos["und"]);
+    let _ = writeln!(
+        out,
+        "pub(crate) static LOCALE_KEYS: [u128; {}] = [{}];",
+        order.len(),
+        order
+            .iter()
+            .map(|l| format!("{:#x}", key(l)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let _ = writeln!(
+        out,
+        "pub(crate) static NUMBERING: [(u16, u16); {}] = {numbering:?};",
+        numbering.len()
+    );
     if names {
         let _ = writeln!(out, "pub(crate) static NAME_STR: &str = {:?};", ns.text);
         let _ = writeln!(

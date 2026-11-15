@@ -97,6 +97,153 @@ fn named_formats_by_truncated_code() {
     assert_eq!(i18n.tn_as(0.5, "p"), "50.0%");
 }
 
+/// Given option values `Intl` reads by `ToNumber`, `ToString` and `ToBoolean` (Node 22 output
+/// in the comments), when the catalog is built, then they format as `Intl` formats them: digit
+/// options from `"0x2"`, `""`, `null`, `true`, `[2]`; `useGrouping` off for `""`, `0`, `null`;
+/// the last of a repeated key; `compactDisplay` without compact and `numberingSystem` at the
+/// locale's default as no-ops. What `Intl` throws on stays an error.
+#[test]
+fn options_read_like_intl() {
+    let cases = [
+        // {"minimumFractionDigits":"0x2"}: 1,234.50
+        (r#"{"minimumFractionDigits": "0x2"}"#, 1234.5, "1,234.50"),
+        (r#"{"minimumFractionDigits": " 0b11 "}"#, 1.5, "1.500"),
+        (r#"{"minimumFractionDigits": ""}"#, 1234.5, "1,234.5"),
+        (r#"{"maximumFractionDigits": null}"#, 1234.5, "1,235"),
+        (r#"{"maximumFractionDigits": true}"#, 1234.56, "1,234.6"),
+        (r#"{"maximumFractionDigits": [2]}"#, 1.005, "1.01"),
+        (r#"{"maximumFractionDigits": [[1]]}"#, 1.25, "1.3"),
+        (r#"{"maximumFractionDigits": ".5"}"#, 1.5, "2"),
+        (r#"{"minimumIntegerDigits": "3"}"#, 7.0, "007"),
+        (r#"{"useGrouping": ""}"#, 1234567.891, "1234567.891"),
+        (r#"{"useGrouping": 0}"#, 1234567.891, "1234567.891"),
+        (r#"{"useGrouping": null}"#, 1234567.891, "1234567.891"),
+        (r#"{"useGrouping": ["always"]}"#, 1234.0, "1,234"),
+        (r#"{"useGrouping": "false"}"#, 1234.0, "1,234"),
+        (
+            r#"{"signDisplay": "never", "signDisplay": "auto"}"#,
+            -1.0,
+            "-1",
+        ),
+        (r#"{"style": "percent", "style": "decimal"}"#, 0.5, "0.5"),
+        (r#"{"style": ["percent"]}"#, 0.5, "50%"),
+        (
+            r#"{"compactDisplay": "long"}"#,
+            1234567.891,
+            "1,234,567.891",
+        ),
+        (r#"{"numberingSystem": "latn"}"#, 1234.5, "1,234.5"),
+        (r#"{"numberingSystem": "LATN"}"#, 1234.5, "1,234.5"),
+        (r#"{"roundingIncrement": "1"}"#, 1.5, "1.5"),
+    ];
+    for (options, v, want) in cases {
+        let i18n = I18n::builder()
+            .formats(&format!(r#"{{"en": {{"x": {options}}}}}"#))
+            .build()
+            .unwrap_or_else(|e| panic!("{options}: {e}"));
+        assert_eq!(i18n.tn_as(v, "x"), want, "{options}");
+    }
+    // the default numbering system of the format's locale, by its `iso`
+    let ar = I18n::builder()
+        .iso("ar", "ar-EG")
+        .formats(r#"{"ar": {"x": {"numberingSystem": "arab"}}}"#)
+        .build()
+        .unwrap();
+    assert_eq!(ar.with_locale("ar").tn_as(1234.5, "x"), "١٬٢٣٤٫٥");
+    // a format given again replaces the first, `numberingSystem` and all
+    let again = I18n::builder()
+        .formats(r#"{"en": {"x": {"numberingSystem": "arab"}}}"#)
+        .formats(r#"{"en": {"x": {"style": "percent"}}}"#)
+        .build()
+        .unwrap();
+    assert_eq!(again.tn_as(0.5, "x"), "50%");
+    for (locale, options, option) in [
+        ("en", r#"{"numberingSystem": "arab"}"#, "numberingSystem"),
+        ("ar", r#"{"numberingSystem": "latn"}"#, "numberingSystem"),
+        ("en", r#"{"numberingSystem": "ab"}"#, "numberingSystem"),
+        ("en", r#"{"compactDisplay": "foo"}"#, "compactDisplay"),
+        (
+            "en",
+            r#"{"minimumFractionDigits": "1_0"}"#,
+            "minimumFractionDigits",
+        ),
+        (
+            "en",
+            r#"{"minimumFractionDigits": "inf"}"#,
+            "minimumFractionDigits",
+        ),
+        (
+            "en",
+            r#"{"minimumFractionDigits": "Infinity"}"#,
+            "minimumFractionDigits",
+        ),
+        (
+            "en",
+            r#"{"minimumFractionDigits": [1, 2]}"#,
+            "minimumFractionDigits",
+        ),
+        (
+            "en",
+            r#"{"minimumFractionDigits": {}}"#,
+            "minimumFractionDigits",
+        ),
+        (
+            "en",
+            r#"{"maximumFractionDigits": "0x"}"#,
+            "maximumFractionDigits",
+        ),
+        (
+            "en",
+            r#"{"maximumFractionDigits": 100.5}"#,
+            "maximumFractionDigits",
+        ),
+        ("en", r#"{"useGrouping": 1}"#, "useGrouping"),
+        ("en", r#"{"useGrouping": []}"#, "useGrouping"),
+        ("en", r#"{"style": null}"#, "style"),
+        (
+            "en",
+            r#"{"signDisplay": "auto", "signDisplay": "never"}"#,
+            "signDisplay",
+        ),
+    ] {
+        let err = I18n::builder()
+            .iso("ar", "ar-EG")
+            .formats(&format!(r#"{{"{locale}": {{"x": {options}}}}}"#))
+            .build()
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("number format \"x\" of \"{locale}\": option \"{option}\" is not supported"),
+            "{options}"
+        );
+    }
+}
+
+/// Given tags ICU resolves its own way, when they are a locale's `iso`, then they format as
+/// `Intl` does: a variant alias that leads to a language without data (`hy-arevmda` → `hyw`)
+/// formats as `en`, a region whose script ICU does not alias stays with the language (`az-IR`
+/// is `az`, Latin digits), `-u-` extensions are not read.
+#[test]
+fn tags_resolve_like_icu() {
+    let fmt = |tag: &str| {
+        I18n::builder()
+            .iso("t", tag)
+            .locale("t")
+            .build()
+            .unwrap()
+            .tn(-1234.5)
+    };
+    // Node 22: hy -1234,5; hy-arevmda → en -1,234.5; az-IR -1.234,5; bh → en
+    assert_eq!(fmt("hy"), "-1234,5");
+    assert_eq!(fmt("hy-arevmda"), "-1,234.5");
+    assert_eq!(fmt("hy-AM-arevmda"), "-1,234.5");
+    assert_eq!(fmt("hy-arevela"), "-1234,5");
+    assert_eq!(fmt("az-IR"), "-1.234,5");
+    assert_eq!(fmt("iw"), "\u{200e}-1,234.5");
+    // `bh-US` → `bho` (not `modern`): number-locales-all.md, in a build with every locale
+    assert_eq!(fmt("bh"), "-1,234.5");
+}
+
 /// Given locale codes that are no language tags, when numbers are formatted, then the
 /// `iso` decides (`ua` → `uk-UA`, `ar` → `ar-EG` with Arabic digits), a code without one is
 /// its own tag, and a tag `Intl` does not know formats as `en`.

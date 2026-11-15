@@ -783,6 +783,32 @@ for (const locale of NUM_LOCALES) {
     }
   }
 }
+// currencyDisplay "name" where ICU shows the number with the currency symbol (English in Europe,
+// `pt-CV`), a currency with its own format (`EUR` in `en-150` / `en-CH`), names ICU reads from
+// another locale (`sr-Cyrl-ME`: Latin), unit patterns by plural form (`ro`: `{0} de {1}`).
+// ICU's garble where currency spacing goes into such a number (`CHF 1,234.5 Swiss francs0`) is
+// a known difference (fixtures/compat/README.md): those lines are left out.
+const NAME_LOCALES = ['en-AT', 'en-BE', 'en-DE', 'en-EE', 'en-ES', 'en-FI', 'en-FR', 'en-IT', 'en-LT', 'en-LV', 'en-NL', 'en-PT', 'en-SI', 'en-SK', 'en-150', 'en-CH', 'sr-Cyrl-ME', 'sr-Latn-ME', 'pt-CV', 'ro']
+for (const locale of NAME_LOCALES) {
+  for (const v of [0, 1, 2, 5, 21, 1234.5, -1234.5, 1e21, NaN, -Infinity]) {
+    for (const currency of ['USD', 'EUR', 'JPY', 'GBP', 'CHF', 'XYZ']) {
+      const o = { style: 'currency', currency, currencyDisplay: 'name' }
+      const out = formatter.formatNumber(v, locale, o)
+      if (/\d$/u.test(out)) continue
+      numLines.push([`num_name(${s(locale)}, ${numLit(v)}, ${JSON.stringify(o)})`, s(out)])
+    }
+  }
+}
+// compact patterns that differ by plural form (`mn`: `1 мян.`, `2 мян`; `mk` at 10^11)
+const COMPACT_PLURAL = { ar: [1e3], 'ar-EG': [1e3], bn: [1e10], mk: [1e11], mn: [1e3, 1e4, 1e5], ps: [1e11], rm: [1e14], sw: [1e6, 1e7, 1e8, 1e12, 1e13, 1e14] }
+for (const [locale, mags] of Object.entries(COMPACT_PLURAL)) {
+  for (const m of mags) {
+    for (const k of [1, 1.5, 2, 3, 4, 5, 6, 10, 11, 21, -2]) {
+      const o = { notation: 'compact' }
+      numLines.push([`num(${s(locale)}, ${numLit(k * m)}, ${JSON.stringify(o)})`, s(formatter.formatNumber(k * m, locale, o))])
+    }
+  }
+}
 // an i18n.json: Rust builds it with `config_json`
 const NUMBER_CONFIG = {
   locales: [{ code: 'ar', iso: 'ar-EG' }, { code: 'ua', iso: 'uk-UA' }, { code: 'zh-tw', iso: 'zh-Hant-TW' }],

@@ -468,6 +468,9 @@ struct Tag<'a> {
     /// The replacement of the first variant with a `language-variant` alias
     /// (`aa-1996-saaho` → `ssy`), looked up as each variant is read.
     variant_alias: Option<&'static str>,
+    /// The variants as written (`1996-saaho`), `-`-separated.
+    #[cfg_attr(not(feature = "format"), allow(dead_code))]
+    variants: Option<&'a str>,
 }
 
 /// A variant subtag: 5..8 alphanumerics, or 4 starting with a digit.
@@ -506,6 +509,7 @@ fn parse(tag: &str) -> Option<Tag<'_>> {
         script: None,
         region: None,
         variant_alias: None,
+        variants: None,
     };
     // Where the variants start in `tag`: a new one is checked against those before it.
     let mut variants_at = None;
@@ -527,6 +531,7 @@ fn parse(tag: &str) -> Option<Tag<'_>> {
             if repeats(tag.get(start..at).unwrap_or(""), s) {
                 return None;
             }
+            out.variants = tag.get(start..at + s.len());
             if out.variant_alias.is_none() {
                 let mut key = Buf::<17>::of(out.language.as_str(), lower);
                 key.push("-", lower);
@@ -683,19 +688,33 @@ pub(crate) fn canonical_language<R>(tag: &str, f: impl FnOnce(&str) -> R) -> Opt
     })
 }
 
-/// The language (lowercase), script and region of a tag as written, `None` when `Intl`
-/// rejects it (the number formats, `format/locale.rs`, apply their own aliases).
+/// The parts of a tag the number formats read (`format/locale.rs` applies its own aliases).
 #[cfg(feature = "format")]
-pub(crate) fn subtags(tag: &str) -> Option<(Buf<8>, Option<&str>, Option<&str>)> {
-    let t = parse(tag)?;
-    Some((t.language, t.script, t.region))
+pub(crate) struct Subtags<'a> {
+    /// lowercase
+    pub(crate) language: Buf<8>,
+    pub(crate) script: Option<&'a str>,
+    pub(crate) region: Option<&'a str>,
+    /// `-`-separated, as written
+    pub(crate) variants: Option<&'a str>,
 }
 
-/// The category of `o` under the rules of an exact CLDR locale name (`None`: no rules,
-/// `other`): the plural forms of compact patterns and currency names.
+/// The language, script, region and variants of a tag, `None` when `Intl` rejects it.
 #[cfg(feature = "format")]
-pub(crate) fn select(locale: &str, o: &Operands) -> Category {
-    match rule_index(locale).and_then(|i| rules::RULES.get(i)) {
+pub(crate) fn subtags(tag: &str) -> Option<Subtags<'_>> {
+    let t = parse(tag)?;
+    Some(Subtags {
+        language: t.language,
+        script: t.script,
+        region: t.region,
+        variants: t.variants,
+    })
+}
+
+/// The category of `o` under rule set `rule` (`plural::RULES` index; none: `other`).
+#[cfg(feature = "format")]
+pub(crate) fn select_rule(rule: u8, o: &Operands) -> Category {
+    match rules::RULES.get(usize::from(rule)) {
         Some(r) => (r.select)(o),
         None => Category::Other,
     }

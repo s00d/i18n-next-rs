@@ -1,11 +1,11 @@
 //! The CLDR number data `build.rs` selected (DESIGN 2.4, 5.2): `&'static` tables, strings
 //! interned in one text (`STR`, `ENDS`), indices as `u16`. See `build.rs` for the layout.
 
-/// One locale: symbols, patterns (indices into [`PATTERNS`]), its compact list and its own
-/// currency symbols (the ones that differ from `parent`'s).
+/// One locale (its name: the key at the same index of `LOCALE_KEYS`): symbols, patterns
+/// (indices into [`PATTERNS`]), its compact list and its own currency symbols (the ones that
+/// differ from `parent`'s).
 #[derive(Debug)]
 pub(crate) struct Loc {
-    pub(crate) name: u16,
     /// Index into [`LOCALES`], `u16::MAX` for `und`.
     pub(crate) parent: u16,
     /// The ten digits of a non-Latin default numbering system, `""` for `latn`.
@@ -27,6 +27,9 @@ pub(crate) struct Loc {
     pub(crate) currencies_len: u16,
     /// The locale's own name (8b.14), `""` when ICU has none.
     pub(crate) autonym: u16,
+    /// The plural rule set of the locale (`plural::RULES`, `u8::MAX`: none, `other`): compact
+    /// patterns and currency names by plural form, resolved once by `scripts/cldr.mjs`.
+    pub(crate) plural: u8,
     /// `unitPattern-count-*` (`{0} {1}`) by category, `0` when absent.
     #[cfg(feature = "currency-names")]
     pub(crate) units: [u16; 6],
@@ -34,6 +37,10 @@ pub(crate) struct Loc {
     pub(crate) names: u32,
     #[cfg(feature = "currency-names")]
     pub(crate) names_len: u16,
+    /// `currencyDisplay: name` shows the number as `symbol` does (`en-DE`: `US$1,234.50 US
+    /// dollars`), not by the decimal pattern.
+    #[cfg(feature = "currency-names")]
+    pub(crate) name_cur: bool,
 }
 
 /// A parsed pattern: positive / negative prefix and suffix (signs in place, `¤` for the
@@ -83,6 +90,28 @@ pub(crate) struct Name {
 }
 
 include!(concat!(env!("OUT_DIR"), "/numbers.rs"));
+
+/// `name` (at most 16 bytes) as `build.rs` keys it: big-endian, zero-padded, so keys sort like
+/// the names. `LOCALE_KEYS`, `ALIASES`, `REGIONS` and `SCRIPTS` are sorted by it: one integer
+/// compare per binary-search step.
+#[inline]
+pub(crate) fn key(name: &str) -> Option<u128> {
+    let b = name.as_bytes();
+    let mut a = [0u8; 16];
+    a.get_mut(..b.len())?.copy_from_slice(b);
+    Some(u128::from_be_bytes(a))
+}
+
+/// The name of the numbering system of `digits` (a `Loc::digits`), `latn` for `""`.
+pub(crate) fn numbering(digits: u16) -> &'static str {
+    if digits == 0 {
+        return "latn";
+    }
+    NUMBERING
+        .iter()
+        .find(|&&(d, _)| d == digits)
+        .map_or("", |&(_, name)| s(name))
+}
 
 /// Interned string `i`.
 #[inline]

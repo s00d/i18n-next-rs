@@ -59,6 +59,17 @@ jobs:
       - name: Tests with serde (nextest)
         run: cargo nextest run -p i18n-next --locked --features serde --profile ci
 
+      # `currencyDisplay: name` and its 5.1k golden lines exist only with the feature.
+      - name: Tests with currency-names (nextest)
+        run: cargo nextest run -p i18n-next --locked --features currency-names --profile ci
+
+      # Every CLDR locale ICU has: tag resolution and autonyms below `modern`
+      # (number-locales-all.md; the test is a no-op in other builds).
+      - name: Number goldens with every locale (nextest)
+        env:
+          I18N_NEXT_LOCALES: all
+        run: cargo nextest run -p i18n-next --locked --test number_compat --profile ci
+
       # The micro build: no std-only, float or global code may leak into it.
       - name: Clippy (no default features)
         run: cargo clippy -p i18n-next --no-default-features --all-targets --locked -- -D warnings
@@ -285,7 +296,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -C scripts cldr
-      - run: git diff --exit-code crates/i18n-next/src/plural/rules.rs crates/i18n-next/src/format/data fixtures/compat/__golden__/plural-categories.md fixtures/compat/__golden__/number-locales.md
+      - run: git diff --exit-code crates/i18n-next/src/plural/rules.rs crates/i18n-next/src/format/data fixtures/compat/__golden__/plural-categories.md fixtures/compat/__golden__/number-locales.md fixtures/compat/__golden__/number-locales-all.md
       - run: pnpm -C scripts casing
       - run: git diff --exit-code crates/i18n-next/src/linked/case_data.rs
       - run: pnpm -C scripts compat

@@ -2021,9 +2021,6 @@ ZWD	other	Zimbabve dolları (1980–2008)
 ZWG	other	Zimbabve qızılı
 ZWL	other	Zimbabve dolları (2009)
 ZWR	other	Zimbabve dolları (2008)
-locale az-Arab und
-locale az-Arab-IQ az-Arab
-locale az-Arab-TR az-Arab
 locale az-Cyrl und
 locale az-Latn az
 locale ba und
@@ -3035,7 +3032,6 @@ ZWG	other	зімбабвійскага залатога
 ZWG	one	зімбабвійскі залаты
 ZWG	few	зімбабвійскія залатыя
 ZWG	many	зімбабвійскіх залатых
-locale be-tarask be
 locale bem und
 locale bez und
 AED	other	Lupila lwa Hufalme dza Huhihalabu
@@ -4135,7 +4131,6 @@ ZAR	other	sudafriki Randi
 ZMK	other	zambi Kwaca (1968–2012)
 ZMW	other	zambi Kwaca
 ZWD	other	zimbabuwe Dolar
-locale bm-Nkoo und
 locale bn und
 ADP	other	এ্যান্ডোরান পেসেতা
 AED	other	সংযুক্ত আরব আমিরাত দিরহাম
@@ -7712,7 +7707,6 @@ ZWL	one	dòlar zimbabuès (2009)
 ZWR	other	dòlars zimbabuesos (2008)
 ZWR	one	dòlar zimbabuès (2008)
 locale ca-AD ca
-locale ca-ES-valencia ca
 locale ca-FR ca
 locale ca-IT ca
 locale ccp und
@@ -13476,10 +13470,6 @@ ZWD	one	δολάριο Ζιμπάμπουε
 ZWG	other	Χρυσός της Ζιμπάμπουε
 ZWL	other	Δολάριο Ζιμπάμπουε (2009)
 locale el-CY el
-locale el-polyton el
-AOR	other	Kwanza Reajustado Ἀνγκόλας (1995–1999)
-ECV	other	Unidad de Valor Constante (UVC) Ἰσημερινοῦ
-MXV	other	Unidad de Inversion (UDI) Μεξικοῦ
 locale en und
 ADP	other	Andorran pesetas
 ADP	one	Andorran peseta
@@ -14187,7 +14177,6 @@ locale en-DE en-150
 locale en-DG en-001
 locale en-DK en-150
 locale en-DM en-001
-locale en-Dsrt und
 locale en-EE en-150
 locale en-ER en-001
 locale en-ES en-150
@@ -14292,7 +14281,6 @@ locale en-SL en-001
 locale en-SS en-001
 locale en-SX en-001
 locale en-SZ en-001
-locale en-Shaw und
 locale en-TC en-001
 locale en-TK en-001
 locale en-TO en-001
@@ -21697,8 +21685,6 @@ ZMK	other	Kuɗin Zambiya (1968–2012)
 ZMW	other	Kwacha na Zambiya
 ZWD	other	Dalar zimbabuwe
 ZWG	other	Zinaren Zimbabwe
-locale ha-Arab und
-locale ha-Arab-SD ha-Arab
 locale ha-GH ha
 locale ha-NE ha
 locale haw und
@@ -30183,8 +30169,6 @@ ZWL	other	dolarên zîmbabweyî (2009–2024)
 ZWL	one	dolarê zîmbabweyî (2009–2024)
 ZWR	other	dolarên zîmbabweyî (2008)
 ZWR	one	dolarê zîmbabweyî (2008)
-locale ku-Arab und
-locale ku-Arab-IR ku-Arab
 locale ku-Latn ku
 locale ku-Latn-IQ ku-Latn
 locale ku-Latn-SY ku-Latn
@@ -34308,28 +34292,6 @@ ZAR	other	Өмнөд Африкийн ранд
 ZMK	other	Замби квача (1968–2012)
 ZMW	other	Замбийн квача
 ZWG	other	Зимбабвегийн гоулд
-locale mn-Mong und
-BRL	other	бразил реал
-CNY	other	юань
-EUR	other	евро
-GBP	other	фунт стерлинг
-INR	other	рупи
-JPY	other	иен
-MNT	other	төгрөг
-RUB	other	рубль
-USD	other	ам. доллар
-locale mn-Mong-MN mn-Mong
-BRL	other	ᠪᠷᠠᠽᠢᠯ ᠤᠨ ᠷᠧᠠᠯ
-CNY	other	ᠬᠢᠲᠠᠳ ᠶᠤᠸᠠᠨ
-EUR	other	ᠶᠧᠸᠷᠣ
-GBP	other	ᠪᠷᠢᠲ᠋ᠠᠨᠢ ᠢᠢᠨ ᠫᠤᠢᠨᠳ᠋
-INR	other	ᠡᠨᠡᠳᠬᠡᠭ᠌ ᠷᠦᠫᠢ
-JPY	other	ᠶᠠᠫᠣᠨ ᠧᠨ
-MNT	other	ᠳᠥᠬᠥᠷᠢᠭ᠌
-RUB	other	ᠣᠷᠥᠰ ᠷᠥᠪᠯᠢ
-USD	other	ᠠᠮᠸᠷᠢᠻᠠ ᠳ᠋ᠣᠯᠯᠠᠷ
-XXX	other	(ᠲᠣᠳᠣᠷᠬᠠᠢ ᠥᠭᠡᠢ ᠮᠥᠩᠭᠥᠨ ᠲᠡᠮᠳᠡᠭᠳᠥ)
-XXX	one	ᠲᠣᠳᠣᠷᠬᠠᠢ ᠥᠭᠡᠢ ᠮᠥᠩᠭᠥᠨ ᠲᠡᠮᠳᠡᠭᠳᠥ ᠢᠢᠨ ᠨᠢᠭᠡᠴᠡ
 locale mni und
 BRL	other	ব্রাজিলিয়ান রেয়াল
 CNY	other	চাইনিজ য়ুআন
@@ -34341,7 +34303,6 @@ RUB	other	রুসিয়ান রুবল
 USD	other	য়ু এস দি
 XXX	other	মশকখংদবা করেন্সি
 locale mni-Beng mni
-locale mni-Mtei und
 locale mr und
 AED	other	संयुक्त अरब अमीरात दिरहॅम
 AFN	other	अफगाण अफगाणी
@@ -34802,8 +34763,6 @@ ZWD	other	Dolar Zimbabwe (1980–2008)
 ZWG	other	Emas Zimbabwe
 ZWL	other	Dolar Zimbabwe (2009)
 ZWR	other	Dolar Zimbabwe (2008)
-locale ms-Arab und
-locale ms-Arab-BN ms-Arab
 locale ms-BN ms
 locale ms-ID ms
 locale ms-SG ms
@@ -35274,7 +35233,6 @@ ZMK	other	Zambian Kwachab (1968–2012)
 ZMW	other	Zambian Kwachab
 ZWD	other	Zimbabwe Dollari
 locale nb no
-locale nb-SJ nb
 locale nd und
 AED	other	Dola laseArab
 AOA	other	Kwanza yase Angola
@@ -41803,7 +41761,6 @@ RUB	other	ᱨᱩᱥᱤ ᱨᱩᱵᱟᱹᱞᱥ
 RUB	one	ᱨᱩᱥᱤ ᱨᱩᱵᱟᱹᱞ
 USD	other	ᱭᱩᱮᱥ ᱰᱚᱞᱟᱨ
 XXX	other	ᱵᱟᱝᱩᱨᱩᱢ ᱠᱟᱨᱮᱱᱥᱤ
-locale sat-Deva und
 locale sat-Olck sat
 locale sbp und
 AED	other	Ihela ya Shitwa sha Shiyalabu
@@ -47157,6 +47114,841 @@ NIO	other	никарагванских златних кордоба
 NIO	one	никарагванска златна кордоба
 NIO	few	никарагванске златне кордобе
 locale sr-Cyrl-ME sr-Cyrl
+ADP	other	andorske pezete
+ADP	one	andorska pezeta
+AED	other	dirhama UAE
+AED	one	dirham UAE
+AFA	other	avganistanskih avgana (1927–2002)
+AFA	one	avganistanski avgani (1927–2002)
+AFA	few	avganistanska avgana (1927–2002)
+AFN	other	avganistanskih avgana
+AFN	one	avganistanski avgani
+AFN	few	avganistanska avgana
+ALL	other	albanskih leka
+ALL	one	albanski lek
+ALL	few	albanska leka
+AMD	other	jermenska drama
+AMD	one	jermenski dram
+ANG	other	holandskoantilskih guldena
+ANG	one	holandskoantilski gulden
+ANG	few	holandskoantilska guldena
+AOA	other	angolskih kvanzi
+AOA	one	angolska kvanza
+AOA	few	angolske kvanze
+AOK	other	angolijskih kvanzi (1977–1990)
+AOK	one	angolijska kvanza (1977–1990)
+AOK	few	angolijske kvanze (1977–1990)
+AON	other	angolijskih novih kvanzi
+AON	one	angolijska nova kvanza
+AON	few	angolijske nove kvanze
+AOR	other	angolijskih kvanzi reađustado (1995–1999)
+AOR	one	angolijska kvanza reađustado (1995–1999)
+AOR	few	angolijske kvanze reađustado (1995–1999)
+ARA	other	argentinskih australa
+ARA	one	argentinski austral
+ARA	few	argentinska australa
+ARP	other	argentinskih pezosa (1983–1985)
+ARP	one	argentinski pezo (1983–1985)
+ARP	few	argentinska pezosa (1983–1985)
+ARS	other	argentinskih pezosa
+ARS	one	argentinski pezos
+ARS	few	argentinska pezosa
+ATS	other	austrijskih šilinga
+ATS	one	austrijski šiling
+ATS	few	austrijska šilinga
+AUD	other	australijskih dolara
+AUD	one	australijski dolar
+AUD	few	australijska dolara
+AWG	other	arubanskih florina
+AWG	one	arubanski florin
+AWG	few	arubanska florina
+AZM	other	azerbejdžanskih manata (1993–2006)
+AZM	one	azerbejdžanski manat (1993–2006)
+AZM	few	azerbejdžanska manata (1993–2006)
+AZN	other	azerbejdžanskih manata
+AZN	one	azerbejdžanski manat
+AZN	few	azerbejdžanska manata
+BAD	other	bosansko-hercegovačkih dinara
+BAD	one	bosansko-hercegovački dinar
+BAD	few	bosansko-hercegovačka dinara
+BAM	other	bosanskohercegovačkih konvertibilnih maraka
+BAM	one	bosanskohercegovačka konvertibilna marka
+BAM	few	bosanskohercegovačke konvertibilne marke
+BBD	other	barbadoških dolara
+BBD	one	barbadoški dolar
+BBD	few	barbadoška dolara
+BDT	other	bangladeških taka
+BDT	one	bangladeška taka
+BDT	few	bangladeške take
+BEC	other	belgijskih franaka (konvertibilnih)
+BEC	one	belgijski franak (konvertibilni)
+BEC	few	belgijska franka (konvertibilna)
+BEF	other	belgijskih franaka
+BEF	one	belgijski franak
+BEF	few	belgijska franka
+BEL	other	belgijskih franaka (finansijskih)
+BEL	one	belgijski franak (finansijski)
+BEL	few	belgijska franka (finansijska)
+BGL	other	bugarskih tvrdih leva
+BGL	one	bugarski tvrdi lev
+BGL	few	bugarska tvrda leva
+BGN	other	bugarskih leva
+BGN	one	bugarski lev
+BGN	few	bugarska leva
+BHD	other	bahreinskih dinara
+BHD	one	bahreinski dinar
+BHD	few	bahreinska dinara
+BIF	other	burundskih franaka
+BIF	one	burundski franak
+BIF	few	burundska franka
+BMD	other	bermudskih dolara
+BMD	one	bermudski dolar
+BMD	few	bermudska dolara
+BND	other	brunejskih dolara
+BND	one	brunejski dolar
+BND	few	brunejska dolara
+BOB	other	bolivijskih bolivijana
+BOB	one	bolivijski bolivijano
+BOB	few	bolivijska bolivijana
+BOP	other	bolivijskih pezosa
+BOP	one	bolivijski pezo
+BOP	few	bolivijska pezosa
+BOV	other	bolivijskih mvdola
+BOV	one	bolivijski mvdol
+BOV	few	bolivijska mvdola
+BRB	other	brazilskih novih kruzeira (1967–1986)
+BRB	one	brazilski novi kruzeiro (1967–1986)
+BRB	few	brazilska nova kruzeira (1967–1986)
+BRC	other	brazilskih kruzadosa
+BRC	one	brazilski kruzados
+BRC	few	brazilska kruzadosa
+BRE	other	brazilskih kruzeira (1990–1993)
+BRE	one	brazilski kruzeiro (1990–1993)
+BRE	few	brazilska kruzeira (1990–1993)
+BRL	other	brazilskih reala
+BRL	one	brazilski real
+BRL	few	brazilska reala
+BRN	other	brazilskih novih kruzada
+BRN	one	brazilski novi kruzado
+BRN	few	brazilska nova kruzada
+BRR	other	brazilskih kruzeira
+BRR	one	brazilski kruzeiro
+BRR	few	brazilska kruzeira
+BSD	other	bahamskih dolara
+BSD	one	bahamski dolar
+BSD	few	bahamska dolara
+BTN	other	butanskih ngultruma
+BTN	one	butanski ngultrum
+BTN	few	butanska ngultruma
+BUK	other	burmanskih kjata
+BUK	one	burmanski kjat
+BUK	few	burmanska kjata
+BWP	other	bocvanskih pula
+BWP	one	bocvanska pula
+BWP	few	bocvanske pule
+BYB	other	beloruskih novih rublji (1994–1999)
+BYB	one	beloruska nova rublja (1994–1999)
+BYB	few	beloruske nove rublja (1994–1999)
+BYN	other	beloruskih rublji
+BYN	one	beloruska rublja
+BYN	few	beloruske rublje
+BYR	other	beloruskih rublji (2000–2016)
+BYR	one	beloruska rublja (2000–2016)
+BYR	few	beloruske rublje (2000–2016)
+BZD	other	beliskih dolara
+BZD	one	beliski dolar
+BZD	few	beliska dolara
+CAD	other	kanadskih dolara
+CAD	one	kanadski dolar
+CAD	few	kanadska dolara
+CDF	other	kongoanskih franaka
+CDF	one	kongoanski franak
+CDF	few	kongoanska franka
+CHE	other	WIR evra
+CHE	one	WIR evro
+CHF	other	švajcarskih franaka
+CHF	one	švajcarski franak
+CHF	few	švajcarska franka
+CHW	other	WIR franaka
+CHW	one	WIR franak
+CHW	few	WIR franka
+CLF	other	čileanski unidadesi de fomento
+CLF	one	čileanski unidades de fomento
+CLF	few	čileanska unidades de fomenta
+CLP	other	čileanskih pezosa
+CLP	one	čileanski pezos
+CLP	few	čileanska pezosa
+CNH	other	kineskih juana (ostrvskih)
+CNH	one	kineski juan (ostrvski)
+CNH	few	kineska juana (ostrvska)
+CNY	other	kineskih juana
+CNY	one	kineski juan
+CNY	few	kineska juana
+COP	other	kolumbijskih pezosa
+COP	one	kolumbijski pezos
+COP	few	kolumbijska pezosa
+COU	other	unidad de valorških reala
+COU	one	unidad de valorški real
+COU	few	nidad de valor reala
+CRC	other	kostarikanskih kolona
+CRC	one	kostarikanski kolon
+CRC	few	kostarikanska kolona
+CSD	other	starih srpskih dinara
+CSD	one	stari srpski dinar
+CSD	few	stara srpska dinara
+CSK	other	čehoslovačkih tvrdih kruna
+CSK	one	čehoslovačka tvrda kruna
+CSK	few	čehoslovačke tvrde krune
+CUC	other	kubanskih konvertibilnih pezosa
+CUC	one	kubanski konvertibilni pezos
+CUC	few	kubanska konvertibilna pezosa
+CUP	other	kubanskih pezosa
+CUP	one	kubanski pezos
+CUP	few	kubanska pezosa
+CVE	other	zelenortskih eskuda
+CVE	one	zelenortski eskudo
+CVE	few	zelenortska eskuda
+CYP	other	kiparskih funti
+CYP	one	kiparska funta
+CYP	few	kiparske funte
+CZK	other	čeških kruna
+CZK	one	češka kruna
+CZK	few	češke krune
+DDM	other	istočno-nemačkih maraka
+DDM	one	istočno-nemačka marka
+DDM	few	istočno-nemačke marke
+DEM	other	nemačkih maraka
+DEM	one	nemačka marka
+DEM	few	nemačke marke
+DJF	other	džibutskih franaka
+DJF	one	džibutski franak
+DJF	few	džibutska franka
+DKK	other	danskih kruna
+DKK	one	danska kruna
+DKK	few	danske krune
+DOP	other	dominikanskih pezosa
+DOP	one	dominikanski pezos
+DOP	few	dominikanska pezosa
+DZD	other	alžirskih dinara
+DZD	one	alžirski dinar
+DZD	few	alžirska dinara
+ECS	other	ekvadorskih sakra
+ECS	one	ekvadorski sakr
+ECS	few	ekvadorska sakra
+ECV	other	ekvadorskih unidad de valor konstanta
+ECV	one	ekvadorski unidad de valor konstante
+ECV	few	ekvadorska unidad de valor konstanta
+EEK	other	estonskih kruna
+EEK	one	estonska kruna
+EEK	few	estonske krune
+EGP	other	egipatskih funti
+EGP	one	egipatska funta
+EGP	few	egipatske funte
+ERN	other	eritrejskih nakfi
+ERN	one	eritrejska nakfa
+ERN	few	eritrejske nakfe
+ESA	other	španskih pezeta (A račun)
+ESA	one	španska pezeta (A račun)
+ESA	few	španske pezete (A račun)
+ESB	other	španskih pezeta (konvertibilan račun)
+ESB	one	španska pezeta (konvertibilan račun)
+ESB	few	španske pezete (konvertibilan račun)
+ESP	other	španske pezete
+ESP	one	španska pezeta
+ESP	few	španska pezeta
+ETB	other	etiopskih bira
+ETB	one	etiopski bir
+ETB	few	etiopska bira
+EUR	other	evra
+EUR	one	evro
+FIM	other	finskih maraka
+FIM	one	finska marka
+FIM	few	finske marke
+FJD	other	fidžijskih dolara
+FJD	one	fidžijski dolar
+FJD	few	fidžijska dolara
+FKP	other	foklandskih funti
+FKP	one	foklandska funta
+FKP	few	foklandske funte
+FRF	other	francuskih franaka
+FRF	one	francuski franak
+FRF	few	francuska franka
+GBP	other	britanskih funti
+GBP	one	britanska funta
+GBP	few	britanske funte
+GEK	other	gruzijskih kupon larita
+GEK	one	gruzijski kupon larit
+GEK	few	gruzijska kupon larita
+GEL	other	gruzijskih larija
+GEL	one	gruzijski lari
+GEL	few	gruzijska larija
+GHC	other	ganskih ceda (1979–2007)
+GHC	one	ganski ced (1979–2007)
+GHC	few	ganska ceda (1979–2007)
+GHS	other	ganskih sedija
+GHS	one	ganski sedi
+GHS	few	ganska sedija
+GIP	other	gibraltarskih funti
+GIP	one	gibraltarska funta
+GIP	few	gibraltarske funte
+GMD	other	gambijskih dalasija
+GMD	one	gambijski dalasi
+GNF	other	gvinejskih franaka
+GNF	one	gvinejski franak
+GNF	few	gvinejska franka
+GNS	other	gvinejskih sila
+GNS	one	gvinejski sili
+GNS	few	gvinejska sila
+GQE	other	ekvatorijalno-gvinejskih ekvela
+GQE	one	ekvatorijalno-gvinejski ekvele
+GQE	few	ekvatorijalno-gvinejska ekvela
+GRD	other	grčkih drahmi
+GRD	one	grčka drahma
+GRD	few	grčke drahme
+GTQ	other	gvatemalskih kecala
+GTQ	one	gvatemalski kecal
+GTQ	few	gvatemalska kecala
+GWE	other	portugalsko-gvinejskih eskuda
+GWE	one	portugalsko-gvinejski eskudo
+GWE	few	portugalsko-gvinejska eskuda
+GWP	other	gvineja-bisaoških pezosa
+GWP	one	gvineja-bisaoški pezo
+GWP	few	gvineja-bisaoška pezosa
+GYD	other	gvajanskih dolara
+GYD	one	gvajanski dolar
+GYD	few	gvajanska dolara
+HKD	other	hongkonških dolara
+HKD	one	hongkonški dolar
+HKD	few	hongkonška dolara
+HNL	other	honduraških lempira
+HNL	one	honduraška lempira
+HNL	few	honduraške lempire
+HRD	other	hrvatskih dinara
+HRD	one	hrvatski dinar
+HRD	few	hrvatska dinara
+HRK	other	hrvatskih kuna
+HRK	one	hrvatska kuna
+HRK	few	hrvatske kune
+HTG	other	haićanskih gurda
+HTG	one	haićanski gurd
+HTG	few	haićanska gurda
+HUF	other	mađarskih forinti
+HUF	one	mađarska forinta
+HUF	few	mađarske forinte
+IDR	other	indonežanskih rupija
+IDR	one	indonežanska rupija
+IDR	few	indonežanske rupije
+IEP	other	irskih funti
+IEP	one	irska funta
+IEP	few	irske funte
+ILP	other	izraelskih funti
+ILP	one	izraelska funta
+ILP	few	izraelske funte
+ILR	other	stari izraelski šekeli
+ILS	other	izraelskih novih šekela
+ILS	one	izraelski novi šekel
+ILS	few	izraelska nova šekela
+INR	other	indijskih rupija
+INR	one	indijska rupija
+INR	few	indijske rupije
+IQD	other	iračkih dinara
+IQD	one	irački dinar
+IQD	few	iračka dinara
+IRR	other	iranskih rijala
+IRR	one	iranski rijal
+IRR	few	iranska rijala
+ISJ	other	stara islandska kruna
+ISK	other	islandskih kruna
+ISK	one	islandska kruna
+ISK	few	islandske krune
+ITL	other	italijanske lire
+ITL	one	italijanska lira
+JMD	other	jamajčanskix dolara
+JMD	one	jamajčanski dolar
+JMD	few	jamajčanska dolara
+JOD	other	jordanskih dinara
+JOD	one	jordanski dinar
+JOD	few	jordanska dinara
+JPY	other	japanskih jena
+JPY	one	japanski jen
+JPY	few	japanska jena
+KES	other	kenijskih šilinga
+KES	one	kenijski šiling
+KES	few	kenijska šilinga
+KGS	other	kirgistanskih soma
+KGS	one	kirgistanski som
+KGS	few	kirgistanska soma
+KHR	other	kambodžanskih rijela
+KHR	one	kambodžanski rijel
+KHR	few	kambodžanska rijela
+KMF	other	komorskih franaka
+KMF	one	komorski franak
+KMF	few	komorska franka
+KPW	other	severnokorejskih vona
+KPW	one	severnokorejski von
+KPW	few	severnokorejska vona
+KRW	other	južnokorejskih vona
+KRW	one	južnokorejski von
+KRW	few	južnokorejska vona
+KWD	other	kuvajtskih dinara
+KWD	one	kuvajtski dinar
+KWD	few	kuvajtska dinara
+KYD	other	kajmanskih dolara
+KYD	one	kajmanski dolar
+KYD	few	kajmanska dolara
+KZT	other	kazahstanskih tengea
+KZT	one	kazahstanski tenge
+KZT	few	kazahstanska tengea
+LAK	other	laoskih kipa
+LAK	one	laoski kip
+LAK	few	laoska kipa
+LBP	other	libanskih funti
+LBP	one	libanska funta
+LBP	few	libanske funte
+LKR	other	šrilančanskih rupija
+LKR	one	šrilančanska rupija
+LKR	few	šrilančanske rupije
+LRD	other	liberijskih dolara
+LRD	one	liberijski dolar
+LRD	few	liberijska dolara
+LSL	other	lesotskih lotija
+LSL	one	lesotski loti
+LSL	few	lesotska lotija
+LTL	other	litvanskih litasa
+LTL	one	litvanski litas
+LTL	few	litvanska litasa
+LTT	other	litvanskih talonasa
+LTT	one	litvanski talonas
+LTT	few	litvanska talonasa
+LUC	other	luksemburških konvertibilnih franaka
+LUC	one	luksemburški konvertibilni franak
+LUC	few	luksemburška konvertibilna franka
+LUF	other	luksemburški franci
+LUF	one	luksemburški franak
+LUF	few	luksemburška franka
+LUL	other	luksemburških finansijskih franaka
+LUL	one	luksemburški finansijski franak
+LUL	few	luksemburška finansijska franka
+LVL	other	latvijskih lata
+LVL	one	latvijski lat
+LVL	few	latvijska lata
+LVR	other	latvijskih rublji
+LVR	one	latvijska rublja
+LVR	few	latvijske rublje
+LYD	other	libijskih dinara
+LYD	one	libijski dinar
+LYD	few	libijska dinara
+MAD	other	marokanskih dirhama
+MAD	one	marokanski dirham
+MAD	few	marokanska dirhama
+MAF	other	marokanskih franaka
+MAF	one	marokanski franak
+MAF	few	marokanska franka
+MDL	other	moldavskih leja
+MDL	one	moldavski lej
+MDL	few	moldavska leja
+MGA	other	malgaških arijarija
+MGA	one	malgaški arijari
+MGA	few	malgaška arijarija
+MGF	other	malagašajski franci
+MGF	one	malagašajski franak
+MGF	few	malagašajska franka
+MKD	other	makedonskih denara
+MKD	one	makedonski denar
+MKD	few	makedonska denara
+MLF	other	malijskih franaka
+MLF	one	malijski franak
+MLF	few	malijska franka
+MMK	other	mjanmarskih kjata
+MMK	one	mjanmarski kjat
+MMK	few	mjanmarska kjata
+MNT	other	mongolskih tugrika
+MNT	one	mongolski tugrik
+MNT	few	mongolska tugrika
+MOP	other	makaoskih pataka
+MOP	one	makaoska pataka
+MOP	few	makaoske patake
+MRO	other	mauritanijskih ogija (1973–2017)
+MRO	one	mauritanijska ogija (1973–2017)
+MRO	few	mauritanijske ogije (1973–2017)
+MRU	other	mauritanskih ogija
+MRU	one	mauritanska ogija
+MRU	few	mauritanske ogije
+MTL	other	malteških lira
+MTL	one	malteška lira
+MTL	few	malteške lire
+MTP	other	malteških funti
+MTP	one	malteška funta
+MTP	few	malteške funte
+MUR	other	mauricijskih rupija
+MUR	one	mauricijska rupija
+MUR	few	mauricijske rupije
+MVR	other	maldivskih rufija
+MVR	one	maldivska rufija
+MVR	few	maldivske rufije
+MWK	other	malavijskih kvača
+MWK	one	malavijska kvača
+MWK	few	malavijske kvače
+MXN	other	meksičkih pezosa
+MXN	one	meksički pezos
+MXN	few	meksička pezosa
+MXP	other	meksičkih srebrnih pezosa
+MXP	one	meksički srebrni pezo
+MXP	few	meksička srebrna pezosa
+MXV	other	meksičkih unidads de inverziona
+MXV	one	meksički unidads de inverzion
+MXV	few	meksička unidads de inverziona
+MYR	other	malezijskih ringita
+MYR	one	malezijski ringit
+MYR	few	malezijska ringita
+MZE	other	mozambijskih eskuda
+MZE	one	mozambijski eskudo
+MZE	few	mozambijska eskuda
+MZM	other	starih mozambijskih metikala
+MZM	one	stari mozambijski metikal
+MZM	few	stara mozambijska metikala
+MZN	other	mozambičkih metikala
+MZN	one	mozambički metikal
+MZN	few	mozambička metikala
+NAD	other	namibijskih dolara
+NAD	one	namibijski dolar
+NAD	few	namibijska dolara
+NGN	other	nigerijskih naira
+NGN	one	nigerijska naira
+NGN	few	nigerijske naire
+NIC	other	nikaragvanskih kordoba (1988–1991)
+NIC	one	nikaragvanska kordoba (1988–1991)
+NIC	few	nikaragvanske kordobe (1988–1991)
+NIO	other	nikaragvanskih kordoba
+NIO	one	nikaragvanska kordoba
+NIO	few	nikaragvanske kordobe
+NLG	other	holandskih guldena
+NLG	one	holandski gulden
+NLG	few	holandska guldena
+NOK	other	norveških kruna
+NOK	one	norveška kruna
+NOK	few	norveške krune
+NPR	other	nepalskih rupija
+NPR	one	nepalska rupija
+NPR	few	nepalske rupije
+NZD	other	novozelandskih dolara
+NZD	one	novozelandski dolar
+NZD	few	novozelandska dolara
+OMR	other	omanskih rijala
+OMR	one	omanski rijal
+OMR	few	omanska rijala
+PAB	other	panamskih balboa
+PAB	one	panamska balboa
+PAB	few	panamske balboe
+PEI	other	peruvijskih intija
+PEI	one	peruvijski inti
+PEI	few	peruvijska intija
+PEN	other	peruanskih sola
+PEN	one	peruanski sol
+PEN	few	peruanska sola
+PES	other	peruanskih sola (1863–1965)
+PES	one	peruanski sol (1863–1965)
+PES	few	peruanska sola (1863–1965)
+PGK	other	papuanskih kina
+PGK	one	papuanska kina
+PGK	few	papuanske kine
+PHP	other	filipinskih pezosa
+PHP	one	filipinski pezos
+PHP	few	filipinska pezosa
+PKR	other	pakistanskih rupija
+PKR	one	pakistanska rupija
+PKR	few	pakistanske rupije
+PLN	other	poljskih zlota
+PLN	one	poljski zlot
+PLN	few	poljska zlota
+PLZ	other	poljskih zlota (1950–1995)
+PLZ	one	poljski zlot (1950–1995)
+PLZ	few	poljska zlota (1950–1995)
+PTE	other	portugalskih eskuda
+PTE	one	portugalski eskudo
+PTE	few	portugalska eskuda
+PYG	other	paragvajskih gvaranija
+PYG	one	paragvajski gvarani
+PYG	few	paragvajska gvaranija
+QAR	other	katarskih rijala
+QAR	one	katarski rijal
+QAR	few	katarska rijala
+RHD	other	rodežanskih dolara
+RHD	one	rodežanski dolar
+RHD	few	rodežanska dolara
+ROL	other	rumunskih leja (1952–2006)
+ROL	one	rumunski lej (1952–2006)
+ROL	few	rumunska leja (1952–2006)
+RON	other	rumunskih leja
+RON	one	rumunski lej
+RON	few	rumunska leja
+RSD	other	srpskih dinara
+RSD	one	srpski dinar
+RSD	few	srpska dinara
+RUB	other	ruskih rublji
+RUB	one	ruska rublja
+RUB	few	ruske rublje
+RUR	other	ruskih rublji (1991–1998)
+RUR	one	ruska rublja (1991–1998)
+RUR	few	ruske rublje (1991–1998)
+RWF	other	ruandskih franaka
+RWF	one	ruandski franak
+RWF	few	ruandska franka
+SAR	other	saudijskih rijala
+SAR	one	saudijski rijal
+SAR	few	saudijska rijala
+SBD	other	solomonskih dolara
+SBD	one	solomonski dolar
+SBD	few	solomonska dolara
+SCR	other	sejšelskih rupija
+SCR	one	sejšelska rupija
+SCR	few	sejšelske rupije
+SDD	other	starih sudanskih dinara
+SDD	one	stari sudanski dinar
+SDD	few	stara sudanska dinara
+SDG	other	sudanskih funti
+SDG	one	sudanska funta
+SDG	few	sudanske funte
+SDP	other	starih sudanskih funti
+SDP	one	stara sudanska funta
+SDP	few	stare sudanske funte
+SEK	other	švedskih kruna
+SEK	one	švedska kruna
+SEK	few	švedske krune
+SGD	other	singapurskih dolara
+SGD	one	singapurski dolar
+SGD	few	singapurska dolara
+SHP	other	funti Svete Jelene
+SHP	one	funta Svete Jelene
+SHP	few	funte Svete Jelene
+SIT	other	slovenačkih tolara
+SIT	one	slovenački tolar
+SIT	few	slovenačka tolara
+SKK	other	slovačkih kruna
+SKK	one	slovačka kruna
+SKK	few	slovačke krune
+SLE	other	sijeraleonskih leona
+SLE	one	sijeraleonski leone
+SLE	few	sijeraleonska leona
+SLL	other	sijeraleonskih leona (1964—2022)
+SLL	one	sijeraleonski leone (1964—2022)
+SLL	few	sijeraleonska leona (1964—2022)
+SOS	other	somalijskih šilinga
+SOS	one	somalijski šiling
+SOS	few	somalijska šilinga
+SRD	other	surinamskih dolara
+SRD	one	surinamski dolar
+SRD	few	surinamska dolara
+SRG	other	surinamskih gildera
+SRG	one	surinamski gilder
+SRG	few	surinamska gildera
+SSP	other	južnosudanskih funti
+SSP	one	južnosudanska funta
+SSP	few	južnosudanske funte
+STD	other	saotomskih dobri (1977–2017)
+STD	one	saotomska dobra (1977–2017)
+STD	few	saotomske dobre (1977–2017)
+STN	other	saotomskih dobri
+STN	one	saotomska dobra
+STN	few	saotomske dobre
+SUR	other	sovjetskih rublji
+SUR	one	sovjetska rublja
+SUR	few	sovjetske rublje
+SVC	other	salvadorskih kolona
+SVC	one	salvadorski kolon
+SVC	few	salvadorska kolona
+SYP	other	sirijskih funti
+SYP	one	sirijska funta
+SYP	few	sirijske funte
+SZL	other	svazilendskih lilangenija
+SZL	one	svazilendski lilangeni
+SZL	few	svazilendska lilangenija
+THB	other	tajlandskih bata
+THB	one	tajlandski bat
+THB	few	tajlandska bata
+TJR	other	tadžihistanskih rublji
+TJR	one	tadžihistanska rublja
+TJR	few	tadžihistanske rublje
+TJS	other	tadžikistanskih somona
+TJS	one	tadžikistanski somon
+TJS	few	tadžikistanska somona
+TMM	other	turkmenistanski manat (1993–2009)
+TMM	few	turkmenistanska manata (1993–2009)
+TMT	other	turkmenistanskih manata
+TMT	one	turkmenistanski manat
+TMT	few	turkmenistanska manata
+TND	other	tuniskih dinara
+TND	one	tuniski dinar
+TND	few	tuniska dinara
+TOP	other	tonganskih pangi
+TOP	one	tonganska panga
+TOP	few	tonganske pange
+TPE	other	timorških eskuda
+TPE	one	timorški eskudo
+TPE	few	timorška eskuda
+TRL	other	turskih lira (1922–2005)
+TRL	one	turska lira (1922–2005)
+TRL	few	turske lire (1922–2005)
+TRY	other	turskih lira
+TRY	one	turska lira
+TRY	few	turske lire
+TTD	other	trinidadskotobaških dolara
+TTD	one	trinidadskotobaški dolar
+TTD	few	trinidadskotobaška dolara
+TWD	other	novih tajvanskih dolara
+TWD	one	novi tajvanski dolar
+TWD	few	nova tajvanska dolara
+TZS	other	tanzanijskih šilinga
+TZS	one	tanzanijski šiling
+TZS	few	tanzanijska šilinga
+UAH	other	ukrajinskih hrivnji
+UAH	one	ukrajinska grivna
+UAH	few	ukrajinske grivne
+UAK	other	ukrajinskih karbovanciva
+UAK	one	ukrajinski karbovanec
+UAK	few	ukrajinska karbovanciva
+UGS	other	ugandijskih šilinga (1966–1987)
+UGS	one	ugandijski šiling (1966–1987)
+UGS	few	ugandijska šilinga (1966–1987)
+UGX	other	ugandskih šilinga
+UGX	one	ugandski šiling
+UGX	few	ugandska šilinga
+USD	other	američkih dolara
+USD	one	američki dolar
+USD	few	američka dolara
+USN	other	SAD dolara (sledeći dan)
+USN	one	SAD dolar (sledeći dan)
+USS	other	SAD dolara (isti dan)
+USS	one	SAD dolar (isti dan)
+UYI	other	ugvajskih pezosa en unidades indeksadesa
+UYI	one	urugvajski pezo en unidades indeksades
+UYI	few	urugvajska pezosa en unidades indeksadesa
+UYP	other	urugvajskih pezosa (1975–1993)
+UYP	one	urugvajski pezo (1975–1993)
+UYP	few	urugvajska pezosa (1975–1993)
+UYU	other	urugvajskih pezosa
+UYU	one	urugvajski pezos
+UYU	few	urugvajska pezosa
+UZS	other	uzbekistanskih soma
+UZS	one	uzbekistanski som
+UZS	few	uzbekistanska soma
+VEB	other	venecuelanskih bolivara (1871–2008)
+VEB	one	venecuelanski bolivar (1871–2008)
+VEB	few	venecuelanska bolivara (1871–2008)
+VEF	other	venecuelanskih bolivara (2008–2018)
+VEF	one	venecuelanski bolivar (2008–2018)
+VEF	few	venecuelanska bolivara (2008–2018)
+VES	other	venecuelanskih bolivara
+VES	one	venecuelanski bolivar
+VES	few	venecuelanska bolivara
+VND	other	vijetnamskih donga
+VND	one	vijetnamski dong
+VND	few	vijetnamska donga
+VNN	other	vijetnamskih donga (1978–1985)
+VNN	one	vijetnamski dong (1978–1985)
+VNN	few	vijetnamska donga (1978–1985)
+VUV	other	vanuatskih vatua
+VUV	one	vanuatski vatu
+VUV	few	vanuatska vatua
+WST	other	samoanskih tala
+WST	one	samoanska tala
+WST	few	samoanske tale
+XAF	other	centralnoafričkih franaka
+XAF	one	centralnoafrički franak
+XAF	few	centralnoafrička franka
+XAG	other	srebra
+XAG	one	srebro
+XAU	other	zlata
+XAU	one	zlato
+XBA	other	evropskih kompozitnih jedinica
+XBA	one	evropska kompozitna jedinica
+XBA	few	evropske kompozitne jedinice
+XBB	other	evropske novčane jedinice (XBB)
+XBB	one	evropska novčana jedinica (XBB)
+XBC	other	evropskih jedinica računa (XBC)
+XBC	one	evropska jedinica računa (XBC)
+XBC	few	evropske jedinice računa (XBC)
+XBD	other	evropskih jedinica računa (XBD)
+XBD	one	evropska jedinica računa (XBD)
+XBD	few	evropske jedinice računa (XBD)
+XCD	other	istočnokaripskix dolara
+XCD	one	istočnokaripski dolar
+XCD	few	istočnokaripska dolara
+XCG	other	karipski gulden
+XDR	other	posebnih crtaćih prava
+XDR	one	posebno crtaće pravo
+XDR	few	posebna crtaća prava
+XEU	other	evropskih novčanih jedinica
+XEU	one	evropska novčana jedinica (XEU)
+XEU	few	evropske novčane jedinice (XEU)
+XFO	other	francuskih zlatnih franaka
+XFO	one	francuski zlatni franak
+XFO	few	francuska zlatna franka
+XFU	other	francuskih UIC-franaka
+XFU	one	francuski UIC-franak
+XFU	few	francuska UIC-franka
+XOF	other	zapadnoafričkih franaka
+XOF	one	zapadnoafrički franak
+XOF	few	zapadnoafrička franka
+XPD	other	paladijuma
+XPD	one	paladijum
+XPF	other	CFP franaka
+XPF	one	CFP franak
+XPF	few	CFP franka
+XPT	other	platina
+XPT	few	platine
+XRE	other	RINET fondova
+XRE	one	RINET fond
+XRE	few	RINET fonda
+XTS	other	kodova testirane valute
+XTS	one	kod testirane valute
+XTS	few	koda testirane valute
+XXX	other	nepoznatih valuta
+XXX	one	nepoznata jedinica valute
+XXX	few	nepoznate valute
+YDD	other	jemenskih dolara
+YDD	one	jemenski dolar
+YDD	few	jemenska dolara
+YER	other	jemenskih rijala
+YER	one	jemenski rijal
+YER	few	jemenska rijala
+YUD	other	jugoslovenskih tvrdih dinara
+YUD	one	jugoslovenski tvrdi dinar
+YUD	few	jugoslovenska tvrda dinara
+YUM	other	jugoslovenskih novih dinara
+YUM	one	jugoslovenski novi dinar
+YUM	few	jugoslovenska nova dinara
+YUN	other	jugoslovenskih konvertibilnih dinara
+YUN	one	jugoslovenski konvertibilni dinar
+YUN	few	jugoslovenska konvertibilna dinara
+ZAL	other	južnoafričkih randa (finansijskih)
+ZAL	one	južnoafrički rand (finansijski)
+ZAL	few	južnoafrička randa (finansijska)
+ZAR	other	južnoafričkih randa
+ZAR	one	južnoafrički rand
+ZAR	few	južnoafrička randa
+ZMK	other	zambijskih kvača (1968–2012)
+ZMK	one	zambijska kvača (1968–2012)
+ZMK	few	zambijske kvače (1968–2012)
+ZMW	other	zambijskih kvača
+ZMW	one	zambijska kvača
+ZMW	few	zambijske kvače
+ZRN	other	zairskih novih zaira
+ZRN	one	zairski novi zair
+ZRN	few	zairska nova zaira
+ZRZ	other	zairskih zaira
+ZRZ	one	zairski zair
+ZRZ	few	zairska zaira
+ZWD	other	zimbabvejskih dolara (1980–2008)
+ZWD	one	zimbabvejski dolar (1980–2008)
+ZWD	few	zimbabvejska dolara (1980–2008)
+ZWG	other	zimbabveansko zlato
+ZWL	other	zimbabvejskih dolara (2009)
+ZWL	one	zimbabvejski dolar (2009)
+ZWL	few	zimbabvejska dolara (2009)
+ZWR	other	zimbabvejskih dolara (2008)
+ZWR	one	zimbabvejski dolar (2008)
+ZWR	few	zimbabvejska dolara (2008)
 locale sr-Cyrl-XK sr-Cyrl
 locale sr-Latn und
 ADP	other	andorske pezete
@@ -56689,314 +57481,6 @@ ZMW	other	贊比亞克瓦查
 ZWG	other	津布巴韋金
 locale zh-Hant-MO zh-Hant-HK
 locale zh-Hant-MY zh-Hant
-locale zh-Latn zh
-ADP	other	
-AED	other	
-AFA	other	
-AFN	other	
-ALK	other	
-ALL	other	
-AMD	other	
-ANG	other	
-AOA	other	
-AOK	other	
-AON	other	
-AOR	other	
-ARA	other	
-ARL	other	
-ARM	other	
-ARP	other	
-ARS	other	
-ATS	other	
-AUD	other	
-AWG	other	
-AZM	other	
-AZN	other	
-BAD	other	
-BAM	other	
-BAN	other	
-BBD	other	
-BDT	other	
-BEC	other	
-BEF	other	
-BEL	other	
-BGL	other	
-BGM	other	
-BGN	other	
-BGO	other	
-BHD	other	
-BIF	other	
-BMD	other	
-BND	other	
-BOB	other	
-BOL	other	
-BOP	other	
-BOV	other	
-BRB	other	
-BRC	other	
-BRE	other	
-BRL	other	
-BRN	other	
-BRR	other	
-BRZ	other	
-BSD	other	
-BTN	other	
-BUK	other	
-BWP	other	
-BYB	other	
-BYN	other	
-BYR	other	
-BZD	other	
-CAD	other	
-CDF	other	
-CHE	other	
-CHF	other	
-CHW	other	
-CLE	other	
-CLF	other	
-CLP	other	
-CNH	other	
-CNX	other	
-CNY	other	
-COP	other	
-COU	other	
-CRC	other	
-CSD	other	
-CSK	other	
-CUC	other	
-CUP	other	
-CVE	other	
-CYP	other	
-CZK	other	
-DDM	other	
-DEM	other	
-DJF	other	
-DKK	other	
-DOP	other	
-DZD	other	
-ECS	other	
-ECV	other	
-EEK	other	
-EGP	other	
-ERN	other	
-ESA	other	
-ESB	other	
-ESP	other	
-ETB	other	
-EUR	other	
-FIM	other	
-FJD	other	
-FKP	other	
-FRF	other	
-GBP	other	
-GEK	other	
-GEL	other	
-GHC	other	
-GHS	other	
-GIP	other	
-GMD	other	
-GNF	other	
-GNS	other	
-GQE	other	
-GRD	other	
-GTQ	other	
-GWE	other	
-GWP	other	
-GYD	other	
-HKD	other	
-HNL	other	
-HRD	other	
-HRK	other	
-HTG	other	
-HUF	other	
-IDR	other	
-IEP	other	
-ILP	other	
-ILR	other	
-ILS	other	
-INR	other	
-IQD	other	
-IRR	other	
-ISJ	other	
-ISK	other	
-ITL	other	
-JMD	other	
-JOD	other	
-JPY	other	
-KES	other	
-KGS	other	
-KHR	other	
-KMF	other	
-KPW	other	
-KRH	other	
-KRO	other	
-KRW	other	
-KWD	other	
-KYD	other	
-KZT	other	
-LAK	other	
-LBP	other	
-LKR	other	
-LRD	other	
-LSL	other	
-LTL	other	
-LTT	other	
-LUC	other	
-LUF	other	
-LUL	other	
-LVL	other	
-LVR	other	
-LYD	other	
-MAD	other	
-MAF	other	
-MCF	other	
-MDC	other	
-MDL	other	
-MGA	other	
-MGF	other	
-MKD	other	
-MKN	other	
-MLF	other	
-MMK	other	
-MNT	other	
-MOP	other	
-MRO	other	
-MRU	other	
-MTL	other	
-MTP	other	
-MUR	other	
-MVP	other	
-MVR	other	
-MWK	other	
-MXN	other	
-MXP	other	
-MXV	other	
-MYR	other	
-MZE	other	
-MZM	other	
-MZN	other	
-NAD	other	
-NGN	other	
-NIC	other	
-NIO	other	
-NLG	other	
-NOK	other	
-NPR	other	
-NZD	other	
-OMR	other	
-PAB	other	
-PEI	other	
-PEN	other	
-PES	other	
-PGK	other	
-PHP	other	
-PKR	other	
-PLN	other	
-PLZ	other	
-PTE	other	
-PYG	other	
-QAR	other	
-RHD	other	
-ROL	other	
-RON	other	
-RSD	other	
-RUB	other	
-RUR	other	
-RWF	other	
-SAR	other	
-SBD	other	
-SCR	other	
-SDD	other	
-SDG	other	
-SDP	other	
-SEK	other	
-SGD	other	
-SHP	other	
-SIT	other	
-SKK	other	
-SLE	other	
-SLL	other	
-SOS	other	
-SRD	other	
-SRG	other	
-SSP	other	
-STD	other	
-STN	other	
-SUR	other	
-SVC	other	
-SYP	other	
-SZL	other	
-THB	other	
-TJR	other	
-TJS	other	
-TMM	other	
-TMT	other	
-TND	other	
-TOP	other	
-TPE	other	
-TRL	other	
-TRY	other	
-TTD	other	
-TWD	other	
-TZS	other	
-UAH	other	
-UAK	other	
-UGS	other	
-UGX	other	
-USD	other	
-USN	other	
-USS	other	
-UYI	other	
-UYP	other	
-UYU	other	
-UYW	other	
-UZS	other	
-VEB	other	
-VED	other	
-VEF	other	
-VES	other	
-VND	other	
-VNN	other	
-VUV	other	
-WST	other	
-XAF	other	
-XAG	other	
-XAU	other	
-XBA	other	
-XBB	other	
-XBC	other	
-XBD	other	
-XCD	other	
-XCG	other	
-XDR	other	
-XEU	other	
-XFO	other	
-XFU	other	
-XOF	other	
-XPD	other	
-XPF	other	
-XPT	other	
-XRE	other	
-XSU	other	
-XTS	other	
-XUA	other	
-XXX	other	
-YDD	other	
-YER	other	
-YUD	other	
-YUM	other	
-YUN	other	
-YUR	other	
-ZAL	other	
-ZAR	other	
-ZMK	other	
-ZMW	other	
-ZRN	other	
-ZRZ	other	
-ZWD	other	
-ZWG	other	
-ZWL	other	
-ZWR	other	
 locale zu und
 AED	other	i-Dirham yase-United Arab Emirates
 AFN	other	i-Afghan Afghani

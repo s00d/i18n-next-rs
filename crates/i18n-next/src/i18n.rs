@@ -1522,13 +1522,15 @@ impl Builder {
             ..Meta::default()
         };
         #[cfg(feature = "format")]
+        let mut numbering = Vec::new();
+        #[cfg(feature = "format")]
         {
             if let Some(json) = &config.number_formats {
                 let path = self.config_path();
-                crate::format::parse_formats(json, &path, &mut meta.numbers)?;
+                crate::format::parse_formats(json, &path, &mut meta.numbers, &mut numbering)?;
             }
             for json in &self.formats {
-                crate::format::parse_formats(json, "formats", &mut meta.numbers)?;
+                crate::format::parse_formats(json, "formats", &mut meta.numbers, &mut numbering)?;
             }
         }
         for l in &config.locales {
@@ -1545,6 +1547,8 @@ impl Builder {
         for (code, tag) in &self.iso {
             meta.iso.insert(Arc::from(&**code), Arc::from(&**tag));
         }
+        #[cfg(feature = "format")]
+        crate::format::options::check_numbering(&numbering, |code| meta.number(code))?;
         meta.configured = config.locales;
         let locale: Arc<str> = Arc::from(
             self.locale

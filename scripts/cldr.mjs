@@ -304,7 +304,8 @@ console.log(`plural-categories.md: ${body.length} lines`)
 //
 // It also checks the tag resolution `format/locale.rs` does (mirrored below as `resolveTag`)
 // against `Intl.NumberFormat` on every locale and the tags derived from likelySubtags and
-// aliases, and writes the oracle `fixtures/compat/__golden__/number-locales.md`.
+// aliases, and writes the oracles `fixtures/compat/__golden__/number-locales.md` (the `modern` set)
+// and `number-locales-all.md` (every locale, for a build with `I18N_NEXT_LOCALES=all`).
 
 const NUM = here('./node_modules/cldr-numbers-full/main')
 const supp = (name) => JSON.parse(readFileSync(here(`./node_modules/cldr-core/supplemental/${name}.json`), 'utf8')).supplemental
@@ -314,9 +315,10 @@ const fractions = supp('currencyData').currencyData.fractions
 const likely = supp('likelySubtags').likelySubtags
 const coverage = JSON.parse(readFileSync(here('./node_modules/cldr-core/coverageLevels.json'), 'utf8')).effectiveCoverageLevels
 const defaultContent = new Set(JSON.parse(readFileSync(here('./node_modules/cldr-core/defaultContent.json'), 'utf8')).defaultContent)
-// Only the locales ICU has: Intl formats a CLDR locale it lacks (`ht`, `la`) as `en`.
+// Only the locales ICU has: Intl formats a CLDR locale it lacks (`ht`, `la`) as `en`, and one
+// it resolves to a shorter name (`az-Arab` → `az`, `be-tarask` → `be`, `nb-SJ` → `nb`) as that.
 const all = readdirSync(NUM)
-  .filter((l) => l === 'und' || Intl.NumberFormat.supportedLocalesOf(l).length > 0)
+  .filter((l) => l === 'und' || (Intl.NumberFormat.supportedLocalesOf(l).length > 0 && new Intl.NumberFormat(l).resolvedOptions().locale === l))
   .sort(utf8)
 const have = new Set(all)
 const modern = Object.keys(coverage).filter((l) => coverage[l] === 'modern' && have.has(l)).sort(utf8)
@@ -338,6 +340,8 @@ const SPACING = JSON.stringify({
 })
 const CATS = ['zero', 'one', 'two', 'few', 'many', 'other']
 const edge = new Set()
+// default numbering systems other than `latn`: name → digits (the `numberingSystem` option)
+const numbering = new Map()
 const clean = (v, what) => {
   if (typeof v !== 'string' || /[\t\n\r]/.test(v)) throw new Error(`bad ${what}: ${JSON.stringify(v)}`)
   return v
@@ -355,7 +359,13 @@ function fieldsOf(l) {
   if (JSON.stringify(cf.currencySpacing) !== SPACING) throw new Error(`${l}: other currency spacing`)
   const f = new Map()
   const set = (k, v) => f.set(k, clean(v, `${l} ${k}`))
-  if (ns !== 'latn') set('digits', nsys._digits)
+  if (ns !== 'latn') {
+    set('digits', nsys._digits)
+    numbering.set(ns, nsys._digits)
+  }
+  // the rule set `Intl.PluralRules` gives the locale (rules.rs order; 255: none): compact
+  // patterns and currency names by plural form
+  set('plural', String(ruleIndex(intl(l)) ?? 255))
   set('decimal', sym.decimal)
   set('group', sym.group)
   set('minus', sym.minusSign)
@@ -494,7 +504,7 @@ for (const l of all) {
     const first = parts.findIndex((p) => p.type === 'integer')
     const last = parts.findLastIndex((p) => p.type === 'integer' || p.type === 'fraction')
     const text = (list) => list.map((p) => (p.type === 'currency' ? '¤' : p.value)).join('')
-    const ints = parts.filter((p) => p.type === 'integer').map((p) => p.value.length)
+    const ints = parts.filter((p) => p.type === 'integer').map((p) => [...p.value].length)
     return {
       pre: text(parts.slice(0, first)),
       suf: text(parts.slice(last + 1)),
@@ -518,29 +528,6 @@ for (const l of all) {
   }
   if (pos.group !== undefined && pos.group !== (r.get('currencyGroup') ?? r.get('group'))) f.set('currencyGroup', pos.group)
   if (pos.decimal !== undefined && pos.decimal !== (r.get('currencyDecimal') ?? r.get('decimal'))) f.set('currencyDecimal', pos.decimal)
-}
-// `currencyDisplay: name` as ICU lays it out (`my`: `{0} {1}`, where cldr-json says `{1} {0}`).
-let unitFixes = 0
-for (const l of all) {
-  if (l === 'und') continue
-  const parts = new Intl.NumberFormat(l, { style: 'currency', currency: 'USD', currencyDisplay: 'name' }).formatToParts(1234.5)
-  let icu = ''
-  let inNumber = false
-  for (const p of parts) {
-    const num = ['integer', 'group', 'decimal', 'fraction', 'minusSign'].includes(p.type)
-    if (num && !inNumber) icu += '{0}'
-    inNumber = num
-    if (p.type === 'currency') icu += '{1}'
-    else if (!num) icu += p.value
-  }
-  const chain = []
-  for (let x = l; x; x = parentOf(x)) chain.push(x)
-  const units = chain.map((x) => fields.get(x).f.get('unitPattern')).find((u) => u && u.length > 0) ?? []
-  const other = units.find((u) => u.startsWith('other\t'))?.slice(6)
-  if (other !== undefined && other !== icu) {
-    fields.get(l).f.set('unitPattern', [`other\t${icu}`])
-    unitFixes++
-  }
 }
 // The plain separators too (`fr-CH` groups by `'` in ICU, by U+202F in cldr-json).
 let separatorFixes = 0
@@ -590,6 +577,115 @@ for (const l of all) {
   }
 }
 
+// ---- `currencyDisplay: name` as ICU lays it out ----
+// The unit pattern of each plural form (`my`: `{0} {1}`, where cldr-json says `{1} {0}`). Some
+// locales (`en-DE`, `en-AT`, `pt-CV`) show the number with the currency pattern and symbol there
+// (`-US$1,234.50 US dollars`): their `{0}` is the number as `currencyDisplay: symbol` shows it,
+// flagged by `nameCurrency`; so is a currency with its own format (`EUR` in `en-150`). ICU joins
+// the unit pattern's text and the name into one part (`de yeni japonezi`): the name is found by
+// the data, the pattern is what is left.
+const nameParts = (l, code, v) => new Intl.NumberFormat(l, { style: 'currency', currency: code, currencyDisplay: 'name' }).formatToParts(v)
+const nameOut = (l, code, v) => nameParts(l, code, v).map((p) => p.value).join('')
+const symbolParts = (l, code, v) => new Intl.NumberFormat(l, { style: 'currency', currency: code }).formatToParts(v)
+const symbolOut = (l, code, v) => symbolParts(l, code, v).map((p) => p.value).join('')
+const chainOf = (l) => {
+  const chain = []
+  for (let x = l; x; x = parentOf(x)) chain.push(x)
+  return chain
+}
+const ownPattern = (l, code) => (resolvedOf(l).cur(code) ?? '').split('\t')[2] !== '' && resolvedOf(l).cur(code) !== undefined
+const symbolNumber = (l, code) => fields.get(l).f.get('nameCurrency') === '1' || ownPattern(l, code)
+// ICU's known garble (fixtures/compat/README.md): a number with the symbol where currency
+// spacing goes in (`CHF 1,234.5 Swiss francs0`, `en-DE`): the name lands one char early.
+const garbled = (l, code, v) => {
+  if (!symbolNumber(l, code)) return false
+  const ps = symbolParts(l, code, v)
+  const at = ps.findIndex((p) => p.type === 'currency')
+  return /\p{L}/u.test(ps[at].value.at(0) + ps[at].value.at(-1)) && ps.some((p, i) => p.type === 'literal' && Math.abs(i - at) === 1)
+}
+const pluralOf = (l, code) => {
+  const digits = new Intl.NumberFormat(l, { style: 'currency', currency: code }).resolvedOptions().minimumFractionDigits
+  // a locale without plural rules (`kgp`) names by `other`, as ICU's root rules
+  if (Intl.PluralRules.supportedLocalesOf(l).length === 0) return () => 'other'
+  const rules = new Intl.PluralRules(l, { minimumFractionDigits: digits, maximumFractionDigits: digits })
+  return (v) => rules.select(v)
+}
+const labelOf = (names, code, cat) => names(`${code}\t${cat}`) || names(`${code}\tother`) || code
+const namesOf = (l) => (k) => chainOf(l).map((x) => fields.get(x).names.get(k)).find((n) => n !== undefined)
+const numberText = (l, code, v) => {
+  if (symbolNumber(l, code)) return symbolOut(l, code, v)
+  const ps = nameParts(l, code, v)
+  // the number, with the bidi marks around its sign (`ar`: U+200E before `-`)
+  const num = (p) => ['integer', 'group', 'decimal', 'fraction', 'minusSign', 'nan', 'infinity'].includes(p.type) || (p.type === 'literal' && /^[\u200e\u200f\u061c]+$/u.test(p.value))
+  return ps.slice(ps.findIndex(num), ps.findLastIndex(num) + 1).map((p) => p.value).join('')
+}
+const unitsOf = (l) => new Map((chainOf(l).map((x) => fields.get(x).f.get('unitPattern')).find((u) => u && u.length > 0) ?? []).map((u) => u.split('\t')))
+// What Rust shows with `names`: the unit pattern of the plural form, the number, the name.
+const predicted = (l, code, v, names = namesOf(l)) => {
+  const cat = pluralOf(l, code)(v)
+  const units = unitsOf(l)
+  return (units.get(cat) ?? units.get('other') ?? '{0} {1}').replace('{0}', numberText(l, code, v)).replace('{1}', labelOf(names, code, cat))
+}
+const UNIT_SAMPLES = [0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 15, 20, 21, 22, 100, 101, 102, 1000000, 1234.5, 0.5, 1.5]
+let unitFixes = 0
+let nameCurrency = 0
+for (const l of all) {
+  if (l === 'und') continue
+  if ([1234.5, -1234.5].every((v) => nameOut(l, 'USD', v).includes(symbolOut(l, 'USD', v)))) {
+    fields.get(l).f.set('nameCurrency', '1')
+    nameCurrency++
+  }
+  const rules = pluralOf(l, 'USD')
+  const units = unitsOf(l)
+  const names = namesOf(l)
+  const fixed = new Map()
+  let differs = false
+  for (const v of UNIT_SAMPLES) {
+    const cat = rules(v)
+    if (fixed.has(cat) || garbled(l, 'USD', v)) continue
+    const out = nameOut(l, 'USD', v)
+    const rest = out.replace(numberText(l, 'USD', v), '\u0000')
+    const label = labelOf(names, 'USD', cat)
+    let icu
+    if (rest.includes(label)) icu = rest.replace(label, '{1}').replace('\u0000', '{0}')
+    else {
+      // names unlike ICU's (`sr-Cyrl-ME`, fixed below): the part `currency` is the name
+      icu = ''
+      for (const p of nameParts(l, 'USD', v)) icu += p.type === 'currency' ? '{1}' : p.value
+      icu = icu.replace(numberText(l, 'USD', v), '{0}')
+    }
+    if (!icu.includes('{0}') || !icu.includes('{1}')) throw new Error(`${l}: name layout ${icu} of ${out}`)
+    fixed.set(cat, icu)
+    if (icu !== (units.get(cat) ?? units.get('other'))) differs = true
+  }
+  if (differs) {
+    fields.get(l).f.set('unitPattern', CATS.filter((c) => fixed.has(c)).map((c) => `${c}\t${fixed.get(c)}`))
+    unitFixes++
+  }
+}
+// Currency names as ICU has them: `sr-Cyrl-ME` names currencies in Latin (`američkih dolara`), as
+// `sr-Latn-ME`. A locale whose names differ from ICU takes the names of the locale ICU shows.
+const NAME_SAMPLE = ['USD', 'EUR', 'CHF', 'JPY', 'GBP', 'RUB', 'CNY', 'INR', 'XYZ']
+const NAME_VALUES = [1, 2, 5, 21, -1234.5]
+const cases = (l) => NAME_SAMPLE.flatMap((c) => NAME_VALUES.map((v) => [c, v])).filter(([c, v]) => !garbled(l, c, v))
+const icuNames = (l) => cases(l).map(([c, v]) => nameOut(l, c, v)).join('|')
+const ownNames = (l, names = namesOf(l)) => cases(l).map(([c, v]) => predicted(l, c, v, names)).join('|')
+let nameDonors = 0
+let nameGarbles = 0
+for (const l of all) {
+  if (l === 'und') continue
+  nameGarbles += NAME_SAMPLE.length * NAME_VALUES.length - cases(l).length
+  const icu = icuNames(l)
+  if (ownNames(l) === icu) continue
+  const donor = all.find((m) => m !== 'und' && m !== l && ownNames(l, namesOf(m)) === icu)
+  if (!donor) throw new Error(`${l}: currency names differ from ICU and no locale has ICU's:\n${ownNames(l)}\n${icu}`)
+  const names = new Map()
+  for (const x of chainOf(donor)) for (const [k, v] of fields.get(x).names) if (!names.has(k)) names.set(k, v)
+  for (const k of fields.get(l).names.keys()) if (!names.has(k)) names.set(k, '')
+  fields.get(l).names = names
+  nameDonors++
+}
+
 // ---- tag resolution, the mirror of format/locale.rs ----
 const fullParts = (tag) => {
   const [lang, ...rest] = tag.split('-')
@@ -602,11 +698,12 @@ const fullParts = (tag) => {
   return { lang, script, region }
 }
 const likelyScript = (lang, region) => {
-  const v = likely[`${lang}-${region}`] ?? likely[lang]
+  const v = (region && likely[`${lang}-${region}`]) ?? likely[lang]
   return v ? fullParts(v).script : null
 }
 function pick({ lang, script, region }, set, scripts) {
   if (!script && region) script = scripts.get(`${lang}-${region}`) ?? null
+  if (script === '-') return 'und'
   const cands = []
   if (script && region) cands.push(`${lang}-${script}-${region}`)
   if (script) cands.push(`${lang}-${script}`)
@@ -614,74 +711,6 @@ function pick({ lang, script, region }, set, scripts) {
   cands.push(lang)
   return cands.find((c) => c !== 'und' && set.has(c)) ?? 'en'
 }
-// Script insertion (`zh-TW` → `zh-Hant-TW`, `sr-ME` → `sr-Latn-ME`): where the likely script
-// of `lang-REGION` leads to another locale than the tag without it.
-const scripts = new Map()
-{
-  const langs = new Set(all.filter((l) => fullParts(l).script).map((l) => fullParts(l).lang))
-  const regions = new Set()
-  for (const l of all) if (fullParts(l).region) regions.add(fullParts(l).region)
-  for (const k of Object.keys(likely)) if (fullParts(k).region && !k.startsWith('und')) regions.add(fullParts(k).region)
-  for (const lang of [...langs].sort(utf8)) {
-    for (const region of [...regions].sort(utf8)) {
-      const s = likelyScript(lang, region)
-      // ICU aliases `lang-REGION` only onto a locale it has (with data or as default content)
-      if (!s || !(have.has(`${lang}-${s}-${region}`) || defaultContent.has(`${lang}-${s}-${region}`))) continue
-      const without = pick({ lang, script: null, region }, have, new Map())
-      const withS = pick({ lang, script: s, region }, have, new Map())
-      if (without !== withS) scripts.set(`${lang}-${region}`, s)
-    }
-  }
-}
-// Language and region aliases that lead elsewhere (`sh` → `sr-Latn`, `iw` → `he`, `620` → `PT`).
-const languageAliasTable = []
-for (const key of Object.keys(aliases.languageAlias).filter((k) => /^[a-z]{2,3}$/.test(k)).sort(utf8)) {
-  let canon
-  try {
-    canon = Intl.getCanonicalLocales(key)[0]
-  } catch {
-    continue
-  }
-  if (canon === key) continue
-  if (pick(fullParts(canon), have, scripts) !== pick({ lang: key, script: null, region: null }, have, scripts)) languageAliasTable.push([key, canon])
-}
-const dataRegions = new Set(all.map((l) => fullParts(l).region).filter(Boolean))
-const regionAliasTable = Object.entries(aliases.territoryAlias)
-  .filter(([key, { _replacement }]) => /^([A-Z]{2}|\d{3})$/.test(key) && dataRegions.has(_replacement.split(' ')[0]))
-  .map(([key, { _replacement }]) => [key, _replacement.split(' ')[0]])
-  .sort((a, b) => utf8(a[0], b[0]))
-// What format/locale.rs reads from a tag: language, script and region as written (cased), with
-// the aliases above applied. Only for tags Intl accepts; others go to `en` (FormatService).
-function resolveTag(tag, set) {
-  tag = tag.split('_').join('-')
-  try {
-    if (Intl.NumberFormat.supportedLocalesOf(tag).length === 0) return 'en'
-  } catch {
-    return 'en'
-  }
-  const subs = tag.split('-')
-  let lang = subs[0].toLowerCase()
-  let script = null
-  let region = null
-  for (const p of subs.slice(1)) {
-    if (p.length === 1) break
-    if (!script && !region && /^[a-zA-Z]{4}$/.test(p)) script = p[0].toUpperCase() + p.slice(1).toLowerCase()
-    else if (!region && /^([a-zA-Z]{2}|\d{3})$/.test(p)) region = p.toUpperCase()
-  }
-  const alias = languageAliasTable.find(([k]) => k === lang)
-  if (alias) {
-    const a = fullParts(alias[1])
-    lang = a.lang
-    script = script ?? a.script
-    region = region ?? a.region
-  }
-  const ra = region && regionAliasTable.find(([k]) => k === region)
-  if (ra) region = ra[1]
-  return pick({ lang, script, region }, set, scripts)
-}
-// the spelling of fixtures/compat/README.md: JSON plus invisible code units as \uXXXX
-const INVISIBLE = /[\u007f-\u00a0\u00ad\u1680\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\ufe00-\ufe0f\ufeff\ufff9-\ufffb]/g
-const spell = (str) => JSON.stringify(str).replace(INVISIBLE, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
 const fmt = (tag, o, v) => new Intl.NumberFormat(tag, o).format(v)
 const sig = (tag) =>
   [
@@ -703,6 +732,90 @@ const intlTag = (tag) => {
     return 'en'
   }
 }
+// Script insertion (`zh-TW` → `zh-Hant-TW`, `sr-ME` → `sr-Latn-ME`): where the likely script
+// of `lang-REGION` leads to another locale than the tag without it, and ICU formats
+// `lang-REGION` as that locale (ICU aliases `sr-ME`, not `az-IR`).
+const scripts = new Map()
+{
+  const langs = new Set(all.filter((l) => fullParts(l).script).map((l) => fullParts(l).lang))
+  const regions = new Set()
+  for (const l of all) if (fullParts(l).region) regions.add(fullParts(l).region)
+  for (const k of Object.keys(likely)) if (fullParts(k).region && !k.startsWith('und')) regions.add(fullParts(k).region)
+  for (const lang of [...langs].sort(utf8)) {
+    for (const region of [...regions].sort(utf8)) {
+      const s = likelyScript(lang, region)
+      // ICU aliases `lang-REGION` only onto a locale CLDR has (with data or as default content)
+      if (!s || !(have.has(`${lang}-${s}-${region}`) || defaultContent.has(`${lang}-${s}-${region}`))) continue
+      const without = pick({ lang, script: null, region }, have, new Map())
+      const withS = pick({ lang, script: s, region }, have, new Map())
+      // a region that implies the language's usual script changes nothing
+      if (without === withS && s === likelyScript(lang, null)) continue
+      const js = sig(intlTag(`${lang}-${region}`))
+      // ICU aliases `lang-REGION` onto `lang-Script-REGION`; where ICU has neither that nor
+      // `lang-Script` (`ku-IQ` → `ku-Arab-IQ`), it formats with the root: `-`
+      if (without !== withS && js === sig(withS)) scripts.set(`${lang}-${region}`, s)
+      else if (js !== sig(without)) scripts.set(`${lang}-${region}`, '-')
+    }
+  }
+}
+// Language aliases that lead elsewhere (`sh` → `sr-Latn`, `iw` → `he`, `hy-arevmda` → `hyw`).
+// V8 keeps a bare lowercase tag of some (`bh`: unsupported) and aliases it otherwise (`bh-US`,
+// `BH` → `bho`): such an entry is marked not bare.
+const languageAliasTable = []
+const canonical = (t) => {
+  try {
+    return Intl.getCanonicalLocales(t)[0]
+  } catch {
+    return null
+  }
+}
+for (const key of Object.keys(aliases.languageAlias).sort(utf8)) {
+  const tag = key.split('_').join('-')
+  const [lang, variant, more] = tag.split('-')
+  if (!/^[a-z]{2,3}$/.test(lang) || more !== undefined || (variant !== undefined && !/^([a-z0-9]{5,8}|[0-9][a-z0-9]{3})$/.test(variant))) continue
+  const canon = canonical(variant === undefined ? tag.toUpperCase() : tag)
+  if (canon === null || canon.toLowerCase() === tag) continue
+  if (pick(fullParts(canon), have, scripts) === pick({ lang, script: null, region: null }, have, scripts)) continue
+  languageAliasTable.push([tag, canon, variant !== undefined || canonical(tag) !== tag])
+}
+const dataRegions = new Set(all.map((l) => fullParts(l).region).filter(Boolean))
+const regionAliasTable = Object.entries(aliases.territoryAlias)
+  .filter(([key, { _replacement }]) => /^([A-Z]{2}|\d{3})$/.test(key) && dataRegions.has(_replacement.split(' ')[0]))
+  .map(([key, { _replacement }]) => [key, _replacement.split(' ')[0]])
+  .sort((a, b) => utf8(a[0], b[0]))
+// What format/locale.rs reads from a tag: language, script and region as written (cased),
+// variants, with the aliases above applied; a tag `Intl` rejects goes to `en` (FormatService),
+// as one with no data. Rust checks the shape itself (`plural::parse`), the mirror asks `Intl`.
+function resolveTag(tag, set) {
+  tag = tag.split('_').join('-')
+  if (canonical(tag) === null) return 'en'
+  const subs = tag.split('-')
+  let lang = subs[0].toLowerCase()
+  let script = null
+  let region = null
+  const variants = []
+  for (const p of subs.slice(1)) {
+    if (p.length === 1) break
+    if (!script && !region && variants.length === 0 && /^[a-zA-Z]{4}$/.test(p)) script = p[0].toUpperCase() + p.slice(1).toLowerCase()
+    else if (!region && variants.length === 0 && /^([a-zA-Z]{2}|\d{3})$/.test(p)) region = p.toUpperCase()
+    else variants.push(p.toLowerCase())
+  }
+  const alias =
+    variants.map((v) => languageAliasTable.find(([k]) => k === `${lang}-${v}`)).find(Boolean) ??
+    languageAliasTable.find(([k, , bare]) => k === lang && (bare || tag !== lang))
+  if (alias) {
+    const a = fullParts(alias[1])
+    lang = a.lang
+    script = script ?? a.script
+    region = region ?? a.region
+  }
+  const ra = region && regionAliasTable.find(([k]) => k === region)
+  if (ra) region = ra[1]
+  return pick({ lang, script, region }, set, scripts)
+}
+// the spelling of fixtures/compat/README.md: JSON plus invisible code units as \uXXXX
+const INVISIBLE = /[\u007f-\u00a0\u00ad\u1680\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\ufe00-\ufe0f\ufeff\ufff9-\ufffb]/g
+const spell = (str) => JSON.stringify(str).replace(INVISIBLE, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
 const closure = (list) => {
   const out = new Set(['und', 'en'])
   for (let l of list) for (; l; l = parentOf(l)) out.add(l)
@@ -717,29 +830,43 @@ for (const l of all) {
 for (const k of Object.keys(likely)) if (!k.startsWith('und') && have.has(k.split('-')[0])) sigTags.add(k)
 for (const [k] of languageAliasTable) {
   sigTags.add(k)
+  sigTags.add(k.toUpperCase())
   sigTags.add(`${k}-US`)
+  const [lang, variant] = k.split('-')
+  if (variant) sigTags.add(`${lang}-AM-1996-${variant}`)
 }
 for (const [k] of regionAliasTable) {
   sigTags.add(`pt-${k}`)
   sigTags.add(`en-${k}`)
 }
-for (const t of ['zh-TW', 'zh-HK', 'zh-MO', 'zh-SG', 'sr-ME', 'sr-RS', 'sr-BA', 'pa-PK', 'uz-AF', 'az-IR', 'yue-CN', 'en_US', 'de_CH', 'xx', 'root', 'und', 'en-US-x-foo', 'de-AT-1996', 'ZH-hant-tw', 'iw-IL', 'no', 'nb-NO', 'zh-Hant-XX', 'de-XX', '']) sigTags.add(t)
+for (const t of ['zh-TW', 'zh-HK', 'zh-MO', 'zh-SG', 'sr-ME', 'sr-RS', 'sr-BA', 'pa-PK', 'uz-AF', 'az-IR', 'az-IQ', 'ku-IQ', 'ku-IR', 'az-Arab', 'ku-Arab', 'mn-Mong', 'ms-Arab', 'sat-Deva', 'bh', 'bh-US', 'BH', 'hy-arevmda', 'hy-arevela', 'zh-hakka', 'yue-CN', 'en_US', 'de_CH', 'xx', 'root', 'und', 'en-US-x-foo', 'de-AT-1996', 'ZH-hant-tw', 'iw-IL', 'no', 'nb-NO', 'zh-Hant-XX', 'de-XX', '']) sigTags.add(t)
+// Known differences (fixtures/compat/README.md): ICU's own `en_US_POSIX` data (no grouping,
+// `INF`) for `en-US-POSIX` / `en-US-u-va-posix`; Rust formats those as `en-US`.
+const KNOWN = new Set(['en-US-POSIX', 'en-us-posix'])
 const localeLines = []
+const allLines = []
+const failed = []
 let skipped = 0
 for (const tag of [...sigTags].sort(utf8)) {
+  if (KNOWN.has(tag)) continue
   const js = sig(intlTag(tag))
+  const a = resolveTag(tag, have)
+  // the root (`ku-IQ`): Intl has no tag for it, tests/number_compat.rs checks Rust's output
+  if (a !== 'und' && sig(a) !== js) failed.push(`${JSON.stringify(tag)}: ${a} gives ${sig(a)}, Intl ${js}`)
+  allLines.push([`locale(${spell(tag)})`, spell(js)])
   const m = resolveTag(tag, modernSet)
+  // a tag whose locale the modern set lacks resolves to a parent, or `en`, there
   if (sig(m) === js) localeLines.push([`locale(${spell(tag)})`, spell(js)])
-  // A tag that resolves inside the modern set must agree; below it (ICU lacks or aliases some
-  // `basic` locales its own way: `ku-IQ` gives root) the default build has no data anyway.
-  else if (modernSet.has(resolveTag(tag, have))) throw new Error(`resolution of ${JSON.stringify(tag)}: ${m} gives ${sig(m)}, Intl ${js}`)
   else skipped++
 }
+if (failed.length > 0) throw new Error(`tag resolution differs from Intl:\n${failed.join('\n')}`)
 // `language_name` names the data locale a tag resolves to (`ca-ES-valencia` → `ca`)
-for (const l of modern.filter((l) => have.has(l) && l !== 'und')) {
-  const name = fields.get(resolveTag(l, modernSet)).f.get('name')
-  localeLines.push([`autonym(${spell(l)})`, name === undefined ? '<none>' : spell(name)])
+const autonymLine = (l, set) => {
+  const name = fields.get(resolveTag(l, set)).f.get('name')
+  return [`autonym(${spell(l)})`, name === undefined ? '<none>' : spell(name)]
 }
+for (const l of modern.filter((l) => l !== 'und')) localeLines.push(autonymLine(l, modernSet))
+for (const l of all.filter((l) => l !== 'und')) allLines.push(autonymLine(l, have))
 
 // ---- numbers.txt: each locale as the difference from its parent ----
 const txt = []
@@ -752,7 +879,9 @@ for (const code of Object.keys(fractions).sort(utf8)) {
   if (code !== 'DEFAULT' && d !== fractions.DEFAULT._digits) txt.push(`fraction ${code} ${d}`)
 }
 if (fractions.DEFAULT._digits !== '2') throw new Error('default currency digits are not 2')
-for (const [k, v] of languageAliasTable) txt.push(`alias ${k} ${v}`)
+for (const [name, digits] of [...numbering].sort((a, b) => utf8(a[0], b[0]))) txt.push(`numbering ${name} ${digits}`)
+// `alias KEY TO [lone]`: `lone` applies to the bare lowercase key too
+for (const [k, v, bare] of languageAliasTable) txt.push(`alias ${k} ${v}${bare ? ' lone' : ''}`)
 for (const [k, v] of regionAliasTable) txt.push(`region ${k} ${v}`)
 for (const [k, v] of [...scripts].sort((a, b) => utf8(a[0], b[0]))) txt.push(`script ${k} ${v}`)
 let diffLines = 0
@@ -790,7 +919,7 @@ mkdirSync(here('../crates/i18n-next/src/format/data'), { recursive: true })
 writeFileSync(here('../crates/i18n-next/src/format/data/numbers.txt'), txt.join('\n'))
 names.push('')
 writeFileSync(here('../crates/i18n-next/src/format/data/currency-names.txt'), names.join('\n'))
-console.log(`numbers.txt: ${all.length} locales (${modern.length} modern), ${diffLines} field lines, ${currencyFixes} currency patterns from ICU, ${ownFormats} own currency formats, ${separatorFixes} separators, ${unitFixes} unit patterns from ICU, ${scripts.size} script, ${languageAliasTable.length} alias, ${regionAliasTable.length} region entries`)
+console.log(`numbers.txt: ${all.length} locales (${modern.length} modern), ${diffLines} field lines, ${currencyFixes} currency patterns from ICU, ${ownFormats} own currency formats, ${separatorFixes} separators, ${unitFixes} unit patterns from ICU, ${nameCurrency} names after the currency pattern, ${nameDonors} name sets from ICU (${nameGarbles} garbled names of ICU skipped), ${scripts.size} script, ${languageAliasTable.length} alias, ${regionAliasTable.length} region entries`)
 writeFileSync(
   here('../fixtures/compat/__golden__/number-locales.md'),
   [
@@ -807,3 +936,19 @@ writeFileSync(
   ].join('\n'),
 )
 console.log(`number-locales.md: ${localeLines.length} lines (${skipped} tags outside the modern set skipped)`)
+writeFileSync(
+  here('../fixtures/compat/__golden__/number-locales-all.md'),
+  [
+    '# compat: number locales, I18N_NEXT_LOCALES=all',
+    '',
+    `> oracle: Intl.NumberFormat / Intl.DisplayNames of node ${process.versions.node.split('.')[0]}, icu ${process.versions.icu}, cldr ${process.versions.cldr}; data from cldr-numbers-full ${CLDR_VERSION}`,
+    '> generated by scripts/cldr.mjs (pnpm -C scripts cldr), do not edit; read by tests/number_compat.rs in a build with I18N_NEXT_LOCALES=all',
+    '> locale(tag): as in number-locales.md, every tag; autonym(locale): every locale ICU has',
+    '',
+    '```text',
+    ...allLines.map(([c, r]) => `${c} → ${r}`).sort(utf8),
+    '```',
+    '',
+  ].join('\n'),
+)
+console.log(`number-locales-all.md: ${allLines.length} lines`)

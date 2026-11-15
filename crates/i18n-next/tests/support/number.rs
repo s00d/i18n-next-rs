@@ -18,6 +18,9 @@ use std::collections::BTreeMap;
 pub const NUMBER: &str = include_str!("../../../../fixtures/compat/__golden__/number.md");
 pub const PROPS: &str = include_str!("../../../../fixtures/compat/__golden__/number-props.md");
 pub const LOCALES: &str = include_str!("../../../../fixtures/compat/__golden__/number-locales.md");
+/// Every tag and every locale, for a build with `I18N_NEXT_LOCALES=all`.
+pub const LOCALES_ALL: &str =
+    include_str!("../../../../fixtures/compat/__golden__/number-locales-all.md");
 
 /// `JSON.stringify(s)` plus the README's invisible code units as `\uXXXX`.
 fn spell(s: &str) -> String {

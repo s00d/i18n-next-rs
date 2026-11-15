@@ -696,12 +696,10 @@ impl Model {
     fn layers(&self, view: Option<&str>) -> Vec<String> {
         match view {
             None => self.chain(&self.locale),
-            Some(code) if self.enabled(code) => self.chain(code),
-            Some(_) => self
-                .case
-                .fallback
-                .map(|fb| self.chain(fb))
-                .unwrap_or_default(),
+            // A disabled locale is still configured: it reads its own chain.
+            Some(code) if self.known(code) => self.chain(code),
+            // `buildFallbackLocaleChain` of an unconfigured code: the global fallback alone.
+            Some(_) => self.case.fallback.map(str::to_owned).into_iter().collect(),
         }
     }
 
@@ -769,7 +767,7 @@ impl Model {
 
     fn has(&self, view: Option<&str>, page: Option<&str>, key: &str) -> bool {
         let code = view.unwrap_or(&self.locale);
-        self.enabled(code)
+        self.known(code)
             && self
                 .in_locale(code, &self.chunk_page(page), key, false, false)
                 .is_some()

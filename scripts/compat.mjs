@@ -331,15 +331,19 @@ for (const page of ['about-us', 'profile', 'cfg', 'about', 'index', 'nope']) {
 // `fallbackLocale` links while they name a configured locale and do not repeat, then the
 // global fallback as the weakest step). The chain is reproduced on core layers: each step
 // is `resolveLookup` with that locale as both locale and fallback (its page, then its
-// root), and the first non-null step wins. The config has a cycle ru → de-at → de → ru.
+// root), and the first non-null step wins. The config has a cycle ru → de-at → de → ru;
+// the global fallback `en` links to `de-at` (followed only when `en` itself is read); `ru`
+// is disabled, still configured (its chain is read and followed through); `pt → zz` names
+// a locale `locales[]` does not list, where the chain stops.
 const CHAIN_LOCALES = [
-  { code: 'en' },
+  { code: 'en', fallbackLocale: 'de-at' },
   { code: 'de', fallbackLocale: 'ru' },
   { code: 'de-at', fallbackLocale: 'de' },
-  { code: 'ru', fallbackLocale: 'de-at' },
+  { code: 'ru', fallbackLocale: 'de-at', disabled: true },
   { code: 'fr' },
+  { code: 'pt', fallbackLocale: 'zz' },
 ]
-for (const locale of ['en', 'de', 'de-at', 'ru', 'fr', 'xx']) {
+for (const locale of ['en', 'de', 'de-at', 'ru', 'fr', 'pt', 'zz', 'xx']) {
   const chain = buildFallbackLocaleChain(locale, CHAIN_LOCALES, 'en').reverse()
   for (const page of PAGES) {
     for (const key of KEYS) {

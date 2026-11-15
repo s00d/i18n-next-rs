@@ -60,9 +60,10 @@ const LINKS: &[(&str, &str)] = &[
 
 /// The chain config of `options.md` (`scripts/compat.mjs` `CHAIN_LOCALES`, global `en`).
 const CHAIN_CONFIG: &str = r#"{"fallbackLocale": "en", "locales": [
-    {"code": "en"}, {"code": "de", "fallbackLocale": "ru"},
-    {"code": "de-at", "fallbackLocale": "de"}, {"code": "ru", "fallbackLocale": "de-at"},
-    {"code": "fr"}]}"#;
+    {"code": "en", "fallbackLocale": "de-at"}, {"code": "de", "fallbackLocale": "ru"},
+    {"code": "de-at", "fallbackLocale": "de"},
+    {"code": "ru", "fallbackLocale": "de-at", "disabled": true},
+    {"code": "fr"}, {"code": "pt", "fallbackLocale": "zz"}]}"#;
 
 pub const GOLDENS: &[(&str, &str)] = &[
     (

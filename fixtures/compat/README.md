@@ -146,14 +146,17 @@ Options of `@i18n-micro/utils` and the Nuxt module that core alone does not show
 - `chain_t("<locale>", "<page>", "<key>") → <result>`: a per-locale fallback chain. Core has one fallback locale;
   the chain is the Nuxt module's (`buildFallbackLocaleChain` of `@i18n-micro/utils/merge-source`: the locale, then
   its `fallbackLocale` while that names a configured locale not yet in the chain, then the global fallback as the
-  weakest step). Locales: `en`, `de → ru`, `de-at → de`, `ru → de-at`, `fr`; global fallback `en`. That is a cycle:
-  `ru` reads `ru, de-at, de, en`, `de` reads `de, ru, de-at, en`; `xx` (not configured) reads `en` only.
+  weakest step). Locales: `en → de-at`, `de → ru`, `de-at → de`, `ru → de-at` (disabled), `fr`, `pt → zz`;
+  global fallback `en`. That is a cycle: `ru` reads `ru, de-at, de, en`, `de` reads `de, ru, de-at, en`. The global
+  fallback's own link is followed only when `en` itself is read (`en, de-at, de, ru`): in every other chain `en` is
+  taken alone, and `xx` (not configured) reads `en` only, never `only_at`. `ru` is disabled but configured: it
+  reads its chain, and `de` reads through it. `pt → zz` names a locale `locales[]` does not list: the chain stops
+  there (`pt, en`), and `zz` reads `en`; Rust declares `zz` known, and with no messages it adds no layer.
   **Method:** the Nuxt module premerges a page from the chain's files; to keep core's layer semantics (`null` and a
   scalar never hide a weaker layer's subtree), the oracle instead walks the chain on core layers: each step is
   `BaseI18n.resolveLookup` with that locale as both locale and fallback (its page, then its root), and the first
   non-null step wins. Rust: `config_json` with the same `locales[]` and `fallbackLocale`, `with_locale(locale)
-  .page(page)`. The global fallback has no `fallbackLocale` of its own here: Rust follows links from the global
-  fallback too, `buildFallbackLocaleChain` does not, and this golden does not decide that case.
+  .page(page)`.
 
 ## Contract for Rust
 

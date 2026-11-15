@@ -98,13 +98,14 @@ struct Snapshot {
     locale: Arc<str>,
     /// Shared between snapshots that differ only in the active locale.
     data: Arc<DataMap>,
-    /// Chains of every enabled known locale: the keys are exactly the locales `set_locale`
-    /// accepts.
+    /// Chains of every known locale, disabled ones too (`with_locale` reads them, as a
+    /// configured locale in `buildFallbackLocaleChain`); `set_locale` refuses the disabled.
     chains: Arc<FastMap<Arc<str>, Chain>>,
     active: Chain,
     /// The active locale's own chunks (what `has` reads), `None` when it has no data.
     own: Option<Arc<LocaleData>>,
-    /// The global fallback's chain: what a locale that is not known reads.
+    /// The global fallback's layer alone, never its links: what a locale that is not known
+    /// reads (`buildFallbackLocaleChain` of an unconfigured code is `[fallback]`).
     fallback: Chain,
     meta: Arc<Meta>,
 }
@@ -120,7 +121,7 @@ impl Snapshot {
             .chain(meta.declared.iter().map(|k| &**k))
             .chain(std::iter::once(&*locale));
         for code in names {
-            if !meta.disabled(code) && !chains.contains_key(code) {
+            if !chains.contains_key(code) {
                 chains.insert(Arc::from(code), meta.chain(&data, code));
             }
         }
@@ -128,10 +129,12 @@ impl Snapshot {
             .get(&*locale)
             .cloned()
             .unwrap_or_else(|| meta.chain(&data, &locale));
-        let fallback = match &meta.fallback {
-            Some(fb) => meta.chain(&data, fb),
-            None => Arc::from([]),
-        };
+        let fallback = meta
+            .fallback
+            .as_deref()
+            .and_then(|fb| data.get(fb).cloned())
+            .into_iter()
+            .collect();
         Snapshot {
             version,
             own: data.get(&*locale).cloned(),
@@ -144,8 +147,8 @@ impl Snapshot {
         }
     }
 
-    /// The layers of `locale` (the active one when `None`). A locale that is not known,
-    /// or is disabled, has nothing of its own: it reads the global fallback chain.
+    /// The layers of `locale` (the active one when `None`). A locale that is not known has
+    /// nothing of its own: it reads the global fallback alone.
     fn layers(&self, locale: Option<&str>) -> &[Arc<LocaleData>] {
         match locale {
             None => &self.active,
@@ -519,8 +522,8 @@ impl I18n {
     }
 
     /// A cheap view in another locale, without switching the active one. A locale that
-    /// is not known (or is disabled) has nothing of its own: lookups go to the global
-    /// fallback chain, misses call `missing` with that code.
+    /// is not known has nothing of its own: lookups go to the global fallback alone, misses
+    /// call `missing` with that code. A disabled locale reads its own chain, as in Nuxt.
     #[must_use]
     pub fn with_locale(&self, code: &str) -> View {
         View {

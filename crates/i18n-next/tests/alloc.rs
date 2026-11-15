@@ -144,6 +144,53 @@ fn hot_path_allocations() {
         format!("Hallo, Ann! 3 neu, A{long}")
     );
 
+    // case: a dropped instance leaves no snapshot behind in thread caches. Two live
+    // threads cache a big catalog, every handle is dropped, then each thread reads another
+    // instance → live bytes fall back near the baseline (the reads purge the dead slots;
+    // the helper thread stays alive, so no thread-exit destructor frees its cache).
+    let big = {
+        let mut s = String::from("{");
+        for d in 0..20_000 {
+            if d > 0 {
+                s.push(',');
+            }
+            s.push_str(&format!("\"key{d}\":\"value number {d}\""));
+        }
+        s.push('}');
+        s
+    };
+    let (go, wait) = std::sync::mpsc::channel::<()>();
+    let (back, done) = std::sync::mpsc::channel::<()>();
+    let other = i18n.clone();
+    let base = dhat::HeapStats::get().curr_bytes;
+    let x = I18n::builder().messages("en", None, &big).build().unwrap();
+    drop(big);
+    let grown = dhat::HeapStats::get().curr_bytes - base;
+    let x2 = x.clone();
+    let helper = std::thread::spawn(move || {
+        assert_eq!(x2.t("key1"), "value number 1");
+        drop(x2);
+        back.send(()).unwrap();
+        wait.recv().unwrap();
+        std::hint::black_box(other.get("nav.home"));
+        back.send(()).unwrap();
+        wait.recv().unwrap();
+    });
+    done.recv().unwrap();
+    assert_eq!(x.t("key2"), "value number 2");
+    drop(x);
+    go.send(()).unwrap();
+    done.recv().unwrap();
+    std::hint::black_box(i18n.get("nav.home"));
+    let left = dhat::HeapStats::get().curr_bytes.saturating_sub(base);
+    go.send(()).unwrap();
+    helper.join().unwrap();
+    assert!(grown > 1_000_000, "the catalog is big: {grown} bytes");
+    assert!(
+        left < grown / 20,
+        "{left} of {grown} bytes still live after both threads read another instance"
+    );
+
     // case: a miss down the whole chain with a default → 1 block (the interpolated
     // default). Last on purpose: a failure here leaves every case above checked.
     let args = Args::new().int("n", 2).or("{n} items");

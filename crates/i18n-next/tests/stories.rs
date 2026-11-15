@@ -197,7 +197,8 @@ fn unknown_and_bad_names() {
 }
 
 /// Given `i18n.json` with a disabled locale, when the app lists locales and switches,
-/// then the disabled one is hidden, refused, and cannot be the start locale.
+/// then the disabled one is hidden, refused, and cannot be the start locale; a view of it
+/// still reads its own messages.
 #[test]
 fn disabled_locale() {
     let config = r#"{"locales": [{"code": "en"}, {"code": "es", "disabled": true}]}"#;
@@ -216,10 +217,11 @@ fn disabled_locale() {
     let codes: Vec<_> = i18n.locales().into_iter().map(|l| l.code).collect();
     assert_eq!(codes, ["en"]);
 
-    // step 2: set_locale refuses it, with_locale reads nothing of its own
+    // step 2: set_locale refuses it; with_locale still reads its chain, as Nuxt's
+    // `buildFallbackLocaleChain` does for a configured locale (`es` → `[es, en]`)
     assert!(matches!(i18n.set_locale("es"), Err(Error::DisabledLocale(c)) if c == "es"));
-    assert_eq!(i18n.with_locale("es").try_t("a"), None);
-    assert!(!i18n.with_locale("es").has("a"));
+    assert_eq!(i18n.with_locale("es").try_t("a").as_deref(), Some("A-es"));
+    assert!(i18n.with_locale("es").has("a"));
     assert_eq!(i18n.version(), 0);
 
     // step 3: it cannot be the start locale either
@@ -711,6 +713,52 @@ fn global_fallback_is_the_last_step_alone() {
     assert_eq!(i18n.t("only_fr"), "fr");
 }
 
+/// Given an `i18n.json` whose global fallback `en` links to `fr`, a disabled `de` with
+/// messages, `pt → zz` where `zz` is in no `locales[]` entry, when the app reads through
+/// views of an unknown, a disabled and a linked locale, then each reads exactly the chain
+/// `buildFallbackLocaleChain` gives (`qq` → `[en]`, `de` → `[de, en]`, `pt` → `[pt, en]`).
+#[test]
+fn unknown_and_disabled_locales_read_the_js_chain() {
+    let guard = Guard::new();
+    let i18n = I18n::builder()
+        .config_json(
+            r#"{"defaultLocale": "en", "fallbackLocale": "en", "locales": [
+                {"code": "en", "fallbackLocale": "fr"}, {"code": "fr"},
+                {"code": "de", "disabled": true}, {"code": "pt", "fallbackLocale": "zz"}]}"#,
+        )
+        .messages("en", None, r#"{"e": "E"}"#)
+        .messages("fr", None, r#"{"z": "fr-z"}"#)
+        .messages("de", None, r#"{"d": "D"}"#)
+        .missing(guard.missing())
+        .build()
+        .unwrap();
+    // step 1: the active en follows its own link → en, fr
+    assert_eq!([i18n.t("e"), i18n.t("z")], ["E", "fr-z"]);
+    // step 2: unknown qq → the global fallback alone, never en → fr
+    guard.allow("qq|index|z");
+    assert_eq!(i18n.with_locale("qq").t("e"), "E");
+    assert_eq!(i18n.with_locale("qq").t("z"), "z");
+    assert!(!i18n.with_locale("qq").has("e"));
+    // step 3: disabled de → its own messages, then en; set_locale still refuses it
+    guard.allow("de|index|z");
+    assert_eq!(i18n.with_locale("de").t("d"), "D");
+    assert_eq!(i18n.with_locale("de").t("e"), "E");
+    assert_eq!(i18n.with_locale("de").t("z"), "z");
+    assert!(i18n.with_locale("de").has("d"));
+    assert!(matches!(
+        i18n.set_locale("de"),
+        Err(Error::DisabledLocale(_))
+    ));
+    // step 4: fr, a known locale, ends with en alone → fr, en (not en → fr again)
+    assert_eq!(i18n.with_locale("fr").t("e"), "E");
+    // step 5: pt → zz with no zz messages: zz adds no layer, as JS stops there → pt, en
+    assert_eq!(i18n.with_locale("pt").t("e"), "E");
+    i18n.set_locale("zz").unwrap();
+    guard.allow("zz|index|z");
+    assert_eq!([i18n.t("e"), i18n.t("z")], ["E", "z"]);
+    assert_eq!(guard.seen(), ["qq|index|z", "de|index|z", "zz|index|z"]);
+}
+
 /// Given documents whose dotted paths would multiply their size in memory (a deep prefix
 /// of long keys over many leaves), when the app loads them, then the build fails at
 /// once with a `Json` error, before storing anything large; a path at the limit loads.
@@ -797,4 +845,32 @@ fn replaced_containers_drop_their_subtree() {
         .unwrap();
     assert_eq!([i18n.t("k4999"), i18n.t("end")], ["v", "e"]);
     assert!(i18n.has("x"));
+}
+
+/// Given a default text whose placeholders hold JS whitespace (space, NBSP, BOM) and a
+/// zero-width space, and arguments named exactly so, when a lookup misses, then only the
+/// U+200B one is a placeholder: JS `\s` covers the rest, so `{a b}` stays as written
+/// (`@i18n-micro/core` `interpolate` gives `[{a b}|{a\u{a0}b}|{a\u{feff}b}|Z]`), the same
+/// as for a found message.
+#[test]
+fn default_text_placeholders_follow_js_whitespace() {
+    let guard = Guard::new();
+    let tpl = "[{a b}|{a\u{a0}b}|{a\u{feff}b}|{a\u{200b}b}]";
+    let i18n = I18n::builder()
+        .messages("en", None, &format!(r#"{{"k": "{tpl}"}}"#))
+        .missing(guard.missing())
+        .build()
+        .unwrap();
+    let args = Args::new()
+        .str("a b", "S")
+        .str("a\u{a0}b", "N")
+        .str("a\u{feff}b", "F")
+        .str("a\u{200b}b", "Z");
+    let want = "[{a b}|{a\u{a0}b}|{a\u{feff}b}|Z]";
+    // step 1: a miss with the template as its default → interpolated once, JS spaces kept
+    guard.allow("en|index|nope");
+    assert_eq!(i18n.t_with("nope", &args.clone().or(tpl)), want);
+    // step 2: the same text found in the catalog → the same answer
+    assert_eq!(i18n.t_with("k", &args), want);
+    assert_eq!(guard.seen(), ["en|index|nope"]);
 }

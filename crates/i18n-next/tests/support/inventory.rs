@@ -189,14 +189,17 @@ fn public_fns(api: &str) -> BTreeSet<String> {
         {
             trait_impl = false;
         }
-        // `pub [const] [async] [unsafe] [extern "abi"] fn path(..)`
+        // `pub <qualifiers> fn path(..)`. cargo-public-api 0.52 writes qualifiers in its own
+        // order and the ABI as a bare word (`pub unsafe const c fn ..`, `pub system fn ..`),
+        // so any word before `fn` that is not a path (`::`) or a field (`name:`) is a qualifier.
         let Some(rest) = line.strip_prefix("pub ") else {
             continue;
         };
         let mut words = rest.split(' ');
-        let qualifiers = words.by_ref().take_while(|w| *w != "fn").all(|w| {
-            ["const", "async", "unsafe", "extern", "safe"].contains(&w) || w.starts_with('"')
-        });
+        let qualifiers = words
+            .by_ref()
+            .take_while(|w| *w != "fn")
+            .all(|w| !w.contains("::") && !w.ends_with(':'));
         let item = words.collect::<Vec<_>>().join(" ");
         if qualifiers && !item.is_empty() {
             fns.push((fn_path(&item), trait_impl));
@@ -370,7 +373,9 @@ pub mod k::sub
 pub fn k::version() -> &'static str
 pub async fn k::sub::load(&str) -> k::Result<()>
 pub const fn k::sub::r#type() -> u8
-pub unsafe extern "C" fn k::sub::raw()
+pub unsafe c fn k::sub::raw()
+pub system fn k::sub::sys()
+pub unsafe const c fn k::sub::cc()
 pub fn k::init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R>
 pub fn k::apply<F: core::ops::Fn(u8) -> u8>(F)
 pub struct k::Catalog<T>
@@ -395,12 +400,14 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
             set(&[
                 "after_impls",
                 "apply",
+                "cc",
                 "ensure_async",
                 "get",
                 "init",
                 "load",
                 "raw",
                 "read",
+                "sys",
                 "type",
                 "version"
             ])

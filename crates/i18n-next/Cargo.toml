@@ -1,0 +1,60 @@
+[package]
+name = "i18n-next"
+description = "i18n for Rust and Tauri on the same locale files as nuxt-i18n-micro: pages, plurals, Intl-compatible formats, no runtime dependencies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["i18n", "localization", "translation", "tauri", "wasm"]
+categories = ["internationalization", "localization", "wasm"]
+include = ["/src/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/README.md"]
+
+[lints]
+workspace = true
+
+# No runtime dependencies (DESIGN 2.3). Integrations come only behind features,
+# off by default; CI (`deps` job) fails if the default build gains one.
+[dependencies]
+
+[features]
+default = ["std", "format", "tz", "global"]
+std = []
+format = []
+tz = []
+global = []
+serde = []
+tracing = []
+watch = []
+tzdb = []
+currency-names = []
+tauri-guest = []
+chrono = []
+time = []
+
+# Checks only, never shipped (DESIGN 2.3). Native-only: proptest models and dhat run
+# native (7.6), criterion does not build for wasm32-unknown-unknown.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+proptest = "1.12"
+dhat = "0.3"
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+gungraun = "0.20"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+# proptest drives the session models from M1 on (DESIGN 7.3); declared in M0 so the
+# test skeleton and its version are settled with the rest of the tooling.
+[package.metadata.cargo-machete]
+ignored = ["proptest"]
+
+[[bench]]
+name = "lookup"
+harness = false
+
+[[bench]]
+name = "instructions"
+harness = false

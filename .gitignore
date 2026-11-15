@@ -1,0 +1,43 @@
+/.vs
+.DS_Store
+.Thumbs.db
+*.sublime*
+.idea/
+debug.log
+package-lock.json
+.vscode/settings.json
+yarn.lock
+
+/.tauri
+/target
+# Cargo.lock is tracked (unlike the template): CI size and perf diffs need the same
+# dependency versions on the base commit and the PR.
+node_modules/
+
+dist-js
+dist
+.cursorrules
+.cursor/
+# Docs site (docs/): build output and generated pages
+docs/node_modules
+docs/.nuxt
+docs/.output
+docs/.data
+docs/content/3.reference/
+docs/content/9.changelog.md
+docs/dist
+
+# cargo-mutants output
+mutants.out*/
+
+# cargo-fuzz artifacts and corpora (fuzz/, local only)
+fuzz/target
+fuzz/artifacts
+fuzz/corpus
+fuzz/coverage
+
+# dhat output written when an alloc test fails
+dhat-heap.json
+
+# agent worktrees and local Claude state
+/.claude/

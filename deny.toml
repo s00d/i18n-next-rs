@@ -1,0 +1,50 @@
+# cargo-deny (DESIGN 8b.10): licenses, advisories, duplicate versions, sources.
+# `i18n-next` has no runtime dependencies; what is checked here is the plugin's Tauri
+# tree and the dev tooling. Run: `cargo deny check`.
+
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-linux-android",
+    "aarch64-apple-ios",
+    "wasm32-unknown-unknown",
+]
+all-features = false
+
+[advisories]
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CC0-1.0",
+    "BSL-1.0",
+]
+unused-allowed-license = "allow"
+
+[bans]
+# Tauri's tree carries several versions of some crates (windows-sys, bitflags, ...);
+# shown as warnings, not failures. The core crate has no dependencies to duplicate.
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies inside the workspace (the plugin's `i18n-next` pin, playgrounds).
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

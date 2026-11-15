@@ -1,0 +1,20 @@
+{
+  "name": "i18n-next-rs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace root: delegates to the guest-js package (crates/tauri-plugin-i18n-next), the docs site and the playgrounds.",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -C crates/tauri-plugin-i18n-next build",
+    "test": "pnpm -C crates/tauri-plugin-i18n-next test",
+    "typecheck": "pnpm -C crates/tauri-plugin-i18n-next typecheck",
+    "docs:dev": "pnpm -C docs install && pnpm -C docs dev",
+    "docs:generate": "pnpm -C docs install && pnpm -C docs generate",
+    "playground:tauri": "node -e \"console.error('examples/tauri-app is added in M7-M8'); process.exit(1)\"",
+    "playground:web": "node -e \"console.error('examples/leptos-app is added in M9'); process.exit(1)\""
+  },
+  "packageManager": "pnpm@9.15.9+sha512.68046141893c66fad01c079231128e9afb89ef87e2691d69e4d40eee228988295fd4682181bae55b58418c3a253bde65a505ec7c5f9403ece5cc3cd37dcf2531",
+  "engines": {
+    "node": ">=20.19"
+  }
+}

@@ -1,0 +1,278 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Binaryen release for `wasm-opt -Oz` in the size job.
+  BINARYEN_VERSION: "123"
+  # Nightly for cargo-public-api only (rustdoc JSON); bump together with the tool.
+  PUBLIC_API_NIGHTLY: nightly-2026-08-07
+  # Flip to "true" after the first crates.io release: turns on cargo-semver-checks.
+  CRATES_PUBLISHED: "false"
+
+jobs:
+  # Native matrix: stable and MSRV on linux / macOS / windows, tests through nextest.
+  test:
+    name: test (${{ matrix.os }}, ${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable, "1.90"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system deps (webkit for tauri)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.toolchain }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Format
+        if: matrix.toolchain == 'stable'
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Tests (nextest, ci profile)
+        run: cargo nextest run --workspace --locked --profile ci
+
+      - name: Doctests
+        run: cargo test --doc --workspace --locked
+
+      - name: JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.os }}-${{ matrix.toolchain }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  # The core crate builds for the browser and WASI from the first commit (DESIGN 2.1, 7.6).
+  wasm:
+    name: wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build wasm32-unknown-unknown (default features)
+        run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown
+      - name: Build wasm32-unknown-unknown (no default features)
+        run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown --no-default-features
+      - name: Build wasm32-wasip1
+        run: cargo build -p i18n-next --locked --target wasm32-wasip1
+
+      # The runner must match the wasm-bindgen version in Cargo.lock exactly.
+      - name: Install wasm-bindgen-test-runner and wasmtime
+        run: |
+          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version' | head -n1)
+          echo "WASM_BINDGEN_VERSION=$v" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@${{ env.WASM_BINDGEN_VERSION }},wasmtime
+
+      - name: wasm-bindgen-test (Node)
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+        run: cargo test -p i18n-next --locked --target wasm32-unknown-unknown
+
+      - name: wasm-bindgen-test (headless Chrome)
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+          WASM_BINDGEN_USE_BROWSER: "1"
+        # CHROMEWEBDRIVER is preset on GitHub's ubuntu images.
+        run: CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" cargo test -p i18n-next --locked --target wasm32-unknown-unknown
+
+      - name: Tests on wasm32-wasip1 (wasmtime)
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir=.
+        run: cargo test -p i18n-next --locked --target wasm32-wasip1
+
+  # .wasm size of the micro and full builds after `wasm-opt -Oz`; PRs fail on >2% growth
+  # against the base commit (DESIGN 2.4).
+  size:
+    name: size
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout base commit
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .size-base
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-opt (binaryen)
+        run: |
+          curl -sSfL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+      - name: Size check
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            tools/size-check.sh "$PWD/.size-base"
+          else
+            tools/size-check.sh
+          fi
+
+  # `i18n-next` has no runtime dependencies with default features (DESIGN 2.3).
+  deps:
+    name: no runtime deps
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo tree must list only i18n-next itself
+        run: |
+          tree=$(cargo tree -e normal -p i18n-next --depth 1 --locked --prefix none)
+          echo "$tree"
+          extra=$(echo "$tree" | grep -v '^i18n-next v' || true)
+          if [ -n "$extra" ]; then
+            echo "::error::i18n-next gained runtime dependencies (DESIGN 2.3, owner decision required):"
+            echo "$extra"
+            exit 1
+          fi
+
+  # Licenses, advisories, duplicates and sources; unused dependencies (DESIGN 8b.10).
+  deny:
+    name: deny + machete
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+      - run: cargo machete
+
+  # Instruction counts with gungraun (Valgrind): deterministic, no timing noise. On PRs
+  # the base commit is measured first and the PR fails on >3% more instructions (DESIGN 7.7).
+  perf:
+    name: perf
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GUNGRAUN_HOME: ${{ github.workspace }}/target/gungraun
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout base commit
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .perf-base
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      # The runner must match the gungraun version in Cargo.lock exactly.
+      - name: gungraun version
+        run: |
+          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name == "gungraun") | .version' | head -n1)
+          echo "GUNGRAUN_VERSION=$v" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: gungraun-runner@${{ env.GUNGRAUN_VERSION }}
+      - name: Baseline on the base commit
+        if: github.event_name == 'pull_request' && hashFiles('.perf-base/crates/i18n-next/benches/instructions.rs') != ''
+        working-directory: .perf-base
+        run: cargo bench -p i18n-next --bench instructions -- --save-baseline=base
+      - name: Instructions on this commit
+        run: |
+          if [ -d "$GUNGRAUN_HOME" ] && [ "${{ github.event_name }}" = "pull_request" ]; then
+            cargo bench -p i18n-next --locked --bench instructions -- --baseline=base --callgrind-limits='ir=3%'
+          else
+            cargo bench -p i18n-next --locked --bench instructions
+          fi
+
+  # guest-js (scripts live in crates/tauri-plugin-i18n-next/package.json).
+  node:
+    name: guest-js
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm version comes from package.json `packageManager`.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C crates/tauri-plugin-i18n-next typecheck
+      - name: Build guest-js and check dist
+        run: pnpm -C crates/tauri-plugin-i18n-next build
+      - run: pnpm -C crates/tauri-plugin-i18n-next test
+
+  # Console tour over every locale; fails on any problem (DESIGN 8a).
+  playground:
+    name: playground-rust --check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run -p playground-rust --locked -- --check
+
+  # Public API snapshots in api/ (DESIGN 8b.9): any change shows up as a diff in the PR.
+  public-api:
+    name: public API
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux system deps (webkit for tauri)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.PUBLIC_API_NIGHTLY }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api@0.52.0,cargo-semver-checks@0.51.0
+      - name: Snapshot matches api/
+        run: |
+          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next > api/i18n-next.txt
+          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p tauri-plugin-i18n-next > api/tauri-plugin-i18n-next.txt
+          git diff --exit-code api/ || {
+            echo "::error::public API changed: regenerate api/*.txt with cargo public-api and commit the diff"
+            exit 1
+          }
+      # cargo-semver-checks compares with the last version on crates.io. Nothing is
+      # published yet, so there is no baseline: skipped until CRATES_PUBLISHED is "true".
+      - name: Semver checks
+        if: env.CRATES_PUBLISHED == 'true'
+        run: cargo semver-checks --workspace

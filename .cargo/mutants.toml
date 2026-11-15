@@ -1,0 +1,22 @@
+# cargo-mutants (https://mutants.rs): `cargo mutants` mutates src/ and runs the scenario
+# tests under nextest with the `mutants` profile (.config/nextest.toml: short hard timeout,
+# fail-fast) and the `mutants` cargo profile (dev without debug info, faster links).
+# A timeout counts as a caught mutant: such a mutant makes the code spin.
+# Run locally only, per crate (DESIGN 7.5):
+#
+#   export TMPDIR="$PWD/target/mutants-tmp" && mkdir -p "$TMPDIR"
+#   cargo mutants -p i18n-next
+#   cargo mutants -p tauri-plugin-i18n-next
+#   git diff origin/main.. > target/pr.diff && cargo mutants -p i18n-next --in-diff target/pr.diff
+#
+# Exclusions are of three kinds only, each with its reason in a comment:
+#   1. code not built on the host (`tauri_guest`, `cfg(wasm)` branches): covered by wasm tests;
+#   2. equivalent mutants: same result for every input;
+#   3. `Debug` impls and log text.
+# Anything else that survives is closed by a scenario, not by this file.
+
+test_tool = "nextest"
+additional_cargo_test_args = ["--profile", "mutants"]
+profile = "mutants"
+
+exclude_re = []

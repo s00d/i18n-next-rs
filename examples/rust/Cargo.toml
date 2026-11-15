@@ -1,0 +1,16 @@
+[package]
+name = "playground-rust"
+description = "Console tour of i18n-next on the shared examples/locales catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+i18n-next = { path = "../../crates/i18n-next" }

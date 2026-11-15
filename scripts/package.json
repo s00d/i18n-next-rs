@@ -1,0 +1,14 @@
+{
+  "name": "i18n-next-rs-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Generators for compat goldens, CLDR data, tzdb and the performance table. Versions are pinned: CLDR equals the one in Node CI.",
+  "type": "module",
+  "devDependencies": {
+    "@i18n-micro/core": "2.1.0",
+    "@i18n-micro/utils": "2.1.1",
+    "cldr-core": "48.0.0",
+    "cldr-dates-full": "48.0.0",
+    "cldr-numbers-full": "48.0.0"
+  }
+}

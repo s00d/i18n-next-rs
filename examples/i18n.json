@@ -1,0 +1,16 @@
+{
+  "defaultLocale": "en",
+  "fallbackLocale": "en",
+  "locales": [
+    { "code": "en", "iso": "en-US", "displayName": "English" },
+    { "code": "ru", "iso": "ru-RU", "displayName": "Русский" }
+  ],
+  "numberFormats": {
+    "en": { "currency": { "style": "currency", "currency": "USD" } },
+    "ru": { "currency": { "style": "currency", "currency": "RUB" } }
+  },
+  "datetimeFormats": {
+    "en": { "short": { "dateStyle": "short" } },
+    "ru": { "short": { "dateStyle": "short" } }
+  }
+}

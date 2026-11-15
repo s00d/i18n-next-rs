@@ -1,0 +1,39 @@
+pub mod tauri_plugin_i18n_next
+pub mod tauri_plugin_i18n_next::commands
+pub fn tauri_plugin_i18n_next::commands::ping() -> tauri_plugin_i18n_next::error::Result<alloc::string::String>
+pub mod tauri_plugin_i18n_next::error
+pub enum tauri_plugin_i18n_next::error::Error
+pub tauri_plugin_i18n_next::error::Error::UnknownLocale(alloc::string::String)
+pub tauri_plugin_i18n_next::error::Error::UnknownPage(alloc::string::String)
+impl core::clone::Clone for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::clone(&self) -> tauri_plugin_i18n_next::error::Error
+impl core::cmp::Eq for tauri_plugin_i18n_next::error::Error
+impl core::cmp::PartialEq for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::eq(&self, &tauri_plugin_i18n_next::error::Error) -> bool
+impl core::error::Error for tauri_plugin_i18n_next::error::Error
+impl core::fmt::Debug for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::error::Error
+impl serde_core::ser::Serialize for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+pub type tauri_plugin_i18n_next::error::Result<T> = core::result::Result<T, tauri_plugin_i18n_next::error::Error>
+pub enum tauri_plugin_i18n_next::Error
+pub tauri_plugin_i18n_next::Error::UnknownLocale(alloc::string::String)
+pub tauri_plugin_i18n_next::Error::UnknownPage(alloc::string::String)
+impl core::clone::Clone for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::clone(&self) -> tauri_plugin_i18n_next::error::Error
+impl core::cmp::Eq for tauri_plugin_i18n_next::error::Error
+impl core::cmp::PartialEq for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::eq(&self, &tauri_plugin_i18n_next::error::Error) -> bool
+impl core::error::Error for tauri_plugin_i18n_next::error::Error
+impl core::fmt::Debug for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::error::Error
+impl serde_core::ser::Serialize for tauri_plugin_i18n_next::error::Error
+pub fn tauri_plugin_i18n_next::error::Error::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+pub fn tauri_plugin_i18n_next::init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R>
+pub type tauri_plugin_i18n_next::Result<T> = core::result::Result<T, tauri_plugin_i18n_next::error::Error>

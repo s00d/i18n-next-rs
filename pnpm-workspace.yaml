@@ -1,0 +1,4 @@
+# docs/ is its own pnpm project (own lockfile, `packages: []`), so its Nuxt deps never mix with the package.
+packages:
+  - crates/tauri-plugin-i18n-next
+  - scripts

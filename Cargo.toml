@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/i18n-next",
+    "crates/tauri-plugin-i18n-next",
+    "examples/rust",
+    "benches/compare",
+]
+# Tauri apps have their own workspace and lock: `generate_context!` needs a
+# built frontend, and `cargo test --workspace` must not depend on it (DESIGN 8a).
+# The size probe is a cdylib built only by the CI `size` job.
+exclude = ["examples/tauri-app", "examples/leptos-app", "tools/size-probe"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+repository = "https://github.com/s00d/i18n-next-rs"
+authors = ["s00d"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# `cargo mutants` (.cargo/mutants.toml): dev without debug info links faster.
+[profile.mutants]
+inherits = "dev"
+debug = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,80 @@
+{
+  "name": "tauri-plugin-i18n-next-api",
+  "version": "0.1.0",
+  "author": "s00d",
+  "description": "Frontend API of tauri-plugin-i18n-next: translations from the Rust catalog for @i18n-micro in Tauri 2 apps",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/s00d/i18n-next-rs.git",
+    "directory": "crates/tauri-plugin-i18n-next"
+  },
+  "license": "MIT",
+  "keywords": [
+    "tauri",
+    "plugin",
+    "i18n",
+    "i18n-micro",
+    "translations",
+    "vue",
+    "rust"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist-js/index.d.ts",
+  "main": "./dist-js/index.cjs",
+  "module": "./dist-js/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist-js/index.d.ts",
+        "default": "./dist-js/index.js"
+      },
+      "require": {
+        "types": "./dist-js/index.d.cts",
+        "default": "./dist-js/index.cjs"
+      }
+    },
+    "./vue": {
+      "import": {
+        "types": "./dist-js/vue.d.ts",
+        "default": "./dist-js/vue.js"
+      },
+      "require": {
+        "types": "./dist-js/vue.d.cts",
+        "default": "./dist-js/vue.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist-js",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json && node -e \"for (const n of ['index','vue']) require('fs').copyFileSync('dist-js/'+n+'.d.ts','dist-js/'+n+'.d.cts')\" && pnpm check:dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "pnpm build",
+    "check:dist": "publint --strict && attw --pack . --profile node16 && node scripts/check-dist.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": ">=2.0.0"
+  },
+  "peerDependencies": {
+    "@i18n-micro/vue": "^2.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@i18n-micro/vue": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "publint": "^0.3.25",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

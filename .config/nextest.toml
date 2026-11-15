@@ -1,0 +1,27 @@
+# `cargo nextest run`: every test gets a hard limit, so a hang (or a mutant that makes code
+# spin) is killed in seconds instead of waiting for an outer watchdog (DESIGN 7.1).
+#
+# No retries in any profile: a test that fails once in a hundred runs is a bug to fix,
+# not noise to rerun.
+
+[profile.default]
+retries = 0
+slow-timeout = { period = "10s", terminate-after = 3 }
+fail-fast = false
+
+# CI: run everything, report every failure, JUnit for the run summary.
+[profile.ci]
+retries = 0
+slow-timeout = { period = "30s", terminate-after = 2 }
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+
+# cargo-mutants (.cargo/mutants.toml): a mutant can loop and allocate without bound,
+# so kill early, stop at the first failure (the mutant is caught) and leave cores free.
+[profile.mutants]
+retries = 0
+slow-timeout = { period = "10s", terminate-after = 1 }
+test-threads = 4
+fail-fast = true

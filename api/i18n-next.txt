@@ -1,0 +1,2 @@
+pub mod i18n_next
+pub fn i18n_next::version() -> &'static str

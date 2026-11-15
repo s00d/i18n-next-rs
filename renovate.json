@@ -1,0 +1,36 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "JS reference library behind the compat goldens (DESIGN 8b.12): a PR regenerates goldens and shows what changed in JS",
+      "matchFileNames": ["scripts/package.json"],
+      "matchPackageNames": ["@i18n-micro/**"],
+      "groupName": "i18n-micro",
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "CLDR data behind plural rules and formats: regenerate data/cldr and goldens",
+      "matchFileNames": ["scripts/package.json"],
+      "matchPackageNames": ["cldr-**"],
+      "groupName": "cldr",
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "Node in CI changes ICU/CLDR: same path as a CLDR update",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["node"],
+      "groupName": "node"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "node-version in workflow files",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["node-version:\\s*['\"]?(?<currentValue>\\d+(?:\\.\\d+){0,2})['\"]?"],
+      "depNameTemplate": "node",
+      "datasourceTemplate": "node-version"
+    }
+  ]
+}

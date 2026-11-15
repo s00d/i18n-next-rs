@@ -1,0 +1,8 @@
+{
+  "nav": {
+    "home": "Home",
+    "settings": "Settings"
+  },
+  "greeting": "Hello, {name}!",
+  "apples": "no apples | one apple | {count} apples"
+}

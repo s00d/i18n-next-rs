@@ -1,0 +1,15 @@
+[package]
+name = "compare"
+description = "Benchmarks of i18n-next against rust-i18n, fluent-bundle and ICU4X (M10)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# Empty until M10 (DESIGN 7.7): the comparison libraries come in as dependencies
+# of this crate only, never of i18n-next.
+[dependencies]

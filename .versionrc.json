@@ -1,0 +1,21 @@
+{
+  "types": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "chore", "hidden": true },
+    { "type": "docs", "hidden": true },
+    { "type": "style", "hidden": true },
+    { "type": "refactor", "hidden": true },
+    { "type": "test", "hidden": true }
+  ],
+  "packageFiles": [{ "filename": "crates/tauri-plugin-i18n-next/package.json", "type": "json" }],
+  "bumpFiles": [{ "filename": "crates/tauri-plugin-i18n-next/package.json", "type": "json" }],
+  "commitUrlFormat": "https://github.com/s00d/i18n-next-rs/commit/{{hash}}",
+  "compareUrlFormat": "https://github.com/s00d/i18n-next-rs/compare/{{previousTag}}...{{currentTag}}",
+  "issueUrlFormat": "https://github.com/s00d/i18n-next-rs/issues/{{id}}",
+  "scripts": {
+    "postbump": "V=$(jq -r .version crates/tauri-plugin-i18n-next/package.json) && sed -i '' \"s/^version = .*$/version = \\\"${V}\\\"/\" Cargo.toml && sed -i '' \"s/^i18n-next = { version = \\\"=[^\\\"]*\\\"/i18n-next = { version = \\\"=${V}\\\"/\" crates/tauri-plugin-i18n-next/Cargo.toml && cargo update --workspace && cargo test -p i18n-next --test version_sync && git add Cargo.toml Cargo.lock crates/tauri-plugin-i18n-next/Cargo.toml crates/tauri-plugin-i18n-next/package.json",
+    "postchangelog": "git add CHANGELOG.md Cargo.toml"
+  }
+}

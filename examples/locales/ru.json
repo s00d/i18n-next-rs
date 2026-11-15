@@ -1,0 +1,8 @@
+{
+  "nav": {
+    "home": "Главная",
+    "settings": "Настройки"
+  },
+  "greeting": "Привет, {name}!",
+  "apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок"
+}

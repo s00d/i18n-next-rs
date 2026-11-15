@@ -31,6 +31,8 @@ bench = false
 [dependencies]
 # `tracing` feature only (DESIGN 8b.17): misses and loads as events, off by default.
 tracing = { version = "0.1", optional = true, default-features = false }
+# `serde` feature only: `Text` serializes as its displayed string (`collect_str`).
+serde = { version = "1.0.229", optional = true, default-features = false }
 
 [features]
 default = ["std", "format", "tz", "global"]
@@ -38,7 +40,7 @@ std = []
 format = []
 tz = []
 global = []
-serde = []
+serde = ["dep:serde"]
 tracing = ["dep:tracing"]
 watch = []
 tzdb = []
@@ -94,4 +96,8 @@ harness = false
 
 [[bench]]
 name = "sources"
+harness = false
+
+[[bench]]
+name = "text"
 harness = false

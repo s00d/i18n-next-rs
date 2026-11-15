@@ -515,7 +515,7 @@ pub(crate) fn number_to_js_string(raw: &str) -> String {
 /// ECMA-262 `Number::toString` layout of `0.digits × 10^n` (`digits` without leading or
 /// trailing zeros): plain digits up to 21 integer digits, `0.000ddd` down to 1e-7,
 /// exponent form (`1e+21`, `1.5e-7`) outside.
-fn layout(out: &mut String, negative: bool, digits: &str, n: i32) {
+fn layout<O: Out + ?Sized>(out: &mut O, negative: bool, digits: &str, n: i32) {
     // `_checked`: ASCII digits never fail, and no slice panic (with its `fmt` code) is linked.
     let (d0, rest) = digits.split_at_checked(1).unwrap_or((digits, ""));
     let k = digits.len() as i32;
@@ -524,7 +524,7 @@ fn layout(out: &mut String, negative: bool, digits: &str, n: i32) {
     }
     if k <= n && n <= 21 {
         out.push_str(digits);
-        out.extend(std::iter::repeat_n('0', (n - k) as usize));
+        out.push_zeros((n - k) as usize);
     } else if 0 < n && n <= 21 {
         let (a, b) = digits.split_at_checked(n as usize).unwrap_or((digits, ""));
         out.push_str(a);
@@ -532,7 +532,7 @@ fn layout(out: &mut String, negative: bool, digits: &str, n: i32) {
         out.push_str(b);
     } else if -6 < n && n <= 0 {
         out.push_str("0.");
-        out.extend(std::iter::repeat_n('0', (-n) as usize));
+        out.push_zeros((-n) as usize);
         out.push_str(digits);
     } else {
         out.push_str(d0);
@@ -573,7 +573,7 @@ impl fmt::Write for ExpBuf {
 /// integer digits: `{:e}` costs ~60 ns of a 120 ns `tc` with a fractional count. Anything
 /// else goes through [`push_js_number_exact`].
 #[cfg(feature = "format")]
-pub(crate) fn push_js_number(out: &mut String, v: f64) {
+pub(crate) fn push_js_number<O: Out + ?Sized>(out: &mut O, v: f64) {
     if let Some((m, k)) = short_decimal(v.abs()) {
         let mut buf = [0u8; 20];
         let mut i = buf.len();
@@ -628,7 +628,7 @@ fn short_decimal(v: f64) -> Option<(u64, usize)> {
 /// [`push_js_number`] by Rust's `{:e}`: the shortest round-trip digits (the same digits JS
 /// uses) in the [`layout`] of ECMA-262.
 #[cfg(feature = "format")]
-pub(crate) fn push_js_number_exact(out: &mut String, v: f64) {
+pub(crate) fn push_js_number_exact<O: Out + ?Sized>(out: &mut O, v: f64) {
     if v.is_nan() {
         out.push_str("NaN");
         return;
@@ -773,8 +773,35 @@ pub(crate) fn u64_len(mut n: u64) -> usize {
     len
 }
 
+/// Where the number printers append: a `String`, or a stack buffer when the digits go to a
+/// formatter (`Text`'s `Display` allocates nothing).
+pub(crate) trait Out {
+    fn push_str(&mut self, s: &str);
+    fn push(&mut self, c: char);
+    fn push_zeros(&mut self, n: usize) {
+        for _ in 0..n {
+            self.push('0');
+        }
+    }
+}
+
+impl Out for String {
+    #[inline]
+    fn push_str(&mut self, s: &str) {
+        String::push_str(self, s);
+    }
+    #[inline]
+    fn push(&mut self, c: char) {
+        String::push(self, c);
+    }
+    #[inline]
+    fn push_zeros(&mut self, n: usize) {
+        self.extend(std::iter::repeat_n('0', n));
+    }
+}
+
 /// Appends the decimal digits of `n` (no `core::fmt`).
-pub(crate) fn push_u64(out: &mut String, mut n: u64) {
+pub(crate) fn push_u64<O: Out + ?Sized>(out: &mut O, mut n: u64) {
     let mut digits = [0u8; 20];
     let mut i = digits.len();
     loop {

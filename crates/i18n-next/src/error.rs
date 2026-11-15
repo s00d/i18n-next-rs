@@ -46,6 +46,10 @@ pub enum Error {
     /// A path `add_file` was given that the `remote` manifest does not list (8b.2: names
     /// only from the catalog).
     UnknownFile(String),
+    /// `install` was called while an instance is installed already.
+    AlreadyInstalled,
+    /// A free function (`set_locale`) needs an instance: none is installed, no scope sets one.
+    NotInstalled,
     /// The fetch closure of `ensure_async` failed for one file; the catalog is unchanged.
     Fetch {
         /// The manifest path that was being fetched.
@@ -69,6 +73,10 @@ impl fmt::Display for Error {
             Error::Config { path, reason } => write!(f, "{path}: {reason}"),
             Error::UnknownFile(path) => write!(f, "unknown file \"{path}\""),
             Error::Fetch { path, message } => write!(f, "cannot fetch {path}: {message}"),
+            Error::AlreadyInstalled => f.write_str("an i18n instance is installed already"),
+            Error::NotInstalled => {
+                f.write_str("no i18n instance: install() one or set it in a scope")
+            }
         }
     }
 }

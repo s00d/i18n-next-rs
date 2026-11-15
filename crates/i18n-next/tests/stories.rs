@@ -4,7 +4,7 @@
 
 mod support;
 
-use i18n_next::{Args, Error, I18n, LocaleInfo};
+use i18n_next::{Args, Error, I18n, LocaleInfo, scope, t};
 use support::{Clock, Guard, Locales};
 
 fn app_locales() -> Locales {
@@ -1077,4 +1077,146 @@ fn counts_win_spread_and_round_like_js() {
     );
     assert_eq!(i18n.tc("cart", i64::MIN), "-9223372036854776000 autre");
     assert_eq!(guard.seen().len(), 3);
+}
+
+/// An app error with translated messages, the `thiserror` way (`#[error("{}", key!(..))]`,
+/// `#[error("{}", t!("..", path = .0))]`), its `Display` written by hand: no dependency.
+#[derive(Debug)]
+enum AppError {
+    NotFound,
+    Io(std::path::PathBuf),
+}
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AppError::NotFound => write!(f, "{}", i18n_next::key!("errors.not_found")),
+            AppError::Io(p) => write!(
+                f,
+                "{}",
+                i18n_next::t!("errors.io", path = p.display().to_string())
+            ),
+        }
+    }
+}
+
+impl std::error::Error for AppError {}
+
+/// Given an error enum whose `Display` uses `key!` and `t!`, when it is shown in a scope,
+/// after `set_locale`, and in a scope of another locale, then each time it shows the locale
+/// that is current then; boxed as `dyn Error` it reads the same.
+#[test]
+fn error_messages_follow_the_current_locale() {
+    let i18n = I18n::builder()
+        .locale("en")
+        .messages(
+            "en",
+            None,
+            r#"{"errors": {"not_found": "Not found", "io": "Cannot read {path}"}}"#,
+        )
+        .messages(
+            "de",
+            None,
+            r#"{"errors": {"not_found": "Nicht gefunden", "io": "{path} ist nicht lesbar"}}"#,
+        )
+        .build()
+        .unwrap();
+    let io = AppError::Io("/etc/app.toml".into());
+    scope().instance(i18n.clone()).run(|| {
+        // step 1: the active locale → English
+        assert_eq!(AppError::NotFound.to_string(), "Not found");
+        assert_eq!(io.to_string(), "Cannot read /etc/app.toml");
+        // step 2: set_locale → the same values speak German
+        i18n.set_locale("de").unwrap();
+        let boxed: Box<dyn std::error::Error> = Box::new(AppError::NotFound);
+        assert_eq!(boxed.to_string(), "Nicht gefunden");
+        assert_eq!(io.to_string(), "/etc/app.toml ist nicht lesbar");
+        // step 3: a nested scope of another locale → that one
+        scope()
+            .locale("en")
+            .run(|| assert_eq!(format!("{io}"), "Cannot read /etc/app.toml"));
+        // step 4: a `Text` as a `t_with` argument → resolved inside, in the active locale
+        let nested = Args::new().arg("path", i18n.text("errors.not_found"));
+        assert_eq!(
+            i18n.t_with("errors.io", &nested),
+            "Nicht gefunden ist nicht lesbar"
+        );
+    });
+}
+
+/// Given an axum-like server with one global catalog and a middleware that negotiates
+/// `Accept-Language` and wraps the handler in a scope, when two requests in different
+/// languages are polled interleaved on one thread (one waits on I/O), then each handler,
+/// across its awaits, answers in its own language; between polls no scope is left over.
+#[test]
+fn two_requests_in_their_own_languages() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let i18n = I18n::builder()
+        .locale("en")
+        .messages("en", None, r#"{"hello": "Hello, {name}", "done": "Done"}"#)
+        .messages(
+            "de",
+            None,
+            r#"{"hello": "Hallo, {name}", "done": "Fertig"}"#,
+        )
+        .messages(
+            "pt-br",
+            None,
+            r#"{"hello": "Olá, {name}", "done": "Pronto"}"#,
+        )
+        .build()
+        .unwrap();
+    let available: Vec<String> = i18n.locales().into_iter().map(|l| l.code).collect();
+    let out: Rc<RefCell<Vec<String>>> = Rc::default();
+    // the middleware: negotiate, then the handler in a scope
+    let request = |accept: &str, name: &'static str| {
+        let lang = i18n_next::negotiate(accept, &available).unwrap_or_else(|| "en".into());
+        let (out, i18n) = (out.clone(), i18n.clone());
+        scope().instance(i18n).locale(lang).wrap(async move {
+            out.borrow_mut().push(t!("hello", name = name).to_string());
+            Pending::once().await; // the handler awaits a database
+            out.borrow_mut().push(t!("done").to_string());
+        })
+    };
+    let mut ex = support::Executor::new();
+    // step 1: two requests arrive → German and Brazilian Portuguese
+    ex.spawn(request("de-AT,de;q=0.9,en;q=0.5", "Ann"));
+    ex.spawn(request("fr, pt;q=0.8", "Bia"));
+    // step 2: poll A, then B, then A, then B → each line in its request's language
+    for i in [0, 1, 0, 1] {
+        ex.poll(i);
+        // between polls nothing is in scope
+        assert_eq!(t!("done"), "done");
+    }
+    assert_eq!(ex.unfinished(), 0);
+    assert_eq!(
+        *out.borrow(),
+        ["Hallo, Ann", "Olá, Bia", "Fertig", "Pronto"]
+    );
+}
+
+/// Pending on the first poll (waking itself), ready on the next.
+struct Pending(bool);
+
+impl Pending {
+    fn once() -> Self {
+        Pending(false)
+    }
+}
+
+impl std::future::Future for Pending {
+    type Output = ();
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<()> {
+        if self.0 {
+            std::task::Poll::Ready(())
+        } else {
+            self.0 = true;
+            cx.waker().wake_by_ref();
+            std::task::Poll::Pending
+        }
+    }
 }

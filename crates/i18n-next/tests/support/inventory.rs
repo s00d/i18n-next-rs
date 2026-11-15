@@ -510,7 +510,19 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
         let methods = |ty: &str, names: &[&str]| -> Vec<String> {
             names.iter().map(|n| format!("{ty}::{n}")).collect()
         };
-        let mut want: Vec<String> = vec!["version".to_owned()];
+        let mut want: Vec<String> = [
+            "version",
+            "global",
+            "install",
+            "locale",
+            "negotiate",
+            "page",
+            "scope",
+            "set_locale",
+            "t",
+        ]
+        .map(str::to_owned)
+        .to_vec();
         want.extend(methods(
             "Args",
             &[
@@ -529,6 +541,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "fallback",
                 "fallback_for",
                 "files",
+                "install",
                 "iso",
                 "linked_messages",
                 "lazy_dir",
@@ -565,9 +578,35 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "t_with",
                 "tc",
                 "tc_with",
+                "text",
                 "try_t",
                 "version",
                 "with_locale",
+            ],
+        ));
+        want.extend(methods("Key", &["args", "new"]));
+        want.extend(methods("PluralCtx", &["get"]));
+        want.extend(methods(
+            "Scope",
+            &["instance", "locale", "page", "run", "wrap"],
+        ));
+        want.extend(methods(
+            "Text",
+            &[
+                "arg",
+                "args",
+                "count",
+                "fold",
+                "hide_if_empty",
+                "html",
+                "locale",
+                "or",
+                "page",
+                "parts",
+                "plural_rule",
+                "resolve",
+                "to_string",
+                "write_to",
             ],
         ));
         want.extend(methods(
@@ -581,6 +620,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "t_with",
                 "tc",
                 "tc_with",
+                "text",
                 "try_t",
                 "with_locale",
             ],

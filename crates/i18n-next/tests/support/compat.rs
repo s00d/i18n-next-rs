@@ -13,7 +13,7 @@
 //!   `""`, which `t` answers with `""` and never reports).
 #![allow(dead_code)]
 
-use i18n_next::{Arg, Args, Count, Error, I18n, View};
+use i18n_next::{Arg, Args, Count, Error, I18n, Text, View};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -86,6 +86,10 @@ pub const GOLDENS: &[(&str, &str)] = &[
         "plural.md",
         include_str!("../../../../fixtures/compat/__golden__/plural.md"),
     ),
+    (
+        "text.md",
+        include_str!("../../../../fixtures/compat/__golden__/text.md"),
+    ),
 ];
 
 /// The catalog of `tc_in` lines (`fixtures/compat/plural`, `scripts/compat.mjs`
@@ -102,6 +106,23 @@ pub const PLURAL_FILES: &[(&str, &[u8])] = &[
     (
         "ru.json",
         include_bytes!("../../../../fixtures/compat/plural/ru.json"),
+    ),
+];
+
+/// The catalog of `text.md` (`fixtures/compat/text`, `scripts/compat.mjs` `TEXT_DIR`);
+/// `tests/compat.rs` checks the list against the directory.
+pub const TEXT_FILES: &[(&str, &[u8])] = &[
+    (
+        "en.json",
+        include_bytes!("../../../../fixtures/compat/text/en.json"),
+    ),
+    (
+        "pages/about/en.json",
+        include_bytes!("../../../../fixtures/compat/text/pages/about/en.json"),
+    ),
+    (
+        "ru.json",
+        include_bytes!("../../../../fixtures/compat/text/ru.json"),
     ),
 ];
 
@@ -322,7 +343,9 @@ fn normalize(call: &str, result: &str) -> String {
     match result {
         "<object>" | "<array>" => "<node>".to_owned(),
         "<null>" => "<missing>".to_owned(),
-        r if r.starts_with('"') || r == "<missing>" => r.to_owned(),
+        r if r.starts_with('"') || r == "<missing>" || r == "<node>" => r.to_owned(),
+        // a `fold` result: a list of spelled strings
+        r if r.starts_with('[') => r.to_owned(),
         r if call.starts_with("has(") => r.to_owned(),
         // a number or boolean value: Rust returns its JS spelling as text
         r => spell(r),
@@ -415,6 +438,7 @@ pub fn run() -> Result<usize, String> {
     )
     .unwrap();
 
+    let mut texts: BTreeMap<(String, String), (I18n, Log)> = BTreeMap::new();
     let mut singles: BTreeMap<(bool, String, String), I18n> = BTreeMap::new();
     let mut counted: BTreeMap<(String, String), (I18n, Log)> = BTreeMap::new();
 
@@ -499,6 +523,56 @@ pub fn run() -> Result<usize, String> {
                     } else {
                         spell(&missed.lock().unwrap().join("; "))
                     }
+                }
+                (
+                    "text" | "text_missing",
+                    [V::Pair(locale, fallback), V::Str(page), V::Str(key), opts],
+                ) => {
+                    let (i18n, missed) = texts
+                        .entry((locale.clone(), fallback.clone()))
+                        .or_insert_with(|| catalog_of(TEXT_FILES, locale, fallback));
+                    missed.lock().unwrap().clear();
+                    let view = i18n.page(page);
+                    let out = text_of(&view, key, opts).to_string();
+                    let plural = field(opts, "plural").is_some();
+                    let get = field(opts, "customPluralRule") == Some(&V::Str("get".into()));
+                    let node = !key.is_empty()
+                        && view.try_t(key).is_none()
+                        && missed.lock().unwrap().is_empty();
+                    if fname == "text_missing" {
+                        spell(&missed.lock().unwrap().join("; "))
+                    } else if node && (!plural || get) && out == *key {
+                        "<node>".to_owned()
+                    } else {
+                        spell(&out)
+                    }
+                }
+                ("fold", [V::Str(key), V::Arr(names), opts]) => {
+                    let (i18n, _) = texts
+                        .entry(("en".to_owned(), "en".to_owned()))
+                        .or_insert_with(|| catalog_of(TEXT_FILES, "en", "en"));
+                    let names: Vec<String> = names
+                        .iter()
+                        .map(|n| match n {
+                            V::Str(n) => n.clone(),
+                            other => panic!("slot {other:?}"),
+                        })
+                        .collect();
+                    let fns: Vec<Box<dyn Fn() -> String>> = names
+                        .iter()
+                        .map(|n| {
+                            let marker = format!("<{n}>");
+                            Box::new(move || marker.clone()) as Box<dyn Fn() -> String>
+                        })
+                        .collect();
+                    let slots: Vec<(&str, &dyn Fn() -> String)> = names
+                        .iter()
+                        .zip(&fns)
+                        .map(|(n, f)| (n.as_str(), &**f))
+                        .collect();
+                    let nodes = text_of(&i18n.page("index"), key, opts).fold(str::to_owned, &slots);
+                    let spelled: Vec<String> = nodes.iter().map(|n| spell(n)).collect();
+                    format!("[{}]", spelled.join(","))
                 }
                 _ => answer(
                     call,
@@ -590,6 +664,71 @@ fn plural_catalog(locale: &str, fallback: &str) -> (I18n, Log) {
         b = b.fallback(fallback);
     }
     (b.build().unwrap(), missed)
+}
+
+/// A catalog of `files` in one context, with the `missing` calls it records.
+fn catalog_of(files: &[(&str, &[u8])], locale: &str, fallback: &str) -> (I18n, Log) {
+    let missed = Arc::new(Mutex::new(Vec::new()));
+    let log = missed.clone();
+    let mut b = I18n::builder()
+        .locale(locale)
+        .files(files.iter().copied())
+        .missing(move |l, k, p| log.lock().unwrap().push(format!("{l} {k} {p}")));
+    if fallback != locale {
+        b = b.fallback(fallback);
+    }
+    (b.build().unwrap(), missed)
+}
+
+/// An option of a `text` line.
+fn field<'v>(opts: &'v V, name: &str) -> Option<&'v V> {
+    match opts {
+        V::Obj(items) => items.iter().find(|(k, _)| k == name).map(|(_, v)| v),
+        other => panic!("options {other:?}"),
+    }
+}
+
+/// A JS param value as an owned `Text` argument; `undefined` is none.
+fn text_arg(v: &V) -> Option<Arg<'static>> {
+    Some(match v {
+        V::Str(s) => Arg::from(s.clone()),
+        V::Num(n) => Arg::Float(*n),
+        V::Bool(b) => Arg::Bool(*b),
+        V::Null => Arg::Null,
+        V::Undef => return None,
+        other => panic!("unsupported param {other:?}"),
+    })
+}
+
+/// The `Text` of a `text` / `fold` line: the props of `<i18n-t>` as `Text` options, the named
+/// `customPluralRule` stand-ins of `scripts/compat.mjs` (`RULES`) as closures.
+fn text_of(view: &View, key: &str, opts: &V) -> Text {
+    let mut t = view.text(key.to_owned());
+    let V::Obj(items) = opts else {
+        panic!("options {opts:?}")
+    };
+    for (name, v) in items {
+        t = match (name.as_str(), v) {
+            ("params", V::Obj(params)) => params.iter().fold(t, |t, (k, v)| match text_arg(v) {
+                Some(a) => t.arg(k.clone(), a),
+                None => t,
+            }),
+            ("params", V::Arr(items)) => t.args(items.iter().filter_map(text_arg)),
+            ("html", V::Bool(true)) => t.html(),
+            ("hideIfEmpty", V::Bool(true)) => t.hide_if_empty(),
+            ("defaultValue", V::Str(d)) => t.or(d.clone()),
+            ("plural", V::Num(n)) => t.count(count(*n)),
+            ("customPluralRule", V::Str(rule)) => match rule.as_str() {
+                "echo" => t.plural_rule(|c| Some(format!("{}|{}|{}", c.key, c.count, c.locale))),
+                "get" => t.plural_rule(|c| Some(c.get(c.key))),
+                "other" => t.plural_rule(|c| Some(c.get("missing.other"))),
+                "none" => t.plural_rule(|_| None),
+                other => panic!("rule {other}"),
+            },
+            other => panic!("unsupported option {other:?}"),
+        };
+    }
+    t
 }
 
 /// What each fixture file becomes when loaded alone (`pages` = `.pages(..)`).

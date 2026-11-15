@@ -1,0 +1,22 @@
+{
+  "greet": "Hello, {name}!",
+  "markup": "<b>{name}</b> & co",
+  "quote": "It's \"{name}\" {ok}",
+  "blank": "   ",
+  "empty": "",
+  "hole": "{name}",
+  "spaced": " {name} ",
+  "terms": "I accept the {link} and the {policy}, {name}",
+  "twice": "{link}{link} {name}",
+  "pair": "{0} and {1} of {length}",
+  "apples": "no apples | one apple | {count} apples",
+  "marked": "=0 none | {count} one | {count} many",
+  "counted": "{count} / {name}",
+  "blank_form": "   | {count} x | {name}",
+  "pipe": "a | {name} | c",
+  "num": 42,
+  "yes": true,
+  "tree": { "a": "A" },
+  "list": ["x", "y"],
+  "en_only": "only en {name}"
+}

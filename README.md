@@ -6,8 +6,13 @@ per-page translations) for a Rust backend, native menus and tray, a Vue WebView 
 Rust frontends in wasm.
 
 **Status: early.** The API is being built stage by stage: the catalog (pages, fallback
-chains, `i18n.json`) and plurals (`tc`, CLDR 48 rules checked against `Intl.PluralRules`)
-work. Nothing is published yet.
+chains, `i18n.json`), plurals (CLDR 48 rules checked against `Intl.PluralRules`), `Text`,
+`t!` and global access work. Nothing is published yet.
+
+```rust
+I18n::builder().dir("locales").locale("ru").fallback("en").install()?;
+println!("{}", t!("greeting", name = "Ann"));
+```
 
 | Package | What |
 | --- | --- |

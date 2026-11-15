@@ -461,6 +461,69 @@ fn hot_path_allocations() {
     );
     drop(remote);
 
+    // case: Text (DESIGN 7.7, spike S4). Building one with ≤ 4 arguments → 0 blocks
+    // (inline arguments, a shared instance); Display / write_to into a reused buffer → 0
+    // (template read in the snapshot, numbers through the stack); to_string → 1 (sized
+    // first); `t!` with 4 arguments, built and turned into a string → 1.
+    use std::fmt::Write as _;
+    let n = blocks(|| {
+        let text = i18n
+            .text("greet")
+            .arg("name", "Ann")
+            .arg("n", 3)
+            .arg("a", 1.5)
+            .arg("b", true);
+        std::hint::black_box(&text);
+    });
+    dhat::assert_eq!(n, 0);
+    let text = i18n
+        .text("greet")
+        .arg("name", "Ann")
+        .arg("n", 3)
+        .arg("a", 1.5)
+        .arg("b", true);
+    let plural = ru.text("apples").count(21).arg("name", long);
+    let page = settings.text("title").html().hide_if_empty().or("Default");
+    const TITLE: i18n_next::Key = i18n_next::key!("only_en");
+    let settings_i18n = i18n.clone();
+    let mut buf = String::with_capacity(256);
+    // a frame built outside, the thread's scope stack warmed (its first push allocates)
+    let frame = || i18n_next::scope().instance(settings_i18n.clone());
+    frame().run(|| {});
+    let warm = frame();
+    let n = blocks(|| {
+        for _ in 0..3 {
+            buf.clear();
+            write!(buf, "{text}").unwrap();
+            text.write_to(&mut buf).unwrap();
+            plural.write_to(&mut buf).unwrap();
+            page.write_to(&mut buf).unwrap();
+            std::hint::black_box(text == "Hallo, Ann! 3 neu, 1.5true");
+        }
+        warm.run(|| {
+            write!(buf, "{TITLE}").unwrap();
+        });
+    });
+    dhat::assert_eq!(n, 0);
+    let n = blocks(|| {
+        std::hint::black_box(text.to_string());
+    });
+    dhat::assert_eq!(n, 1);
+    let n = blocks(|| {
+        std::hint::black_box(plural.to_string());
+        std::hint::black_box(page.to_string());
+    });
+    dhat::assert_eq!(n, 2);
+    let n = blocks(|| {
+        std::hint::black_box(
+            i18n_next::t!(i18n => "greet", name = "Ann", n = 3, a = 1.5, b = true).to_string(),
+        );
+    });
+    dhat::assert_eq!(n, 1);
+    assert_eq!(text.to_string(), "Hallo, Ann! 3 neu, 1.5true");
+    assert_eq!(plural.to_string(), "21 яблоко");
+    assert_eq!(page.to_string(), "Einstellungen");
+
     // case: a miss down the whole chain with a default → 1 block (the interpolated
     // default). Last on purpose: a failure here leaves every case above checked.
     let args = Args::new().int("n", 2).or("{n} items");

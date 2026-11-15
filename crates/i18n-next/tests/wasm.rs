@@ -135,3 +135,56 @@ fn lazy_extend_subscribe_reload() {
     i18n.reload().unwrap();
     assert_eq!(*seen.lock().unwrap(), [1]);
 }
+
+/// One turn of the JS event loop (a resolved promise): the browser executor runs others.
+async fn tick() {
+    wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(&wasm_bindgen::JsValue::NULL))
+        .await
+        .unwrap();
+}
+
+/// Given two requests in different locales wrapped in scopes, when `wasm-bindgen-futures`
+/// runs them interleaved (each awaits the event loop between its texts), then each sees its
+/// own locale across its awaits, and nothing is left in scope between polls.
+#[wasm_bindgen_test]
+async fn scope_wrap_on_the_browser_executor() {
+    use i18n_next::{scope, t};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let i18n = i18n_next::I18n::builder()
+        .messages("en", None, r#"{"hi": "Hi", "bye": "Bye"}"#)
+        .messages("de", None, r#"{"hi": "Hallo", "bye": "Tschüss"}"#)
+        .build()
+        .unwrap();
+    let log: Rc<RefCell<Vec<String>>> = Rc::default();
+    let request = |lang: &str| {
+        let log = log.clone();
+        scope()
+            .instance(i18n.clone())
+            .locale(lang)
+            .wrap(async move {
+                log.borrow_mut().push(t!("hi").to_string());
+                tick().await;
+                log.borrow_mut().push(t!("bye").to_string());
+            })
+    };
+    let done = Rc::new(RefCell::new(false));
+    let flag = done.clone();
+    let b = request("de");
+    wasm_bindgen_futures::spawn_local(async move {
+        b.await;
+        *flag.borrow_mut() = true;
+    });
+    request("en").await;
+    for _ in 0..8 {
+        if *done.borrow() {
+            break;
+        }
+        tick().await;
+    }
+    assert!(*done.borrow());
+    let mut seen = log.borrow().clone();
+    seen.sort();
+    assert_eq!(seen, ["Bye", "Hallo", "Hi", "Tschüss"]);
+    assert_eq!(t!("hi"), "hi");
+}

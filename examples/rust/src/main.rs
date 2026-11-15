@@ -3,7 +3,8 @@
 //! `cargo run -p playground-rust` prints the tour; `-- --check` also verifies every
 //! line and exits non-zero on any problem, including any key the catalog misses (CI runs it).
 
-use i18n_next::{Args, CheckItem, Error, I18n};
+use i18n_next::{Args, CheckItem, Error, I18n, Text, key, scope, t, tc};
+use std::fmt;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
@@ -197,7 +198,110 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
             expect(seen.lock().unwrap().join(", "), "ru@1, ru@2"),
         ),
     ]);
+
+    // M4: one global instance, then `t!` anywhere; `key!` in an error enum; a `Text` kept in
+    // a struct follows set_locale; scope per request; slots with fold; negotiate.
+    let log = misses.clone();
+    let app = I18n::builder()
+        .config(examples.join("i18n.json"))
+        .dir(examples.join("locales"))
+        .messages(
+            "en",
+            None,
+            r#"{"errors": {"not_found": "Not found: {what}"}, "terms": "I accept the {link}"}"#,
+        )
+        .messages(
+            "ru",
+            None,
+            r#"{"errors": {"not_found": "Не найдено: {what}"}}"#,
+        )
+        .missing(move |locale, key, page| {
+            log.lock().unwrap().push(format!("{locale}/{page}/{key}"))
+        })
+        .install()?;
+    let header = Header {
+        title: app.page("settings").text("title"),
+    };
+    let lost = TourError::NotFound("cart.json".to_owned());
+    stops.extend([
+        (
+            "t!",
+            expect(t!("greeting", name = "Ann").to_string(), "Hello, Ann!"),
+        ),
+        ("tc!", expect(tc!("apples", 3).to_string(), "3 apples")),
+        (
+            "html",
+            expect(
+                t!("greeting", name = "<b>Ann</b>", @html).to_string(),
+                "Hello, &lt;b&gt;Ann&lt;/b&gt;!",
+            ),
+        ),
+        (
+            "key!",
+            expect(
+                format!("{} / {lost}", TourError::Home),
+                "Home / Not found: cart.json",
+            ),
+        ),
+        ("Text", expect(header.title.to_string(), "Settings")),
+        (
+            "scope",
+            expect(
+                scope()
+                    .locale("ru")
+                    .page("settings")
+                    .run(|| t!("title").to_string()),
+                "Настройки",
+            ),
+        ),
+        (
+            "fold",
+            expect(
+                t!("terms")
+                    .fold(str::to_owned, &[("link", &|| "[terms]".to_owned())])
+                    .concat(),
+                "I accept the [terms]",
+            ),
+        ),
+        (
+            "negotiate",
+            expect(
+                i18n_next::negotiate("ru-RU,ru;q=0.9,en;q=0.5", ["en", "ru", "ar"])
+                    .unwrap_or_default(),
+                "ru",
+            ),
+        ),
+    ]);
+    i18n_next::set_locale("ru")?;
+    stops.extend([
+        ("Text ru", expect(header.title.to_string(), "Настройки")),
+        ("key! ru", expect(lost.to_string(), "Не найдено: cart.json")),
+    ]);
     Ok(stops)
+}
+
+/// UI state that keeps a translation: it shows the language of the moment.
+struct Header {
+    title: Text,
+}
+
+/// An app error with translated messages, the way `thiserror` would write them:
+/// `#[error("{}", key!("nav.home"))]`, `#[error("{}", t!("errors.not_found", what = .0))]`.
+#[derive(Debug)]
+enum TourError {
+    Home,
+    NotFound(String),
+}
+
+impl fmt::Display for TourError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TourError::Home => write!(f, "{}", key!("nav.home")),
+            TourError::NotFound(what) => {
+                write!(f, "{}", t!("errors.not_found", what = what.clone()))
+            }
+        }
+    }
 }
 
 /// `check()` in one line: the known gaps of the example catalog (the fallback stops rely on

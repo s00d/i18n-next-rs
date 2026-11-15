@@ -45,9 +45,10 @@ impl Locales {
     }
 
     /// Writes the tree into a fresh directory `name` under the target's test temp dir
-    /// (removed first, so a rerun starts clean) and returns its path, for `dir`.
+    /// (removed first, so a rerun starts clean), for `dir`; the directory goes when the
+    /// returned guard is dropped, also when the test fails.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn dir(&self, name: &str) -> std::path::PathBuf {
+    pub fn dir(&self, name: &str) -> TempDir {
         let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
         let _ = std::fs::remove_dir_all(&root);
         for (path, body) in &self.files {
@@ -56,7 +57,34 @@ impl Locales {
             std::fs::write(full, body).unwrap();
         }
         std::fs::create_dir_all(&root).unwrap();
-        root
+        TempDir(root)
+    }
+}
+
+/// A directory a test wrote, removed on drop. Derefs to its path.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+pub struct TempDir(std::path::PathBuf);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::ops::Deref for TempDir {
+    type Target = std::path::Path;
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl AsRef<std::path::Path> for TempDir {
+    fn as_ref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 

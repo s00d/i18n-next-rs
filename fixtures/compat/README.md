@@ -28,6 +28,8 @@ What the JS library does, recorded so the Rust crate can be checked against it l
 | `__golden__/plural.md` | `tc` through the instance (`defaultPlural` → `pluralForm` + `interpolate`) |
 | `linked/` | the catalog of `linked.md` (root files, pages, a fallback chain, Turkish / Greek / Lithuanian) |
 | `__golden__/linked.md` | linked messages through the Nuxt module's own merge, and the case modifiers by tag |
+| `text/` | the catalog of `text.md` |
+| `__golden__/text.md` | `resolveText` (the props of `<i18n-t>`: params, plural, defaultValue, html, hideIfEmpty, named `customPluralRule` stand-ins) as `<i18n-t>` shows it, the `missing` calls, and `foldTemplate` with slots |
 | `__golden__/plural-categories.md` | `Intl.PluralRules` itself, written by `scripts/cldr.mjs` (`pnpm -C scripts cldr`): the oracle of `tests/plural_props.rs` |
 
 ## File format
@@ -239,3 +241,21 @@ implements.
   merge, everything else including arrays and `null` replaces).
 - Duplicate keys in one file: the last wins (`JSON.parse`), objects are not merged (`dobj` keeps only `y`).
 - A UTF-8 BOM at the start of a file is skipped (`de-at.json`).
+
+### `text.md`
+
+The oracle is `resolveText` of `@i18n-micro/core` on a `BaseI18n` over `text/` (contexts `en|en`, `ru|en`,
+`en|en` on page `about`, the unknown `xx|en`), followed by what `renderI18nT` shows: the interpolated
+template, or `defaultValue || ''` when `hideIfEmpty` hides it.
+
+- `text(<context>, "<key>", <options>) → "<shown>"`: options are the props (`params`, `plural`,
+  `defaultValue`, `html`, `hideIfEmpty`, `customPluralRule`). A JS function cannot be spelled, so
+  `customPluralRule` names one of the stand-ins of `RULES` in `scripts/compat.mjs` (`echo`, `get`, `other`,
+  `none`), which the Rust test reproduces as closures. Rust: `page(page).text(key)` with the options as
+  `Text` methods, then `to_string()`.
+- A subtree shown as text: JS prints `String(value)` (`[object Object]`, array items joined), Rust the key as
+  `t` does; both are `<node>`.
+- `text_missing(...) → "<locale> <key> <route>; ..."`: the `missing` calls of that line.
+- `fold("<key>", [<slots>], <options>) → [<nodes>]`: `foldTemplate` on the resolved template in `en|en`,
+  slots rendering `<name>`, text as itself; a plain string result is one node (none when empty). Rust:
+  `Text::fold`.

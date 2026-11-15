@@ -1,0 +1,4 @@
+{
+  "greet": "About {name}",
+  "page_only": "page {name} | pages {count}"
+}

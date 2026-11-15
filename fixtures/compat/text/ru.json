@@ -1,0 +1,6 @@
+{
+  "greet": "Привет, {name}!",
+  "apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок",
+  "marked": "=0 ничего | {count} штука | {count} штуки | {count} штук",
+  "blank": ""
+}

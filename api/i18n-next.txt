@@ -1,32 +1,59 @@
 pub mod i18n_next
+pub macro i18n_next::key!
+pub macro i18n_next::t!
+pub macro i18n_next::tc!
 #[non_exhaustive] pub enum i18n_next::Arg<'a>
 pub i18n_next::Arg::Bool(bool)
 pub i18n_next::Arg::Float(f64)
 pub i18n_next::Arg::Int(i64)
 pub i18n_next::Arg::Null
 pub i18n_next::Arg::Str(&'a str)
+pub i18n_next::Arg::String(alloc::sync::Arc<str>)
+pub i18n_next::Arg::Text(alloc::boxed::Box<i18n_next::Text>)
+impl core::cmp::PartialEq for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::eq(&self, &Self) -> bool
+impl core::convert::From<&alloc::string::String> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(&alloc::string::String) -> Self
+impl core::convert::From<alloc::boxed::Box<str>> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(alloc::boxed::Box<str>) -> Self
+impl core::convert::From<alloc::string::String> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(alloc::string::String) -> Self
+impl core::convert::From<alloc::sync::Arc<str>> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(alloc::sync::Arc<str>) -> Self
 impl core::convert::From<bool> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(bool) -> Self
+impl core::convert::From<f32> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(f32) -> Self
 impl core::convert::From<f64> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(f64) -> Self
+impl core::convert::From<i16> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i16) -> Self
+impl core::convert::From<i18n_next::Key> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i18n_next::Key) -> Self
+impl core::convert::From<i18n_next::Text> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i18n_next::Text) -> Self
 impl core::convert::From<i32> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(i32) -> Self
 impl core::convert::From<i64> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(i64) -> Self
+impl core::convert::From<i8> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i8) -> Self
+impl core::convert::From<u16> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(u16) -> Self
 impl core::convert::From<u32> for i18n_next::Arg<'_>
 pub fn i18n_next::Arg<'_>::from(u32) -> Self
+impl core::convert::From<u8> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(u8) -> Self
+impl core::convert::From<usize> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(usize) -> Self
 impl<'a> core::clone::Clone for i18n_next::Arg<'a>
 pub fn i18n_next::Arg<'a>::clone(&self) -> i18n_next::Arg<'a>
-impl<'a> core::cmp::PartialEq for i18n_next::Arg<'a>
-pub fn i18n_next::Arg<'a>::eq(&self, &i18n_next::Arg<'a>) -> bool
-impl<'a> core::convert::From<&'a alloc::string::String> for i18n_next::Arg<'a>
-pub fn i18n_next::Arg<'a>::from(&'a alloc::string::String) -> Self
 impl<'a> core::convert::From<&'a str> for i18n_next::Arg<'a>
 pub fn i18n_next::Arg<'a>::from(&'a str) -> Self
+impl<'a> core::convert::From<alloc::borrow::Cow<'a, str>> for i18n_next::Arg<'a>
+pub fn i18n_next::Arg<'a>::from(alloc::borrow::Cow<'a, str>) -> Self
 impl<'a> core::fmt::Debug for i18n_next::Arg<'a>
 pub fn i18n_next::Arg<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Copy for i18n_next::Arg<'a>
-impl<'a> core::marker::StructuralPartialEq for i18n_next::Arg<'a>
 #[non_exhaustive] pub enum i18n_next::CheckItem
 pub i18n_next::CheckItem::BrokenLink
 pub i18n_next::CheckItem::BrokenLink::key: alloc::string::String
@@ -76,6 +103,7 @@ impl core::hash::Hash for i18n_next::CheckItem
 pub fn i18n_next::CheckItem::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::StructuralPartialEq for i18n_next::CheckItem
 #[non_exhaustive] pub enum i18n_next::Error
+pub i18n_next::Error::AlreadyInstalled
 pub i18n_next::Error::Config
 pub i18n_next::Error::Config::path: alloc::string::String
 pub i18n_next::Error::Config::reason: &'static str
@@ -90,6 +118,7 @@ pub i18n_next::Error::Json
 pub i18n_next::Error::Json::kind: &'static str
 pub i18n_next::Error::Json::offset: usize
 pub i18n_next::Error::Json::path: alloc::string::String
+pub i18n_next::Error::NotInstalled
 pub i18n_next::Error::NotObject
 pub i18n_next::Error::NotObject::path: alloc::string::String
 pub i18n_next::Error::UnknownFile(alloc::string::String)
@@ -124,6 +153,17 @@ impl core::hash::Hash for i18n_next::LinkError
 pub fn i18n_next::LinkError::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for i18n_next::LinkError
 impl core::marker::StructuralPartialEq for i18n_next::LinkError
+pub enum i18n_next::Part<'a>
+pub i18n_next::Part::Slot(alloc::borrow::Cow<'a, str>)
+pub i18n_next::Part::Text(alloc::borrow::Cow<'a, str>)
+impl<'a> core::clone::Clone for i18n_next::Part<'a>
+pub fn i18n_next::Part<'a>::clone(&self) -> i18n_next::Part<'a>
+impl<'a> core::cmp::Eq for i18n_next::Part<'a>
+impl<'a> core::cmp::PartialEq for i18n_next::Part<'a>
+pub fn i18n_next::Part<'a>::eq(&self, &i18n_next::Part<'a>) -> bool
+impl<'a> core::fmt::Debug for i18n_next::Part<'a>
+pub fn i18n_next::Part<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::StructuralPartialEq for i18n_next::Part<'a>
 pub struct i18n_next::Args<'a>
 impl<'a> i18n_next::Args<'a>
 pub fn i18n_next::Args<'a>::arg(self, &'a str, impl core::convert::Into<i18n_next::Arg<'a>>) -> Self
@@ -137,10 +177,10 @@ pub fn i18n_next::Args<'a>::or(self, &'a str) -> Self
 pub fn i18n_next::Args<'a>::str(self, &'a str, &'a str) -> Self
 impl core::default::Default for i18n_next::Args<'_>
 pub fn i18n_next::Args<'_>::default() -> Self
+impl core::fmt::Debug for i18n_next::Args<'_>
+pub fn i18n_next::Args<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::clone::Clone for i18n_next::Args<'a>
 pub fn i18n_next::Args<'a>::clone(&self) -> i18n_next::Args<'a>
-impl<'a> core::fmt::Debug for i18n_next::Args<'a>
-pub fn i18n_next::Args<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct i18n_next::Builder
 impl i18n_next::Builder
 pub fn i18n_next::Builder::build(self) -> core::result::Result<i18n_next::I18n, i18n_next::Error>
@@ -152,6 +192,7 @@ pub fn i18n_next::Builder::extend<I, P, B>(self, I) -> Self where I: core::iter:
 pub fn i18n_next::Builder::fallback(self, &str) -> Self
 pub fn i18n_next::Builder::fallback_for(self, &str, &str) -> Self
 pub fn i18n_next::Builder::files<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
+pub fn i18n_next::Builder::install(self) -> core::result::Result<&'static i18n_next::I18n, i18n_next::Error>
 pub fn i18n_next::Builder::iso(self, &str, &str) -> Self
 pub fn i18n_next::Builder::lazy_dir(self, impl core::convert::AsRef<std::path::Path>) -> Self
 pub fn i18n_next::Builder::lazy_files<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
@@ -242,10 +283,31 @@ impl i18n_next::I18n
 pub fn i18n_next::I18n::check(&self) -> i18n_next::CheckReport
 impl i18n_next::I18n
 pub fn i18n_next::I18n::subscribe(&self, impl core::ops::function::Fn(&i18n_next::Change) + core::marker::Send + core::marker::Sync + 'static) -> i18n_next::Subscription
+impl i18n_next::I18n
+pub fn i18n_next::I18n::text(&self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
 impl core::clone::Clone for i18n_next::I18n
 pub fn i18n_next::I18n::clone(&self) -> i18n_next::I18n
 impl core::fmt::Debug for i18n_next::I18n
 pub fn i18n_next::I18n::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::Key(_)
+impl i18n_next::Key
+pub fn i18n_next::Key::args(self) -> i18n_next::Text
+pub const fn i18n_next::Key::new(&'static str) -> i18n_next::Key
+impl core::clone::Clone for i18n_next::Key
+pub fn i18n_next::Key::clone(&self) -> i18n_next::Key
+impl core::cmp::Eq for i18n_next::Key
+impl core::cmp::PartialEq for i18n_next::Key
+pub fn i18n_next::Key::eq(&self, &i18n_next::Key) -> bool
+impl core::convert::From<i18n_next::Key> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i18n_next::Key) -> Self
+impl core::fmt::Debug for i18n_next::Key
+pub fn i18n_next::Key::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for i18n_next::Key
+pub fn i18n_next::Key::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for i18n_next::Key
+pub fn i18n_next::Key::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for i18n_next::Key
+impl core::marker::StructuralPartialEq for i18n_next::Key
 #[non_exhaustive] pub struct i18n_next::LocaleInfo
 pub i18n_next::LocaleInfo::code: alloc::string::String
 pub i18n_next::LocaleInfo::dir: core::option::Option<alloc::string::String>
@@ -259,11 +321,66 @@ pub fn i18n_next::LocaleInfo::eq(&self, &i18n_next::LocaleInfo) -> bool
 impl core::fmt::Debug for i18n_next::LocaleInfo
 pub fn i18n_next::LocaleInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for i18n_next::LocaleInfo
+#[non_exhaustive] pub struct i18n_next::PluralCtx<'a>
+pub i18n_next::PluralCtx::count: f64
+pub i18n_next::PluralCtx::key: &'a str
+pub i18n_next::PluralCtx::locale: &'a str
+impl i18n_next::PluralCtx<'_>
+pub fn i18n_next::PluralCtx<'_>::get(&self, &str) -> alloc::string::String
+impl<'a> core::fmt::Debug for i18n_next::PluralCtx<'a>
+pub fn i18n_next::PluralCtx<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::Scope
+impl i18n_next::Scope
+pub fn i18n_next::Scope::instance(self, i18n_next::I18n) -> Self
+pub fn i18n_next::Scope::locale(self, impl core::convert::AsRef<str>) -> Self
+pub fn i18n_next::Scope::page(self, impl core::convert::AsRef<str>) -> Self
+pub fn i18n_next::Scope::run<R>(self, impl core::ops::function::FnOnce() -> R) -> R
+pub fn i18n_next::Scope::wrap<F: core::future::future::Future>(self, F) -> i18n_next::Scoped<F>
+impl core::default::Default for i18n_next::Scope
+pub fn i18n_next::Scope::default() -> i18n_next::Scope
+impl core::fmt::Debug for i18n_next::Scope
+pub fn i18n_next::Scope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::Scoped<F>
+impl<F: core::future::future::Future> core::future::future::Future for i18n_next::Scoped<F>
+pub type i18n_next::Scoped<F>::Output = <F as core::future::future::Future>::Output
+pub fn i18n_next::Scoped<F>::poll(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<<F as core::future::future::Future>::Output>
+impl<F> core::fmt::Debug for i18n_next::Scoped<F>
+pub fn i18n_next::Scoped<F>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct i18n_next::Subscription
 impl core::fmt::Debug for i18n_next::Subscription
 pub fn i18n_next::Subscription::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::ops::drop::Drop for i18n_next::Subscription
 pub fn i18n_next::Subscription::drop(&mut self)
+pub struct i18n_next::Text
+impl i18n_next::Text
+pub fn i18n_next::Text::arg(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl core::convert::Into<i18n_next::Arg<'static>>) -> Self
+pub fn i18n_next::Text::args<I>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::Into<i18n_next::Arg<'static>>
+pub fn i18n_next::Text::count(self, impl core::convert::Into<i18n_next::Count>) -> Self
+pub fn i18n_next::Text::fold<T>(&self, impl core::ops::function::FnMut(&str) -> T, &[(&str, &dyn core::ops::function::Fn() -> T)]) -> alloc::vec::Vec<T>
+pub fn i18n_next::Text::hide_if_empty(self) -> Self
+pub fn i18n_next::Text::html(self) -> Self
+pub fn i18n_next::Text::locale(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn i18n_next::Text::or(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn i18n_next::Text::page(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn i18n_next::Text::parts(&self) -> impl core::iter::traits::iterator::Iterator<Item = i18n_next::Part<'static>> + use<>
+pub fn i18n_next::Text::plural_rule(self, impl core::ops::function::Fn(&i18n_next::PluralCtx<'_>) -> core::option::Option<alloc::string::String> + core::marker::Send + core::marker::Sync + 'static) -> Self
+pub fn i18n_next::Text::resolve(&self) -> core::option::Option<alloc::string::String>
+pub fn i18n_next::Text::to_string(&self) -> alloc::string::String
+pub fn i18n_next::Text::write_to(&self, &mut impl core::fmt::Write) -> core::fmt::Result
+impl core::clone::Clone for i18n_next::Text
+pub fn i18n_next::Text::clone(&self) -> i18n_next::Text
+impl core::cmp::PartialEq<&str> for i18n_next::Text
+pub fn i18n_next::Text::eq(&self, &&str) -> bool
+impl core::cmp::PartialEq<i18n_next::Text> for &str
+pub fn &str::eq(&self, &i18n_next::Text) -> bool
+impl core::cmp::PartialEq<str> for i18n_next::Text
+pub fn i18n_next::Text::eq(&self, &str) -> bool
+impl core::convert::From<i18n_next::Text> for i18n_next::Arg<'_>
+pub fn i18n_next::Arg<'_>::from(i18n_next::Text) -> Self
+impl core::fmt::Debug for i18n_next::Text
+pub fn i18n_next::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for i18n_next::Text
+pub fn i18n_next::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct i18n_next::View
 impl i18n_next::View
 pub fn i18n_next::View::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
@@ -276,8 +393,18 @@ pub fn i18n_next::View::tc(&self, &str, impl core::convert::Into<i18n_next::Coun
 pub fn i18n_next::View::tc_with(&self, &str, impl core::convert::Into<i18n_next::Count>, &i18n_next::Args<'_>) -> alloc::string::String
 pub fn i18n_next::View::try_t(&self, &str) -> core::option::Option<alloc::string::String>
 pub fn i18n_next::View::with_locale(&self, &str) -> i18n_next::View
+impl i18n_next::View
+pub fn i18n_next::View::text(&self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
 impl core::clone::Clone for i18n_next::View
 pub fn i18n_next::View::clone(&self) -> i18n_next::View
 impl core::fmt::Debug for i18n_next::View
 pub fn i18n_next::View::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn i18n_next::global() -> core::option::Option<&'static i18n_next::I18n>
+pub fn i18n_next::install(i18n_next::I18n) -> core::result::Result<(), i18n_next::Error>
+pub fn i18n_next::locale() -> core::option::Option<alloc::sync::Arc<str>>
+pub fn i18n_next::negotiate<I>(&str, I) -> core::option::Option<alloc::string::String> where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::AsRef<str>
+pub fn i18n_next::page(&str) -> core::option::Option<i18n_next::View>
+pub fn i18n_next::scope() -> i18n_next::Scope
+pub fn i18n_next::set_locale(&str) -> core::result::Result<(), i18n_next::Error>
+pub fn i18n_next::t(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
 pub fn i18n_next::version() -> &'static str

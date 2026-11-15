@@ -1,5 +1,5 @@
 //! Compat goldens (DESIGN 7.2): every call line of `fixtures/compat/__golden__/{load,lookup,
-//! interpolate,options,plural}.md`, written by the JS oracle, replayed through the public
+//! interpolate,options,plural,text}.md`, written by the JS oracle, replayed through the public
 //! API and compared file by file. The runner lives in `support/compat.rs`, shared with the
 //! wasm test. The goldens are never rewritten from Rust.
 #![cfg(not(target_arch = "wasm32"))]
@@ -53,6 +53,16 @@ fn goldens_match_the_js_library() {
         listed,
         on_disk("plural"),
         "update PLURAL_FILES in tests/support/compat.rs"
+    );
+
+    let listed: Vec<_> = compat::TEXT_FILES
+        .iter()
+        .map(|(p, _)| p.to_string())
+        .collect();
+    assert_eq!(
+        listed,
+        on_disk("text"),
+        "update TEXT_FILES in tests/support/compat.rs"
     );
 
     // step 2: every golden line → the same answer

@@ -1,6 +1,8 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
+#[macro_use]
+mod macros;
 mod args;
 mod catalog;
 mod change;
@@ -15,7 +17,9 @@ mod linked;
 mod loader;
 mod plural;
 mod remote;
+mod scope;
 mod source;
+mod text;
 mod trace;
 #[cfg(all(
     feature = "watch",
@@ -28,6 +32,10 @@ pub use change::{Change, Subscription};
 pub use check::{CheckItem, CheckReport, LinkError};
 pub use error::Error;
 pub use i18n::{Builder, I18n, LocaleInfo, View};
+pub use scope::{Scope, Scoped, locale, negotiate, page, scope, set_locale, t};
+#[cfg(feature = "global")]
+pub use scope::{global, install};
+pub use text::{Key, Part, PluralCtx, Text};
 #[cfg(all(
     feature = "watch",
     not(all(target_arch = "wasm32", target_os = "unknown"))

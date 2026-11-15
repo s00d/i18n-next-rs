@@ -4,7 +4,8 @@
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BaseI18n, getByPath, interpolate } from '@i18n-micro/core'
+import { BaseI18n, getByPath, interpolate, resolveText } from '@i18n-micro/core'
+import { foldTemplate } from '@i18n-micro/core/render'
 import { listTranslationFiles, loadTranslationDir } from '@i18n-micro/utils/load-dir'
 import { buildFallbackLocaleChain, mergeSourceTranslations } from '@i18n-micro/utils/merge-source'
 import { classifyTranslationRelativePath } from '@i18n-micro/utils/parse-path'
@@ -617,3 +618,117 @@ for (const [tag, texts] of caseTexts) {
   })
 }
 write('linked', 'linked messages', [...linkedLines, ...caseLines])
+
+// ---- text: `resolveText` (the props of `<i18n-t>`) and `foldTemplate`, through the instance ----
+// Each line is what `<i18n-t>` shows: the interpolated template, or, when `hideIfEmpty` hides
+// it, `defaultValue || ''` (renderI18nT). `customPluralRule` is one of a few named rules that
+// Rust reproduces as closures (the stand-in: a JS function cannot be spelled in a golden).
+const TEXT_DIR = here('../fixtures/compat/text')
+const textCatalog = loadTranslationDir(TEXT_DIR)
+class TextCatalog extends BaseI18n {
+  constructor() {
+    super({ missingWarn: false, missingHandler: (locale, key, route) => this.missed.push([locale, key, route]) })
+    this.missed = []
+    this.ctx = ['en', 'en', 'index']
+    for (const locale of Object.keys(textCatalog.root)) this.loadTranslationsCore(locale, textCatalog.root[locale], false, 'index')
+    for (const page of Object.keys(textCatalog.routes)) {
+      for (const locale of Object.keys(textCatalog.routes[page])) this.loadTranslationsCore(locale, textCatalog.routes[page][locale], false, page)
+    }
+  }
+  getLocale() { return this.ctx[0] }
+  getFallbackLocale() { return this.ctx[1] }
+  getRoute() { return this.ctx[2] }
+}
+const texts = new TextCatalog()
+const RULES = {
+  echo: (k, n, p, l) => `${k}|${n}|${l}`,
+  get: (k, n, p, l, get) => get(k),
+  other: (k, n, p, l, get) => get('missing.other'),
+  none: () => null,
+}
+const withRule = (o) => (o.customPluralRule ? { ...o, customPluralRule: RULES[o.customPluralRule] } : o)
+const TEXT_KEYS = [
+  'greet', 'markup', 'quote', 'blank', 'empty', 'hole', 'spaced', 'terms', 'twice', 'pair', 'apples', 'marked', 'counted',
+  'blank_form', 'pipe', 'num', 'yes', 'tree', 'list', 'en_only', 'page_only', 'nope', 'missing {name}', '<b>&"key\'</b> {name}', '',
+]
+const TEXT_OPTIONS = [
+  {},
+  { params: { name: 'Ann' } },
+  { params: { name: '<i>"A&B"\'</i>', ok: true }, html: true },
+  { params: { name: '<i>', ok: 1.5 } },
+  { params: { name: 5, ok: false }, html: true },
+  { params: { name: null }, html: true },
+  { params: ['x', '<y>'] },
+  { params: ['x', '<y>'], html: true },
+  { html: true },
+  { defaultValue: 'Def {name} <{0}>', params: { name: '<A>' } },
+  { defaultValue: 'Def {name}', params: { name: '<A>' }, html: true },
+  { defaultValue: '', params: { name: 'Ann' } },
+  { hideIfEmpty: true },
+  { hideIfEmpty: true, params: { name: '' } },
+  { hideIfEmpty: true, params: { name: ' \t\u00a0\u3000' }, defaultValue: 'Shown' },
+  { hideIfEmpty: true, params: { name: '\u0085' } },
+  { plural: 0 },
+  { plural: 1 },
+  { plural: 2 },
+  { plural: 5 },
+  { plural: 21 },
+  { plural: 1.5 },
+  { plural: -1 },
+  { plural: 3, params: { name: 'Ann', count: 9 } },
+  { plural: 2, params: ['A', 'B'] },
+  { plural: 3, defaultValue: 'D {count} {name}', params: { name: '<b>' }, html: true },
+  { plural: 3, defaultValue: '' },
+  { plural: 0, hideIfEmpty: true, defaultValue: 'Hidden' },
+  { plural: 2, customPluralRule: 'echo' },
+  { plural: 1, customPluralRule: 'get', defaultValue: 'D' },
+  { plural: 1, customPluralRule: 'get', html: true },
+  { plural: 2, customPluralRule: 'other', defaultValue: 'Fallback {count}' },
+  { plural: 2, customPluralRule: 'other', html: true },
+  { plural: 2, customPluralRule: 'none', hideIfEmpty: true, defaultValue: 'Gone' },
+]
+const TEXT_CTX = [['en', 'en', 'index'], ['ru', 'en', 'index'], ['en', 'en', 'about'], ['xx', 'en', 'index']]
+const textLines = []
+const shown = (key, o) => {
+  const r = resolveText(texts, { keypath: key, ...withRule(o) })
+  return r === null ? o.defaultValue || '' : interpolate(r.template, r.params)
+}
+for (const [locale, fallback, page] of TEXT_CTX) {
+  for (const key of TEXT_KEYS) {
+    for (const o of TEXT_OPTIONS) {
+      texts.ctx = [locale, fallback, page]
+      texts.missed = []
+      const call = `${ctx(locale, fallback, page)}, ${s(key)}, ${lit(o)}`
+      // a subtree: JS shows `String(value)` (`[object Object]`, items joined), Rust the key as
+      // `t` does; both are `<node>` here, as in the lookup goldens (README)
+      const tree = texts.resolveLookup(key)
+      const node = tree !== null && typeof tree === 'object' && (o.plural === undefined || o.customPluralRule === 'get')
+      textLines.push([`text(${call})`, node ? '<node>' : s(shown(key, o))])
+      textLines.push([`text_missing(${call})`, s(texts.missed.map((m) => m.join(' ')).join('; '))])
+    }
+  }
+}
+// foldTemplate over the resolved template: slots render as `<name>`, text as itself
+const FOLD_KEYS = ['terms', 'twice', 'greet', 'hole', 'blank', 'nope', 'markup', 'apples', 'pair', '']
+const FOLD_SLOTS = [[], ['link'], ['link', 'policy'], ['name'], ['count', 'nope']]
+const FOLD_OPTIONS = [
+  {},
+  { params: { name: 'Ann' } },
+  { params: { name: 'Ann', link: 'L' } },
+  { params: ['x'], html: true },
+  { hideIfEmpty: true, defaultValue: 'D' },
+  { plural: 2, params: { name: 'N' } },
+]
+for (const key of FOLD_KEYS) {
+  for (const slotNames of FOLD_SLOTS) {
+    for (const o of FOLD_OPTIONS) {
+      texts.ctx = ['en', 'en', 'index']
+      const r = resolveText(texts, { keypath: key, ...o })
+      const slots = Object.fromEntries(slotNames.map((n) => [n, () => `<${n}>`]))
+      const out = r === null ? o.defaultValue || '' : foldTemplate((slot) => slot(), r.template, r.params, slots)
+      const list = typeof out === 'string' ? (out ? [out] : []) : out
+      textLines.push([`fold(${s(key)}, ${lit(slotNames)}, ${lit(o)})`, `[${list.map(s).join(',')}]`])
+    }
+  }
+}
+write('text', 'text', textLines)

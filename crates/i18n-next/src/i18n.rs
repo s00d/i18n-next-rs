@@ -144,7 +144,7 @@ pub(crate) struct Snapshot {
     fallback: Chain,
     pub(crate) meta: Arc<Meta>,
     /// Plural rules of the active locale (its `iso`, else its code); `None`: index rule.
-    plural: Option<&'static Plural>,
+    pub(crate) plural: Option<&'static Plural>,
     /// The same for every known locale, resolved once: a view in another locale reads
     /// them with one hash lookup instead of resolving its tag on every `tc` (~130 ns).
     plurals: Arc<FastMap<Arc<str>, Option<&'static Plural>>>,
@@ -201,7 +201,7 @@ impl Snapshot {
     }
 
     /// Plural rules of `code` (a view's locale): known ones from the table, others resolved.
-    fn plural_of(&self, code: &str) -> Option<&'static Plural> {
+    pub(crate) fn plural_of(&self, code: &str) -> Option<&'static Plural> {
         match self.plurals.get(code) {
             Some(p) => *p,
             None => self.meta.plural(code),
@@ -217,7 +217,12 @@ impl Snapshot {
         }
     }
 
-    fn lookup(&self, locale: Option<&str>, page: Option<&str>, key: &str) -> Option<&Entry> {
+    pub(crate) fn lookup(
+        &self,
+        locale: Option<&str>,
+        page: Option<&str>,
+        key: &str,
+    ) -> Option<&Entry> {
         let page = self.meta.page(page);
         self.layers(locale)
             .iter()
@@ -564,7 +569,7 @@ impl I18n {
 
     /// A miss: the `missing` handler and, with `tracing`, a `warn!`.
     #[cold]
-    fn report(&self, locale: Option<&str>, page: Option<&str>, key: &str) {
+    pub(crate) fn report(&self, locale: Option<&str>, page: Option<&str>, key: &str) {
         let code = locale.unwrap_or("");
         let page = page.filter(|p| !p.is_empty()).unwrap_or("index");
         if let Some(missing) = &self.inner.missing {
@@ -990,9 +995,9 @@ fn put(slot: &mut LocaleData, page: Option<&str>, chunk: Layer) {
 /// ```
 #[derive(Clone)]
 pub struct View {
-    i18n: I18n,
-    locale: Option<Arc<str>>,
-    page: Option<Arc<str>>,
+    pub(crate) i18n: I18n,
+    pub(crate) locale: Option<Arc<str>>,
+    pub(crate) page: Option<Arc<str>>,
 }
 
 impl fmt::Debug for View {
@@ -1387,6 +1392,16 @@ impl Builder {
             }
             Some(ConfigSource::Json(json)) => Config::parse(json.as_bytes(), "i18n.json"),
         }
+    }
+
+    /// [`Builder::build`], then [`install`](crate::install) as the global instance.
+    ///
+    /// # Errors
+    /// What `build` returns, or [`Error::AlreadyInstalled`].
+    #[cfg(feature = "global")]
+    pub fn install(self) -> Result<&'static I18n, Error> {
+        crate::scope::install(self.build()?)?;
+        crate::scope::global().ok_or(Error::NotInstalled)
     }
 
     /// Reads everything and builds the catalog.

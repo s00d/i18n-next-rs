@@ -137,6 +137,9 @@ struct Form {
     holes_end: u32,
 }
 
+/// A form: its byte range in the raw text and its holes.
+pub(crate) type FormRange<'a> = (usize, usize, &'a [(u32, u32)]);
+
 /// The `=0 ` marker of `text.ts`: the first form for 0, the others by category.
 const ZERO_MARKER: &str = "=0 ";
 
@@ -176,23 +179,31 @@ impl PluralMsg {
         plural: Option<&Plural>,
         params: &impl Params,
     ) -> String {
-        let at = self.shape.index(self.marked, count.whole(), plural);
-        let Some(f) = self.forms.get(at) else {
+        let Some((start, end, holes)) = self.form(count, plural) else {
             return String::new();
         };
+        render(
+            &self.text.raw,
+            start,
+            end,
+            holes.iter().map(|&(s, e)| (s as usize, e as usize)),
+            holes.len(),
+            params,
+        )
+    }
+
+    /// The byte range of the form `count` picks in `text.raw` and its holes (ranges of
+    /// `text.raw`), not interpolated: `tc` renders it, `Text` writes it to a formatter.
+    #[inline]
+    pub(crate) fn form(&self, count: Count, plural: Option<&Plural>) -> Option<FormRange<'_>> {
+        let at = self.shape.index(self.marked, count.whole(), plural);
+        let f = self.forms.get(at)?;
         let first = at
             .checked_sub(1)
             .and_then(|j| self.forms.get(j))
             .map_or(0, |p| p.holes_end as usize);
         let holes = self.holes.get(first..f.holes_end as usize).unwrap_or(&[]);
-        render(
-            &self.text.raw,
-            f.start as usize,
-            f.end as usize,
-            holes.iter().map(|&(s, e)| (s as usize, e as usize)),
-            holes.len(),
-            params,
-        )
+        Some((f.start as usize, f.end as usize, holes))
     }
 }
 
@@ -298,13 +309,23 @@ impl Template {
     /// (JS `trim`), interpolated. Whitespace is never inside a placeholder, so the holes
     /// of the whole string inside the trimmed range are those of the form.
     pub(crate) fn single_form(&self, args: &impl Params) -> String {
+        let (start, end) = self.single_range();
+        let holes = self.holes().filter(|&(s, e)| s > start && e < end);
+        render(&self.raw, start, end, holes, self.holes.len(), args)
+    }
+
+    /// The byte range of [`Template::single_form`] in `raw`.
+    pub(crate) fn single_range(&self) -> (usize, usize) {
         let raw = &*self.raw;
         let body = raw.strip_prefix(ZERO_MARKER).unwrap_or(raw);
         let trimmed = body.trim_matches(is_js_space);
         let start = trimmed.as_ptr() as usize - raw.as_ptr() as usize;
-        let end = start + trimmed.len();
-        let holes = self.holes().filter(|&(s, e)| s > start && e < end);
-        render(raw, start, end, holes, self.holes.len(), args)
+        (start, start + trimmed.len())
+    }
+
+    /// Placeholder name ranges of `raw`, in order.
+    pub(crate) fn hole_slice(&self) -> &[(u32, u32)] {
+        &self.holes
     }
 }
 

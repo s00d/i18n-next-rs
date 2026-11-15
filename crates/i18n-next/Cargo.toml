@@ -9,14 +9,14 @@ repository.workspace = true
 authors.workspace = true
 keywords = ["i18n", "localization", "translation", "tauri", "wasm"]
 categories = ["internationalization", "localization", "wasm"]
-include = ["/src/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md",
+include = ["/src/**/*", "/build.rs", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md",
     # Workspace checks, not crate tests: version_sync reads the root Cargo.toml, the other
     # members and the plugin package.json; bench_inventory reads api/<crate>.txt at the
     # workspace root. None of them exist in the published package.
     "!/tests/version_sync.rs", "!/tests/bench_inventory.rs", "!/tests/support/inventory.rs",
     # Read the JSONTestSuite corpus / compat goldens from fixtures/ at the workspace root.
     "!/tests/json_differential.rs", "!/tests/compat.rs", "!/tests/support/compat.rs", "!/tests/wasm.rs",
-    "!/tests/plural_props.rs"]
+    "!/tests/plural_props.rs", "!/tests/number_compat.rs", "!/tests/support/number.rs"]
 
 [lints]
 workspace = true
@@ -104,6 +104,11 @@ harness = false
 name = "text"
 harness = false
 
+[[bench]]
+name = "number"
+harness = false
+required-features = ["format"]
+
 # Models and differentials that build floats (`Arg::Float`, `Count::from(f64)`) or the
 # float printer: with `--no-default-features` they are skipped, the rest still runs.
 [[test]]
@@ -116,6 +121,14 @@ required-features = ["format"]
 
 [[test]]
 name = "compat"
+required-features = ["format"]
+
+[[test]]
+name = "format_stories"
+required-features = ["format"]
+
+[[test]]
+name = "number_compat"
 required-features = ["format"]
 
 [[test]]

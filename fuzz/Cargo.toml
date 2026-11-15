@@ -55,3 +55,10 @@ path = "fuzz_targets/page_names.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "intl_options"
+path = "fuzz_targets/intl_options.rs"
+test = false
+doc = false
+bench = false

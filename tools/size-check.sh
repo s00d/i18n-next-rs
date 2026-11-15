@@ -21,6 +21,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR source=size-budget.env
 . "${HERE}/tools/size-budget.env"
 BASE="${1:-}"
+# The full build carries CLDR number data for these locales only (DESIGN 2.4: measured for 3).
+export I18N_NEXT_LOCALES="${I18N_NEXT_LOCALES:-en,ru,de}"
 OUT="${HERE}/target/size"
 mkdir -p "${OUT}"
 

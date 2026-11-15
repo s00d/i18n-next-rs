@@ -277,6 +277,73 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
         ("Text ru", expect(header.title.to_string(), "Настройки")),
         ("key! ru", expect(lost.to_string(), "Не найдено: cart.json")),
     ]);
+    // M5: numbers by CLDR 48 as `Intl.NumberFormat` shows them; named formats from
+    // i18n.json (`numberFormats`), the locale's `iso` (`ar` → `ar-EG`: Arabic digits).
+    let n = 1234567.891;
+    stops.extend([
+        (
+            "tn en",
+            expect(i18n.with_locale("en").tn(n), "1,234,567.891"),
+        ),
+        (
+            "tn ru",
+            expect(i18n.with_locale("ru").tn(n), "1\u{a0}234\u{a0}567,891"),
+        ),
+        (
+            "tn ar",
+            expect(i18n.with_locale("ar").tn(n), "١٬٢٣٤٬٥٦٧٫٨٩١"),
+        ),
+        (
+            "tn hi",
+            expect(i18n.with_locale("hi").tn(n), "12,34,567.891"),
+        ),
+        (
+            "tn_as currency",
+            expect(
+                format!(
+                    "{} / {}",
+                    i18n.with_locale("en").tn_as(1234.5, "currency"),
+                    i18n.with_locale("ru").tn_as(1234.5, "currency")
+                ),
+                "$1,234.50 / 1\u{a0}234,50\u{a0}₽",
+            ),
+        ),
+        (
+            "compact",
+            expect(
+                format!(
+                    "{} / {}",
+                    i18n.with_locale("en").tn_as(1234567, "short"),
+                    i18n.with_locale("ru").tn_as(1234567, "short")
+                ),
+                "1.2M / 1,2\u{a0}млн",
+            ),
+        ),
+        ("tn! ru", expect(i18n_next::tn!(1234.5), "1\u{a0}234,5")),
+        (
+            "Text number",
+            expect(
+                t!(
+                    "greeting",
+                    name = i18n_next::Arg::Number {
+                        value: 0.5.into(),
+                        format: None
+                    }
+                )
+                .to_string(),
+                "Привет, 0,5!",
+            ),
+        ),
+        (
+            "language_name",
+            expect(
+                ["en", "ru", "ar", "hi"]
+                    .map(|c| i18n.language_name(c).unwrap_or("?"))
+                    .join(", "),
+                "English, русский, العربية (مصر), हिन्दी",
+            ),
+        ),
+    ]);
     Ok(stops)
 }
 

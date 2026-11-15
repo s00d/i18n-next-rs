@@ -36,6 +36,25 @@ pub enum Arg<'a> {
     Null,
     /// A translation inside a translation, resolved each time the outer one is shown.
     Text(Box<Text>),
+    /// A number formatted when shown (JS `tn`), in the outer `Text`'s instance and locale
+    /// (in `t_with`: the nearest scope's, else the global instance's), with the named
+    /// `format` of that locale or the defaults. Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::{Arg, I18n};
+    ///
+    /// let i18n = I18n::builder().messages("de", None, r#"{"sum": "Summe: {n}"}"#).locale("de").build()?;
+    /// let n = Arg::Number { value: 1234.5.into(), format: None };
+    /// assert_eq!(i18n.text("sum").arg("n", n), "Summe: 1.234,5");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[cfg(feature = "format")]
+    Number {
+        /// The number.
+        value: crate::Number,
+        /// A named format ([`I18n::tn_as`](crate::I18n::tn_as)), else the defaults.
+        format: Option<Cow<'a, str>>,
+    },
 }
 
 impl PartialEq for Arg<'_> {
@@ -48,6 +67,17 @@ impl PartialEq for Arg<'_> {
             (Arg::Bool(a), Arg::Bool(b)) => a == b,
             (Arg::Null, Arg::Null) => true,
             (Arg::Text(a), Arg::Text(b)) => a.same(b),
+            #[cfg(feature = "format")]
+            (
+                Arg::Number {
+                    value: a,
+                    format: fa,
+                },
+                Arg::Number {
+                    value: b,
+                    format: fb,
+                },
+            ) => a == b && fa == fb,
             _ => false,
         }
     }
@@ -131,6 +161,10 @@ impl Arg<'_> {
                 // Writing to a `String` cannot fail.
                 let _ = t.show(out);
             }
+            #[cfg(feature = "format")]
+            Arg::Number { value, format } => {
+                let _ = crate::format::api::write_in(None, None, *value, format.as_deref(), out);
+            }
             other => other.scalar(out),
         }
     }
@@ -149,6 +183,8 @@ impl Arg<'_> {
             Arg::Bool(b) => out.push_str(if b { "true" } else { "false" }),
             Arg::Null => out.push_str("null"),
             Arg::Str(_) | Arg::String(_) | Arg::Text(_) => {}
+            #[cfg(feature = "format")]
+            Arg::Number { .. } => {}
         }
     }
 
@@ -163,6 +199,10 @@ impl Arg<'_> {
             // an `html` Text is markup already; a plain one is text to escape
             Arg::Text(t) if html && !t.is_html() => t.emit(&mut Escape(out)),
             Arg::Text(t) => t.emit(out),
+            #[cfg(feature = "format")]
+            Arg::Number { value, format } => {
+                crate::format::api::write_in(None, None, *value, format.as_deref(), out)
+            }
             other => {
                 let mut b = Small::new();
                 other.scalar(&mut b);
@@ -183,6 +223,9 @@ impl Arg<'_> {
             Arg::Bool(true) | Arg::Null => 4,
             Arg::Bool(false) => 5,
             Arg::Text(_) => MAX_SCALAR_LEN,
+            // a guess: it only sizes a buffer
+            #[cfg(feature = "format")]
+            Arg::Number { .. } => 2 * MAX_SCALAR_LEN,
         }
     }
 }

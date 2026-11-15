@@ -78,9 +78,12 @@ pub(crate) struct Meta {
     /// fallback link, the global fallback and `iso` codes. Each is known, with its chain.
     declared: Vec<Arc<str>>,
     aliases: FastMap<Arc<str>, Arc<str>>,
-    /// Raw `numberFormats` / `datetimeFormats` of `i18n.json`, for M5 / M6.
-    #[allow(dead_code, reason = "read by the formats of M5 / M6")]
-    formats: (Option<Box<str>>, Option<Box<str>>),
+    /// Raw `datetimeFormats` of `i18n.json`, for M6.
+    #[allow(dead_code, reason = "read by the date formats of M6")]
+    datetime_formats: Option<Box<str>>,
+    /// Named number formats by locale code (`numberFormats`, [`Builder::formats`]).
+    #[cfg(feature = "format")]
+    pub(crate) numbers: crate::format::Formats,
     /// What `check()` reads besides the chunks (M3).
     check: check::Facts,
     /// `linked_messages(true)`: `build` and `reload` resolve links with it.
@@ -148,12 +151,47 @@ pub(crate) struct Snapshot {
     /// The same for every known locale, resolved once: a view in another locale reads
     /// them with one hash lookup instead of resolving its tag on every `tc` (~130 ns).
     plurals: Arc<FastMap<Arc<str>, Option<&'static Plural>>>,
+    /// CLDR number data of the active locale (its `iso`, else its code; `en` when unknown).
+    #[cfg(feature = "format")]
+    pub(crate) number: &'static crate::format::Loc,
+    /// The same for every known locale, resolved once.
+    #[cfg(feature = "format")]
+    numbers: Arc<FastMap<Arc<str>, &'static crate::format::Loc>>,
 }
 
 impl Meta {
     /// Plural rules of `code`: by its `iso` when it has one (`ua` → `uk-UA`), else the code.
     fn plural(&self, code: &str) -> Option<&'static Plural> {
-        plural::for_tag(self.iso.get(code).map_or(code, |t| &**t))
+        plural::for_tag(self.tag(code))
+    }
+
+    /// The BCP 47 tag of `code`: its `iso`, else the code (`isoTag` of `BaseI18n`).
+    pub(crate) fn tag<'a>(&'a self, code: &'a str) -> &'a str {
+        self.iso.get(code).map_or(code, |t| &**t)
+    }
+
+    /// CLDR number data of `code`, as `FormatService` resolves `isoTag(code)`.
+    #[cfg(feature = "format")]
+    fn number(&self, code: &str) -> &'static crate::format::Loc {
+        crate::format::locale::resolve(self.tag(code))
+    }
+
+    /// The named number format `name` of locale `code`: by the code, then shorter
+    /// (`zh-Hant-TW` → `zh-Hant` → `zh`), as `FormatService` looks it up.
+    #[cfg(feature = "format")]
+    pub(crate) fn named_number(
+        &self,
+        code: &str,
+        name: &str,
+    ) -> Option<&crate::format::NumberOptions> {
+        let mut at = code;
+        while !at.is_empty() {
+            if let Some(o) = self.numbers.get(at).and_then(|m| m.get(name)) {
+                return Some(o);
+            }
+            at = at.get(..at.rfind('-').unwrap_or(0)).unwrap_or("");
+        }
+        None
     }
 }
 
@@ -168,11 +206,15 @@ impl Snapshot {
             .chain(meta.declared.iter().map(|k| &**k))
             .chain(std::iter::once(&*locale));
         let mut plurals = FastMap::default();
+        #[cfg(feature = "format")]
+        let mut numbers = FastMap::default();
         for code in names {
             if !chains.contains_key(code) {
                 let code: Arc<str> = Arc::from(code);
                 let chain = meta.chain(&data, &code);
                 plurals.insert(code.clone(), meta.plural(&code));
+                #[cfg(feature = "format")]
+                numbers.insert(code.clone(), meta.number(&code));
                 chains.insert(code, chain);
             }
         }
@@ -190,6 +232,10 @@ impl Snapshot {
             version,
             own: data.get(&*locale).cloned(),
             plural: meta.plural(&locale),
+            #[cfg(feature = "format")]
+            number: meta.number(&locale),
+            #[cfg(feature = "format")]
+            numbers: Arc::new(numbers),
             locale,
             data: Arc::new(data),
             chains: Arc::new(chains),
@@ -205,6 +251,15 @@ impl Snapshot {
         match self.plurals.get(code) {
             Some(p) => *p,
             None => self.meta.plural(code),
+        }
+    }
+
+    /// CLDR number data of `code` (a view's locale): known ones from the table.
+    #[cfg(feature = "format")]
+    pub(crate) fn number_of(&self, code: &str) -> &'static crate::format::Loc {
+        match self.numbers.get(code) {
+            Some(n) => n,
+            None => self.meta.number(code),
         }
     }
 
@@ -773,6 +828,10 @@ impl I18n {
                 fallback: s.fallback.clone(),
                 plural: s.plural_of(code),
                 plurals: s.plurals.clone(),
+                #[cfg(feature = "format")]
+                number: s.number_of(code),
+                #[cfg(feature = "format")]
+                numbers: s.numbers.clone(),
                 meta: s.meta.clone(),
             }))
         })?;
@@ -1128,6 +1187,9 @@ pub struct Builder {
     /// `linked_messages(true)`: the resolver, as a pointer so an app that never turns links
     /// on links none of their code (no case tables in its `.wasm`).
     linked: Option<ResolveLinked>,
+    /// `formats(json)` texts, in call order.
+    #[cfg(feature = "format")]
+    formats: Vec<String>,
 }
 
 impl fmt::Debug for Builder {
@@ -1146,6 +1208,32 @@ impl Builder {
     #[must_use]
     pub fn locale(mut self, code: &str) -> Self {
         self.locale = Some(code.to_owned());
+        self
+    }
+
+    /// Named number formats, `numberFormats` of Vue I18n and `i18n.json`: `{"<locale>":
+    /// {"<name>": {<Intl.NumberFormat options>}}}`, for [`I18n::tn_as`]. Over the ones of
+    /// `i18n.json` (a name given again wins). A name is looked up by the locale code, then
+    /// shorter (`zh-Hant-TW` → `zh-Hant` → `zh`); the number formats by the locale's `iso`.
+    /// Options outside the supported subset fail `build` with
+    /// [`Error::UnsupportedFormat`]. Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .iso("de", "de-DE")
+    ///     .locale("de")
+    ///     .formats(r#"{"de": {"price": {"style": "currency", "currency": "EUR"}}}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.tn_as(1234.5, "price"), "1.234,50\u{a0}€");
+    /// assert!(I18n::builder().formats(r#"{"de": {"x": {"signDisplay": "always"}}}"#).build().is_err());
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn formats(mut self, number_formats: &str) -> Self {
+        self.formats.push(number_formats.to_owned());
         self
     }
 
@@ -1378,6 +1466,16 @@ impl Builder {
         self
     }
 
+    /// How errors name the config.
+    #[cfg(feature = "format")]
+    fn config_path(&self) -> String {
+        match &self.config {
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            Some(ConfigSource::Path(path)) => path.to_string_lossy().into_owned(),
+            _ => "i18n.json".to_owned(),
+        }
+    }
+
     fn read_config(&self) -> Result<Config, Error> {
         match &self.config {
             None => Ok(Config::default()),
@@ -1420,9 +1518,19 @@ impl Builder {
                 .as_deref()
                 .or(config.fallback_locale.as_deref())
                 .map(Arc::from),
-            formats: (config.number_formats, config.datetime_formats),
+            datetime_formats: config.datetime_formats,
             ..Meta::default()
         };
+        #[cfg(feature = "format")]
+        {
+            if let Some(json) = &config.number_formats {
+                let path = self.config_path();
+                crate::format::parse_formats(json, &path, &mut meta.numbers)?;
+            }
+            for json in &self.formats {
+                crate::format::parse_formats(json, "formats", &mut meta.numbers)?;
+            }
+        }
         for l in &config.locales {
             if let Some(fb) = &l.fallback {
                 meta.links.insert(Arc::from(&*l.code), Arc::from(&**fb));

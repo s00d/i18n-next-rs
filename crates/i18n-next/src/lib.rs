@@ -9,6 +9,8 @@ mod change;
 mod check;
 mod error;
 mod evict;
+#[cfg(feature = "format")]
+mod format;
 mod hash;
 mod i18n;
 mod json;
@@ -31,6 +33,10 @@ pub use args::{Arg, Args, Count};
 pub use change::{Change, Subscription};
 pub use check::{CheckItem, CheckReport, LinkError};
 pub use error::Error;
+#[cfg(feature = "format")]
+pub use format::Number;
+#[cfg(feature = "format")]
+pub use format::api::{tn, tn_as};
 pub use i18n::{Builder, I18n, LocaleInfo, View};
 #[doc(hidden)]
 pub use macros::__ident;

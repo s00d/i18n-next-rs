@@ -49,6 +49,16 @@ fn hot_path_allocations() {
     let _ = i18n.t("nav.home");
     let _ = settings.t("title");
 
+    #[cfg(feature = "format")]
+    let num = I18n::builder()
+        .locale("de")
+        .messages("de", None, r#"{"total": "Summe: {number}"}"#)
+        .formats(r#"{"de": {"eur": {"style": "currency", "currency": "EUR"}, "short": {"notation": "compact"}}}"#)
+        .build()
+        .unwrap();
+    #[cfg(feature = "format")]
+    let _ = num.tn(1);
+
     let _profiler = dhat::Profiler::builder().testing().build();
 
     // case: version() → 0 blocks (a `&'static str`).
@@ -543,6 +553,34 @@ fn hot_path_allocations() {
     assert_eq!(text.to_string(), "Hallo, Ann! 3 neu, 1.5true");
     assert_eq!(plural.to_string(), "21 яблоко");
     assert_eq!(page.to_string(), "Einstellungen");
+
+    // case: numbers (DESIGN 5.5): tn / tn_as → exactly 1 block (the result, sized on the
+    // stack); a Text with `{number}` displayed into a reused buffer → 0.
+    #[cfg(feature = "format")]
+    {
+        let n = blocks(|| {
+            std::hint::black_box(num.tn(std::hint::black_box(1234567.891)));
+        });
+        dhat::assert_eq!(n, 1);
+        let n = blocks(|| {
+            std::hint::black_box(num.tn_as(std::hint::black_box(-1234.5), "eur"));
+        });
+        dhat::assert_eq!(n, 1);
+        let n = blocks(|| {
+            std::hint::black_box(num.tn_as(std::hint::black_box(1234567), "short"));
+        });
+        dhat::assert_eq!(n, 1);
+        let total = num.text("total").number(1234.5);
+        let priced = num.text("total").number_as(1234.5, "eur");
+        let n = blocks(|| {
+            buf.clear();
+            write!(buf, "{total}").unwrap();
+            priced.write_to(&mut buf).unwrap();
+        });
+        dhat::assert_eq!(n, 0);
+        assert_eq!(buf, "Summe: 1.234,5Summe: 1.234,50\u{a0}€");
+        assert_eq!(num.tn_as(1234567, "short"), "1,2\u{a0}Mio.");
+    }
 
     // case: a miss down the whole chain with a default → 1 block (the interpolated
     // default). Last on purpose: a failure here leaves every case above checked.

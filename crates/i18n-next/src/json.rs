@@ -574,7 +574,22 @@ impl fmt::Write for ExpBuf {
 /// else goes through [`push_js_number_exact`].
 #[cfg(feature = "format")]
 pub(crate) fn push_js_number<O: Out + ?Sized>(out: &mut O, v: f64) {
-    if let Some((m, k)) = short_decimal(v.abs()) {
+    if v.is_finite() && v != 0.0 {
+        let mut digits = [0u8; 20];
+        let (len, n) = shortest_digits(v.abs(), &mut digits);
+        let sig = std::str::from_utf8(digits.get(..len).unwrap_or(&[])).unwrap_or("0");
+        layout(out, v < 0.0, sig, n);
+        return;
+    }
+    push_js_number_exact(out, v);
+}
+
+/// The shortest round-trip decimal digits of `v` (finite, > 0), the ones JS prints, into
+/// `digits` (ASCII, no trailing zero): `(len, n)` for `0.digits × 10^n`. A short decimal
+/// comes from its integer digits ([`short_decimal`]), anything else from `{:e}`.
+#[cfg(feature = "format")]
+pub(crate) fn shortest_digits(v: f64, digits: &mut [u8; 20]) -> (usize, i32) {
+    if let Some((m, k)) = short_decimal(v) {
         let mut buf = [0u8; 20];
         let mut i = buf.len();
         let mut rest = m;
@@ -586,15 +601,15 @@ pub(crate) fn push_js_number<O: Out + ?Sized>(out: &mut O, v: f64) {
                 break;
             }
         }
-        let digits = &buf[i..];
-        let n = digits.len() as i32 - k as i32;
+        let all = &buf[i..];
+        let n = all.len() as i32 - k as i32;
         // Trailing zeros only when `k` is 0 (else `k - 1` would have matched).
-        let end = digits.iter().rposition(|&d| d != b'0').map_or(1, |p| p + 1);
-        let sig = std::str::from_utf8(digits.get(..end).unwrap_or(digits)).unwrap_or("0");
-        layout(out, v < 0.0, sig, n);
-        return;
+        let end = all.iter().rposition(|&d| d != b'0').map_or(1, |p| p + 1);
+        let sig = all.get(..end).unwrap_or(all);
+        digits[..sig.len()].copy_from_slice(sig);
+        return (sig.len(), n);
     }
-    push_js_number_exact(out, v);
+    exp_digits(v, digits)
 }
 
 /// `v` (finite, > 0) as `m / 10^k` with the fewest fraction digits `k` ≤ 6, when that
@@ -641,30 +656,37 @@ pub(crate) fn push_js_number_exact<O: Out + ?Sized>(out: &mut O, v: f64) {
         out.push_str(if v < 0.0 { "-Infinity" } else { "Infinity" });
         return;
     }
+    let mut digits = [0u8; 20];
+    let (k, n) = exp_digits(v.abs(), &mut digits);
+    layout(
+        out,
+        v < 0.0,
+        std::str::from_utf8(&digits[..k]).unwrap_or("0"),
+        n,
+    );
+}
+
+/// [`shortest_digits`] by Rust's `{:e}` (`v` finite, > 0), the even tie of ECMA-262 applied.
+#[cfg(feature = "format")]
+fn exp_digits(v: f64, digits: &mut [u8; 20]) -> (usize, i32) {
     let mut buf = ExpBuf {
         bytes: [0; 32],
         len: 0,
     };
     // Cannot fail: 32 bytes hold every finite `f64` in `{:e}`.
-    let _ = fmt::Write::write_fmt(&mut buf, format_args!("{:e}", v.abs()));
+    let _ = fmt::Write::write_fmt(&mut buf, format_args!("{:e}", v));
     let sci = std::str::from_utf8(&buf.bytes[..buf.len]).unwrap_or("0e0");
     let (mantissa, exp) = sci.split_once('e').unwrap_or((sci, "0"));
     let exp: i32 = exp.parse().unwrap_or(0);
-    let mut digits = [0u8; 20];
     let mut k = 0;
     for b in mantissa.bytes().filter(u8::is_ascii_digit) {
         digits[k] = b;
         k += 1;
     }
     if k > 0 && digits[k - 1] & 1 == 1 {
-        even_tie(v.abs(), &mut digits[..k], exp);
+        even_tie(v, &mut digits[..k], exp);
     }
-    layout(
-        out,
-        v < 0.0,
-        std::str::from_utf8(&digits[..k]).unwrap_or("0"),
-        exp + 1,
-    );
+    (k, exp + 1)
 }
 
 /// Two shortest digit strings can be equally close to `v`: ECMA-262 `Number::toString`

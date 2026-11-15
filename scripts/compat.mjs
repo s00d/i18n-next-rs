@@ -4,7 +4,7 @@
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BaseI18n, getByPath, interpolate, resolveText } from '@i18n-micro/core'
+import { BaseI18n, FormatService, getByPath, interpolate, resolveText } from '@i18n-micro/core'
 import { foldTemplate } from '@i18n-micro/core/render'
 import { listTranslationFiles, loadTranslationDir } from '@i18n-micro/utils/load-dir'
 import { buildFallbackLocaleChain, mergeSourceTranslations } from '@i18n-micro/utils/merge-source'
@@ -732,3 +732,149 @@ for (const key of FOLD_KEYS) {
   }
 }
 write('text', 'text', textLines)
+
+// ---- number: Intl.NumberFormat through FormatService.formatNumber, named formats through BaseI18n.tn ----
+// `num(locale, value, options)`: options spelled as JSON (Rust registers each distinct set as a
+// named format of every locale). `num_name(…)`: currencyDisplay "name" (Rust feature
+// `currency-names`). `tn_as(code, name, value)` / `tn(code, value)`: an instance with the
+// `numberFormats` and `iso` of `number_config()` and that locale active.
+const formatter = new FormatService()
+const numLit = (v) => (Object.is(v, -0) ? '-0' : String(v))
+const NUM_LOCALES = ['en', 'de', 'ru', 'pl', 'fr', 'es', 'ar', 'ar-EG', 'hi', 'ja', 'zh-Hant', 'lv', 'he', 'pt-PT', 'de-CH', 'en-IN', 'sw', 'th', 'bn', 'fa', 'mr', 'my']
+const NUM_VALUES = [
+  0, -0, 1, -1, 0.5, 1.5, 2.5, -2.5, 0.125, 1.005, 2.675, 0.0005, 0.07, 0.1 + 0.2, 0.999, 999.5, 999.9995, 1000, 1234, 1500,
+  1234.5, -1234.5, 12345, 99999, 999999, 1234567.891, -1234567.891, 9007199254740993, 123456789012345680000, 1e21, 1e-7,
+  5e-324, 1.7976931348623157e308, NaN, Infinity, -Infinity,
+]
+const CURRENCIES = ['USD', 'EUR', 'JPY', 'BHD', 'RUB', 'INR', 'GBP', 'CHF', 'XYZ']
+const NUM_OPTIONS = [
+  {},
+  { maximumFractionDigits: 0 },
+  { maximumFractionDigits: 2 },
+  { minimumFractionDigits: 2 },
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+  { minimumFractionDigits: 1, maximumFractionDigits: 5 },
+  { minimumIntegerDigits: 3 },
+  { minimumIntegerDigits: 5, useGrouping: true },
+  { useGrouping: false },
+  { useGrouping: true },
+  { useGrouping: 'min2' },
+  { style: 'percent' },
+  { style: 'percent', maximumFractionDigits: 2 },
+  { style: 'percent', minimumFractionDigits: 1 },
+  { notation: 'compact' },
+  { notation: 'compact', maximumFractionDigits: 1 },
+  { notation: 'compact', minimumFractionDigits: 2 },
+  { notation: 'compact', useGrouping: false },
+  { notation: 'compact', compactDisplay: 'short', useGrouping: 'always' },
+  ...CURRENCIES.flatMap((currency) => ['symbol', 'narrowSymbol', 'code'].map((currencyDisplay) => ({ style: 'currency', currency, currencyDisplay }))),
+  { style: 'currency', currency: 'usd' },
+  { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 },
+  { style: 'currency', currency: 'JPY', minimumFractionDigits: 2 },
+  { style: 'currency', currency: 'USD', useGrouping: false },
+]
+const numLines = []
+for (const locale of NUM_LOCALES) {
+  for (const v of NUM_VALUES) {
+    for (const o of NUM_OPTIONS) numLines.push([`num(${s(locale)}, ${numLit(v)}, ${JSON.stringify(o)})`, s(formatter.formatNumber(v, locale, o))])
+    for (const currency of ['USD', 'EUR', 'RUB', 'JPY', 'XYZ']) {
+      const o = { style: 'currency', currency, currencyDisplay: 'name' }
+      numLines.push([`num_name(${s(locale)}, ${numLit(v)}, ${JSON.stringify(o)})`, s(formatter.formatNumber(v, locale, o))])
+    }
+  }
+}
+// an i18n.json: Rust builds it with `config_json`
+const NUMBER_CONFIG = {
+  locales: [{ code: 'ar', iso: 'ar-EG' }, { code: 'ua', iso: 'uk-UA' }, { code: 'zh-tw', iso: 'zh-Hant-TW' }],
+  numberFormats: {
+    en: { currency: { style: 'currency', currency: 'USD' }, short: { notation: 'compact' }, pct: { style: 'percent', minimumFractionDigits: 1 } },
+    de: { currency: { style: 'currency', currency: 'EUR' } },
+    zh: { currency: { style: 'currency', currency: 'CNY' } },
+    'zh-Hant': { short: { notation: 'compact', maximumFractionDigits: 1 } },
+    ar: { currency: { style: 'currency', currency: 'EGP', currencyDisplay: 'code' } },
+    ua: { currency: { style: 'currency', currency: 'UAH', currencyDisplay: 'narrowSymbol' } },
+    'zh-tw': { pct: { style: 'percent' } },
+  },
+}
+class NumberCatalog extends BaseI18n {
+  constructor() {
+    super({ missingWarn: false, numberFormats: NUMBER_CONFIG.numberFormats, localeIso: Object.fromEntries(NUMBER_CONFIG.locales.map((l) => [l.code, l.iso])) })
+    this.locale = 'en'
+  }
+  getLocale() { return this.locale }
+  getFallbackLocale() { return 'en' }
+  getRoute() { return 'index' }
+}
+const numbers = new NumberCatalog()
+numLines.push(['number_config()', s(JSON.stringify(NUMBER_CONFIG))])
+for (const code of ['en', 'de', 'de-AT', 'de-AT-x-y', 'zh', 'zh-Hant', 'zh-Hant-TW', 'zh-tw', 'ar', 'ua', 'xx', 'en_US', 'ru']) {
+  numbers.locale = code
+  for (const v of [1234.5, -0.5, 1234567]) {
+    numLines.push([`tn(${s(code)}, ${numLit(v)})`, s(numbers.tn(v))])
+    for (const name of ['currency', 'short', 'pct', 'missing']) numLines.push([`tn_as(${s(code)}, ${s(name)}, ${numLit(v)})`, s(numbers.tn(v, name))])
+  }
+}
+write('number', 'number formats', numLines)
+
+// ---- number-props: random values × random modern locales × random supported options (seeded) ----
+// The oracle of tests/number_compat.rs's property run: Rust replays it, no Node at test time.
+const modernLocales = Object.entries(JSON.parse(readFileSync(here('./node_modules/cldr-core/coverageLevels.json'), 'utf8')).effectiveCoverageLevels)
+  .filter(([, level]) => level === 'modern')
+  .map(([l]) => l)
+  .sort(utf8)
+let seed = 0x5eed
+const rnd = () => {
+  // mulberry32
+  seed = (seed + 0x6d2b79f5) | 0
+  let t = seed
+  t = Math.imul(t ^ (t >>> 15), t | 1)
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+}
+const pickOne = (list) => list[Math.floor(rnd() * list.length)]
+const f64 = new Float64Array(1)
+const u32 = new Uint32Array(f64.buffer)
+function randomValue() {
+  const kind = Math.floor(rnd() * 6)
+  if (kind === 0) {
+    // any bit pattern
+    u32[0] = Math.floor(rnd() * 2 ** 32)
+    u32[1] = Math.floor(rnd() * 2 ** 32)
+    return f64[0]
+  }
+  if (kind === 1) return Math.round((rnd() - 0.5) * 10 ** Math.floor(rnd() * 12)) // integers
+  if (kind === 2) return Number(((rnd() - 0.3) * 10 ** Math.floor(rnd() * 8)).toFixed(Math.floor(rnd() * 6))) // short decimals
+  if (kind === 3) return Number(`${Math.floor(rnd() * 1000)}.${'5'.padStart(1 + Math.floor(rnd() * 4), String(Math.floor(rnd() * 10)))}`) // near ties
+  if (kind === 4) return (rnd() - 0.5) * 10 ** (Math.floor(rnd() * 40) - 20)
+  return pickOne([0, -0, NaN, Infinity, -Infinity, 999.5, 9999.5, 99999.5, 999999.5, 0.0005, 1e21])
+}
+const PROP_CURRENCIES = ['USD', 'EUR', 'JPY', 'BHD', 'RUB', 'INR', 'GBP', 'CHF', 'CNY', 'KRW', 'BRL', 'AED', 'CLF', 'XAF', 'ZZZ']
+function randomOptions() {
+  const o = {}
+  const style = pickOne(['decimal', 'decimal', 'percent', 'currency'])
+  if (style !== 'decimal' || rnd() < 0.2) o.style = style
+  if (style === 'currency') {
+    o.currency = pickOne(PROP_CURRENCIES)
+    const d = pickOne([undefined, 'symbol', 'narrowSymbol', 'code'])
+    if (d) o.currencyDisplay = d
+  }
+  if (style === 'decimal' && rnd() < 0.3) o.notation = 'compact'
+  const fd = Math.floor(rnd() * 4)
+  if (fd === 1) o.maximumFractionDigits = Math.floor(rnd() * 8)
+  if (fd === 2) o.minimumFractionDigits = Math.floor(rnd() * 6)
+  if (fd === 3) {
+    o.minimumFractionDigits = Math.floor(rnd() * 4)
+    o.maximumFractionDigits = o.minimumFractionDigits + Math.floor(rnd() * 4)
+  }
+  if (rnd() < 0.15) o.minimumIntegerDigits = 1 + Math.floor(rnd() * 6)
+  if (rnd() < 0.25) o.useGrouping = pickOne([true, false, 'always', 'auto', 'min2'])
+  return o
+}
+const propLines = []
+for (let i = 0; i < 20000; i++) {
+  const locale = pickOne(modernLocales)
+  const v = randomValue()
+  const o = randomOptions()
+  propLines.push([`num(${s(locale)}, ${numLit(v)}, ${JSON.stringify(o)})`, s(formatter.formatNumber(v, locale, o))])
+}
+write('number-props', 'number formats, random cases (seeded)', propLines)

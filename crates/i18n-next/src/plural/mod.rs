@@ -15,9 +15,9 @@
 //!
 //! Self-contained (no `crate::` paths): tests and benches include it with `#[path]`.
 
-// ponytail: every rule set and locale is compiled in (~40 functions); DESIGN 2.4 wants only
-// the locales of `I18N_NEXT_LOCALES`. That filter lands with the CLDR data stage (M5, the
-// `build.rs` that selects locales), and the rule tables go through it then.
+// ponytail: every rule set and locale is compiled in (~40 functions, ~16 KB); `I18N_NEXT_LOCALES`
+// selects the CLDR number data only (`build.rs`, M5). The micro build has plurals without
+// `format`, so the rules stay whole; filter them too if a micro app ever needs the bytes.
 #[rustfmt::skip]
 #[allow(
     clippy::nonminimal_bool,
@@ -397,20 +397,20 @@ fn alnum(s: &str) -> bool {
 
 /// A short ASCII string on the stack.
 #[derive(Clone, Copy)]
-struct Buf<const N: usize> {
+pub(crate) struct Buf<const N: usize> {
     bytes: [u8; N],
     len: usize,
 }
 
 impl<const N: usize> Buf<N> {
-    const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Buf {
             bytes: [0; N],
             len: 0,
         }
     }
 
-    fn push(&mut self, s: &str, case: impl Fn(u8) -> u8) {
+    pub(crate) fn push(&mut self, s: &str, case: impl Fn(u8) -> u8) {
         for b in s.bytes() {
             if let Some(slot) = self.bytes.get_mut(self.len) {
                 *slot = case(b);
@@ -419,13 +419,35 @@ impl<const N: usize> Buf<N> {
         }
     }
 
-    fn of(s: &str, case: impl Fn(u8) -> u8) -> Self {
+    pub(crate) fn of(s: &str, case: impl Fn(u8) -> u8) -> Self {
         let mut buf = Self::new();
         buf.push(s, case);
         buf
     }
 
-    fn as_str(&self) -> &str {
+    /// Bytes held.
+    #[cfg(feature = "format")]
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Keeps the first `len` bytes.
+    #[cfg(feature = "format")]
+    pub(crate) fn truncate(&mut self, len: usize) {
+        self.len = self.len.min(len);
+    }
+
+    /// `latn` → `Latn` (a script subtag).
+    #[cfg(feature = "format")]
+    pub(crate) fn title(s: &str) -> Self {
+        let mut b = Self::of(s, lower);
+        if let Some(first) = b.bytes.first_mut() {
+            *first = first.to_ascii_uppercase();
+        }
+        b
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
         std::str::from_utf8(self.bytes.get(..self.len).unwrap_or(&[])).unwrap_or("")
     }
 }
@@ -659,6 +681,24 @@ pub(crate) fn canonical_language<R>(tag: &str, f: impl FnOnce(&str) -> R) -> Opt
         Some(r) => f(Buf::<8>::of(r.split('-').next().unwrap_or(""), lower).as_str()),
         None => f(t.language.as_str()),
     })
+}
+
+/// The language (lowercase), script and region of a tag as written, `None` when `Intl`
+/// rejects it (the number formats, `format/locale.rs`, apply their own aliases).
+#[cfg(feature = "format")]
+pub(crate) fn subtags(tag: &str) -> Option<(Buf<8>, Option<&str>, Option<&str>)> {
+    let t = parse(tag)?;
+    Some((t.language, t.script, t.region))
+}
+
+/// The category of `o` under the rules of an exact CLDR locale name (`None`: no rules,
+/// `other`): the plural forms of compact patterns and currency names.
+#[cfg(feature = "format")]
+pub(crate) fn select(locale: &str, o: &Operands) -> Category {
+    match rule_index(locale).and_then(|i| rules::RULES.get(i)) {
+        Some(r) => (r.select)(o),
+        None => Category::Other,
+    }
 }
 
 /// The rule set `Intl.PluralRules` uses for `tag`, `None` for the index rule.

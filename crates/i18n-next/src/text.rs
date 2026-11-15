@@ -46,6 +46,9 @@ type Rule = Arc<dyn Fn(&PluralCtx<'_>) -> Option<String> + Send + Sync>;
 /// - the key's text in the locale and page (explicit on the `Text`, else the nearest
 ///   scope's, else the active locale and the root), interpolated with the arguments;
 /// - with [`count`](Text::count): the plural form `tc` picks, with `{count}`;
+/// - with [`number`](Text::number): `{number}` is the number formatted in the text's locale
+///   (`tn`), never escaped; the plural form and a custom rule are then not used (JS: the
+///   `number` prop wins over `plural`);
 /// - a miss calls `missing` and shows the [`or`](Text::or) default, else the key (both
 ///   interpolated); a subtree shows the key;
 /// - [`html`](Text::html): text arguments are escaped (numbers and booleans are not), the
@@ -68,6 +71,9 @@ pub struct Text {
     page: Option<Code>,
     args: Args<'static>,
     count: Option<Count>,
+    /// `{number}` (JS `number` prop): the value and the named format.
+    #[cfg(feature = "format")]
+    number: Option<(crate::Number, Option<Cow<'static, str>>)>,
     default: Option<Cow<'static, str>>,
     rule: Option<Rule>,
     html: bool,
@@ -293,10 +299,22 @@ struct Params<'x> {
     html: bool,
     /// Sizing pass: a nested `Text` writes nothing.
     measure: bool,
+    /// `{number}`: the value, its options and data locale, resolved in the snapshot.
+    #[cfg(feature = "format")]
+    number: Option<Fill<'x>>,
     /// Blank check or comparison: a nested `Text` reports no miss.
     quiet: bool,
     /// What a nested `Text` inherits.
     outer: &'x Outer<'x>,
+}
+
+/// A `{number}` ready to write.
+#[cfg(feature = "format")]
+#[derive(Clone, Copy)]
+struct Fill<'x> {
+    value: crate::Number,
+    options: &'x crate::format::NumberOptions,
+    loc: &'static crate::format::Loc,
 }
 
 /// The instance, locale and page the outer `Text` resolves in.
@@ -308,6 +326,13 @@ struct Outer<'x> {
 
 impl Params<'_> {
     fn put(&self, name: &str, out: &mut dyn fmt::Write) -> Result<bool, fmt::Error> {
+        #[cfg(feature = "format")]
+        if let Some(n) = &self.number
+            && name == "number"
+        {
+            crate::format::write(n.value, n.options, n.loc, out)?;
+            return Ok(true);
+        }
         if let Some(c) = self.count
             && name == "count"
         {
@@ -329,6 +354,18 @@ impl Params<'_> {
         match v {
             Arg::Text(_) if self.measure => Ok(true),
             Arg::Text(_) => self.nested(v, out).map(|()| true),
+            #[cfg(feature = "format")]
+            Arg::Number { value, format } => {
+                let o = self.outer;
+                crate::format::api::write_in(
+                    o.i18n,
+                    o.locale.map(Code::as_str),
+                    *value,
+                    format.as_deref(),
+                    out,
+                )
+                .map(|()| true)
+            }
             v => v.emit(out, self.html).map(|()| true),
         }
     }
@@ -410,6 +447,8 @@ impl Text {
             page: None,
             args: Args::new(),
             count: None,
+            #[cfg(feature = "format")]
+            number: None,
             default: None,
             rule: None,
             html: false,
@@ -467,6 +506,42 @@ impl Text {
     #[must_use]
     pub fn count(mut self, n: impl Into<Count>) -> Self {
         self.count = Some(n.into());
+        self
+    }
+
+    /// Fills `{number}` with `n` formatted in the text's locale with the default options
+    /// (JS `<i18n-t :number>`, `tn(number)`); not escaped under [`html`](Text::html). Set,
+    /// it replaces the plural form: [`count`](Text::count) and a custom rule are not used.
+    /// Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .messages("en", None, r#"{"total": "Total: {number}"}"#)
+    ///     .messages("de", None, r#"{"total": "Summe: {number}"}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.text("total").number(1234.5), "Total: 1,234.5");
+    /// assert_eq!(i18n.text("total").number(1234.5).locale("de"), "Summe: 1.234,5");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn number(mut self, n: impl Into<crate::Number>) -> Self {
+        self.number = Some((n.into(), None));
+        self
+    }
+
+    /// [`Text::number`] with the named format `name` of the text's locale
+    /// ([`I18n::tn_as`]); a missing name warns and formats with the defaults.
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn number_as(
+        mut self,
+        n: impl Into<crate::Number>,
+        name: impl Into<Cow<'static, str>>,
+    ) -> Self {
+        self.number = Some((n.into(), Some(name.into())));
         self
     }
 
@@ -723,9 +798,29 @@ impl Text {
             && self.page == other.page
             && self.args.same(&other.args)
             && self.count == other.count
+            && self.same_number(other)
             && self.default == other.default
             && self.html == other.html
             && self.hide == other.hide
+    }
+
+    #[cfg(feature = "format")]
+    fn same_number(&self, other: &Text) -> bool {
+        self.number == other.number
+    }
+
+    #[cfg(not(feature = "format"))]
+    fn same_number(&self, _: &Text) -> bool {
+        true
+    }
+
+    /// The count, unless a number replaces the plural form (JS: `number` wins over `plural`).
+    fn plural_count(&self) -> Option<Count> {
+        #[cfg(feature = "format")]
+        if self.number.is_some() {
+            return None;
+        }
+        self.count
     }
 
     /// Whether this `Text` is `html` (a nested one is then not escaped again).
@@ -762,13 +857,17 @@ impl Text {
             args: &self.args,
             count: None,
             // `escapeParams` builds an object: a list loses `{length}`.
-            spread: self.html,
+            // `{ ...params, number }` is a spread too
+            spread: self.html || self.plural_count() != self.count,
             html: self.html,
             measure: false,
+            #[cfg(feature = "format")]
+            number: None,
             quiet,
             outer: &outer,
         };
-        let params = match self.count {
+        let count = self.plural_count();
+        let params = match count {
             Some(c) => Params {
                 count: Some(c),
                 spread: true,
@@ -782,7 +881,7 @@ impl Text {
                 .fallback(f, params)
                 .map(|keyed| keyed && !key.is_empty());
         };
-        if let (Some(count), Some(rule)) = (self.count, &self.rule) {
+        if let (Some(count), Some(rule)) = (count, &self.rule) {
             let active = locale.is_none().then(|| i18n.locale());
             let ctx = PluralCtx {
                 key,
@@ -804,8 +903,31 @@ impl Text {
         let mut miss = None;
         let mut keyed = false;
         let read = i18n.inner.read(|s| {
+            #[cfg(feature = "format")]
+            let params = match &self.number {
+                Some((value, name)) => {
+                    let loc = locale.map_or(s.number, |c| s.number_of(c));
+                    let options = name
+                        .as_deref()
+                        .and_then(|n| s.meta.named_number(locale.unwrap_or(&s.locale), n));
+                    if options.is_none()
+                        && let Some(n) = name
+                    {
+                        crate::trace::missing_format(n, locale.unwrap_or(&s.locale));
+                    }
+                    Params {
+                        number: Some(Fill {
+                            value: *value,
+                            options: options.unwrap_or(&crate::format::NumberOptions::DEFAULT),
+                            loc,
+                        }),
+                        ..params
+                    }
+                }
+                None => params,
+            };
             let found = s.lookup(locale, page, key);
-            if let Some(count) = self.count {
+            if let Some(count) = count {
                 let plural = match locale {
                     None => s.plural,
                     Some(code) => s.plural_of(code),
@@ -945,6 +1067,10 @@ impl fmt::Debug for Text {
         }
         if let Some(c) = &self.count {
             d.field("count", c);
+        }
+        #[cfg(feature = "format")]
+        if let Some(n) = &self.number {
+            d.field("number", n);
         }
         if let Some(o) = &self.default {
             d.field("or", o);

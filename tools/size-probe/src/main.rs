@@ -1,7 +1,9 @@
 //! Calls what an app would call, so the linker keeps exactly that part of i18n-next:
 //! a catalog built from embedded files (root + page), `t`, `t_with`, a page view, a
 //! plural (`tc`), a locale switch, and the M4 surface a real app uses: a `Text` with an
-//! argument, `t!` / `tc!` on the instance of a `scope().run`.
+//! argument, `t!` / `tc!` on the instance of a `scope().run`. The full build also formats
+//! numbers (`tn`, named currency and compact formats, a `Text` with `{number}`), so its
+//! bytes include the CLDR data of the locales `tools/size-check.sh` selects.
 //!
 //! A binary, not a cdylib: exporting from a cdylib needs `#[unsafe(no_mangle)]` (or
 //! wasm-bindgen glue, ~26 KB), and the probe stays under `forbid(unsafe_code)`. The std
@@ -40,6 +42,21 @@ fn main() {
         black_box(tc!("apples", black_box(5)).to_string());
         black_box(t!(i18n => "greeting", name = black_box("Bob")).to_string());
     });
+    // M5: number formats with CLDR data (the full build only).
+    #[cfg(feature = "full")]
+    {
+        let Ok(n) = I18n::builder()
+            .formats(black_box(r#"{"ru": {"rub": {"style": "currency", "currency": "RUB"}, "short": {"notation": "compact"}}}"#))
+            .locale("ru")
+            .build()
+        else {
+            return;
+        };
+        black_box(n.tn(black_box(1234.5)));
+        black_box(n.tn_as(black_box(1234.5), black_box("rub")));
+        black_box(n.tn_as(black_box(1_234_567), black_box("short")));
+        black_box(n.text(black_box("total")).number(black_box(12.5)).to_string());
+    }
 }
 
 /// Allocates, grows and frees once, so the allocator (dlmalloc on wasm) is part of the

@@ -5,8 +5,9 @@ global and per-page translations, plurals and `Intl`-compatible formats, native 
 with no runtime dependencies.
 
 **Status: early.** The catalog (root and page chunks, fallback chains, `i18n.json`),
-plurals (CLDR rules as in `Intl.PluralRules`), `Text`, `t!` and global access work; formats
-and the Tauri plugin come stage by stage. Do not depend on it yet.
+plurals (CLDR rules as in `Intl.PluralRules`), `Text`, `t!`, global access and number formats
+(`tn`, CLDR 48 as in `Intl.NumberFormat`) work; dates and the Tauri plugin come stage by stage.
+Do not depend on it yet.
 
 ```rust
 use i18n_next::{I18n, t, tc};

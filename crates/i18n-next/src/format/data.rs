@@ -1,0 +1,109 @@
+//! The CLDR number data `build.rs` selected (DESIGN 2.4, 5.2): `&'static` tables, strings
+//! interned in one text (`STR`, `ENDS`), indices as `u16`. See `build.rs` for the layout.
+
+/// One locale: symbols, patterns (indices into [`PATTERNS`]), its compact list and its own
+/// currency symbols (the ones that differ from `parent`'s).
+#[derive(Debug)]
+pub(crate) struct Loc {
+    pub(crate) name: u16,
+    /// Index into [`LOCALES`], `u16::MAX` for `und`.
+    pub(crate) parent: u16,
+    /// The ten digits of a non-Latin default numbering system, `""` for `latn`.
+    pub(crate) digits: u16,
+    pub(crate) decimal: u16,
+    pub(crate) group: u16,
+    /// ICU's monetary separators (`currencyDecimal` / `currencyGroup`, else the plain ones).
+    pub(crate) cur_decimal: u16,
+    pub(crate) cur_group: u16,
+    pub(crate) nan: u16,
+    pub(crate) infinity: u16,
+    pub(crate) decimal_pat: u16,
+    pub(crate) percent_pat: u16,
+    pub(crate) currency_pat: u16,
+    pub(crate) min_grouping: u8,
+    pub(crate) compact: u16,
+    pub(crate) compact_len: u8,
+    pub(crate) currencies: u16,
+    pub(crate) currencies_len: u16,
+    /// The locale's own name (8b.14), `""` when ICU has none.
+    pub(crate) autonym: u16,
+    /// `unitPattern-count-*` (`{0} {1}`) by category, `0` when absent.
+    #[cfg(feature = "currency-names")]
+    pub(crate) units: [u16; 6],
+    #[cfg(feature = "currency-names")]
+    pub(crate) names: u32,
+    #[cfg(feature = "currency-names")]
+    pub(crate) names_len: u16,
+}
+
+/// A parsed pattern: positive / negative prefix and suffix (signs in place, `¤` for the
+/// currency), primary / secondary grouping (0: none).
+#[derive(Debug)]
+pub(crate) struct Pat {
+    pub(crate) pp: u16,
+    pub(crate) ps: u16,
+    pub(crate) np: u16,
+    pub(crate) ns: u16,
+    pub(crate) g1: u8,
+    pub(crate) g2: u8,
+}
+
+/// A compact short pattern for 10^`mag` and plural category `cat` (`Category` order);
+/// `zeros` 0: no compact form there.
+#[derive(Debug)]
+pub(crate) struct Compact {
+    pub(crate) mag: u8,
+    pub(crate) cat: u8,
+    pub(crate) pp: u16,
+    pub(crate) ps: u16,
+    pub(crate) np: u16,
+    pub(crate) ns: u16,
+    pub(crate) zeros: u8,
+}
+
+/// A currency of a locale: symbols (`0`, `""`: none, the ISO code shows) and its own format
+/// (`pattern` into [`PATTERNS`], `u16::MAX`: none; `decimal` / `group`: `0` for the locale's).
+#[derive(Debug)]
+pub(crate) struct Currency {
+    pub(crate) code: [u8; 3],
+    pub(crate) symbol: u16,
+    pub(crate) narrow: u16,
+    pub(crate) pattern: u16,
+    pub(crate) decimal: u16,
+    pub(crate) group: u16,
+}
+
+/// A currency display name for a plural category; `0` (`""`): none here.
+#[cfg(feature = "currency-names")]
+#[derive(Debug)]
+pub(crate) struct Name {
+    pub(crate) code: [u8; 3],
+    pub(crate) cat: u8,
+    pub(crate) name: u32,
+}
+
+include!(concat!(env!("OUT_DIR"), "/numbers.rs"));
+
+/// Interned string `i`.
+#[inline]
+pub(crate) fn s(i: u16) -> &'static str {
+    let i = usize::from(i);
+    let start = i
+        .checked_sub(1)
+        .and_then(|j| ENDS.get(j))
+        .map_or(0, |&e| e as usize);
+    let end = ENDS.get(i).map_or(start, |&e| e as usize);
+    STR.get(start..end).unwrap_or("")
+}
+
+/// Currency name string `i`.
+#[cfg(feature = "currency-names")]
+pub(crate) fn name_str(i: u32) -> &'static str {
+    let i = i as usize;
+    let start = i
+        .checked_sub(1)
+        .and_then(|j| NAME_ENDS.get(j))
+        .map_or(0, |&e| e as usize);
+    let end = NAME_ENDS.get(i).map_or(start, |&e| e as usize);
+    NAME_STR.get(start..end).unwrap_or("")
+}

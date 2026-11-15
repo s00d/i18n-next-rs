@@ -2,11 +2,15 @@ pub mod i18n_next
 pub macro i18n_next::key!
 pub macro i18n_next::t!
 pub macro i18n_next::tc!
+pub macro i18n_next::tn!
 #[non_exhaustive] pub enum i18n_next::Arg<'a>
 pub i18n_next::Arg::Bool(bool)
 pub i18n_next::Arg::Float(f64)
 pub i18n_next::Arg::Int(i64)
 pub i18n_next::Arg::Null
+pub i18n_next::Arg::Number
+pub i18n_next::Arg::Number::format: core::option::Option<alloc::borrow::Cow<'a, str>>
+pub i18n_next::Arg::Number::value: i18n_next::Number
 pub i18n_next::Arg::Str(&'a str)
 pub i18n_next::Arg::String(alloc::sync::Arc<str>)
 pub i18n_next::Arg::Text(alloc::boxed::Box<i18n_next::Text>)
@@ -134,6 +138,10 @@ pub i18n_next::Error::NotObject::path: alloc::string::String
 pub i18n_next::Error::UnknownFile(alloc::string::String)
 pub i18n_next::Error::UnknownLocale(alloc::string::String)
 pub i18n_next::Error::UnknownPage(alloc::string::String)
+pub i18n_next::Error::UnsupportedFormat
+pub i18n_next::Error::UnsupportedFormat::locale: alloc::string::String
+pub i18n_next::Error::UnsupportedFormat::name: alloc::string::String
+pub i18n_next::Error::UnsupportedFormat::option: alloc::string::String
 impl core::error::Error for i18n_next::Error
 pub fn i18n_next::Error::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Debug for i18n_next::Error
@@ -202,6 +210,7 @@ pub fn i18n_next::Builder::extend<I, P, B>(self, I) -> Self where I: core::iter:
 pub fn i18n_next::Builder::fallback(self, &str) -> Self
 pub fn i18n_next::Builder::fallback_for(self, &str, &str) -> Self
 pub fn i18n_next::Builder::files<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
+pub fn i18n_next::Builder::formats(self, &str) -> Self
 pub fn i18n_next::Builder::install(self) -> core::result::Result<&'static i18n_next::I18n, i18n_next::Error>
 pub fn i18n_next::Builder::iso(self, &str, &str) -> Self
 pub fn i18n_next::Builder::lazy_dir(self, impl core::convert::AsRef<std::path::Path>) -> Self
@@ -292,6 +301,10 @@ pub fn i18n_next::I18n::with_locale(&self, &str) -> i18n_next::View
 impl i18n_next::I18n
 pub fn i18n_next::I18n::check(&self) -> i18n_next::CheckReport
 impl i18n_next::I18n
+pub fn i18n_next::I18n::language_name(&self, &str) -> core::option::Option<&'static str>
+pub fn i18n_next::I18n::tn(&self, impl core::convert::Into<i18n_next::Number>) -> alloc::string::String
+pub fn i18n_next::I18n::tn_as(&self, impl core::convert::Into<i18n_next::Number>, &str) -> alloc::string::String
+impl i18n_next::I18n
 pub fn i18n_next::I18n::subscribe(&self, impl core::ops::function::Fn(&i18n_next::Change) + core::marker::Send + core::marker::Sync + 'static) -> i18n_next::Subscription
 impl i18n_next::I18n
 pub fn i18n_next::I18n::text(&self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
@@ -331,6 +344,43 @@ pub fn i18n_next::LocaleInfo::eq(&self, &i18n_next::LocaleInfo) -> bool
 impl core::fmt::Debug for i18n_next::LocaleInfo
 pub fn i18n_next::LocaleInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for i18n_next::LocaleInfo
+pub struct i18n_next::Number(_)
+impl core::clone::Clone for i18n_next::Number
+pub fn i18n_next::Number::clone(&self) -> i18n_next::Number
+impl core::cmp::PartialEq for i18n_next::Number
+pub fn i18n_next::Number::eq(&self, &i18n_next::Number) -> bool
+impl core::convert::From<f32> for i18n_next::Number
+pub fn i18n_next::Number::from(f32) -> Self
+impl core::convert::From<f64> for i18n_next::Number
+pub fn i18n_next::Number::from(f64) -> Self
+impl core::convert::From<i128> for i18n_next::Number
+pub fn i18n_next::Number::from(i128) -> Self
+impl core::convert::From<i16> for i18n_next::Number
+pub fn i18n_next::Number::from(i16) -> Self
+impl core::convert::From<i32> for i18n_next::Number
+pub fn i18n_next::Number::from(i32) -> Self
+impl core::convert::From<i64> for i18n_next::Number
+pub fn i18n_next::Number::from(i64) -> Self
+impl core::convert::From<i8> for i18n_next::Number
+pub fn i18n_next::Number::from(i8) -> Self
+impl core::convert::From<isize> for i18n_next::Number
+pub fn i18n_next::Number::from(isize) -> Self
+impl core::convert::From<u128> for i18n_next::Number
+pub fn i18n_next::Number::from(u128) -> Self
+impl core::convert::From<u16> for i18n_next::Number
+pub fn i18n_next::Number::from(u16) -> Self
+impl core::convert::From<u32> for i18n_next::Number
+pub fn i18n_next::Number::from(u32) -> Self
+impl core::convert::From<u64> for i18n_next::Number
+pub fn i18n_next::Number::from(u64) -> Self
+impl core::convert::From<u8> for i18n_next::Number
+pub fn i18n_next::Number::from(u8) -> Self
+impl core::convert::From<usize> for i18n_next::Number
+pub fn i18n_next::Number::from(usize) -> Self
+impl core::fmt::Debug for i18n_next::Number
+pub fn i18n_next::Number::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for i18n_next::Number
+impl core::marker::StructuralPartialEq for i18n_next::Number
 #[non_exhaustive] pub struct i18n_next::PluralCtx<'a>
 pub i18n_next::PluralCtx::count: f64
 pub i18n_next::PluralCtx::key: &'a str
@@ -370,6 +420,8 @@ pub fn i18n_next::Text::fold<T>(&self, impl core::ops::function::FnMut(&str) -> 
 pub fn i18n_next::Text::hide_if_empty(self) -> Self
 pub fn i18n_next::Text::html(self) -> Self
 pub fn i18n_next::Text::locale(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn i18n_next::Text::number(self, impl core::convert::Into<i18n_next::Number>) -> Self
+pub fn i18n_next::Text::number_as(self, impl core::convert::Into<i18n_next::Number>, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 pub fn i18n_next::Text::or(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 pub fn i18n_next::Text::page(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 pub fn i18n_next::Text::parts(&self) -> impl core::iter::traits::iterator::Iterator<Item = i18n_next::Part<'static>> + use<>
@@ -405,6 +457,9 @@ pub fn i18n_next::View::try_t(&self, &str) -> core::option::Option<alloc::string
 pub fn i18n_next::View::with_locale(&self, &str) -> i18n_next::View
 impl i18n_next::View
 pub fn i18n_next::View::text(&self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
+impl i18n_next::View
+pub fn i18n_next::View::tn(&self, impl core::convert::Into<i18n_next::Number>) -> alloc::string::String
+pub fn i18n_next::View::tn_as(&self, impl core::convert::Into<i18n_next::Number>, &str) -> alloc::string::String
 impl core::clone::Clone for i18n_next::View
 pub fn i18n_next::View::clone(&self) -> i18n_next::View
 impl core::fmt::Debug for i18n_next::View
@@ -417,4 +472,6 @@ pub fn i18n_next::page(&str) -> core::option::Option<i18n_next::View>
 pub fn i18n_next::scope() -> i18n_next::Scope
 pub fn i18n_next::set_locale(&str) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::t(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
+pub fn i18n_next::tn(impl core::convert::Into<i18n_next::Number>) -> alloc::string::String
+pub fn i18n_next::tn_as(impl core::convert::Into<i18n_next::Number>, &str) -> alloc::string::String
 pub fn i18n_next::version() -> &'static str

@@ -50,6 +50,19 @@ pub enum Error {
     AlreadyInstalled,
     /// A free function (`set_locale`) needs an instance: none is installed, no scope sets one.
     NotInstalled,
+    /// A named number format (`numberFormats` of `i18n.json`, `Builder::formats`) uses an
+    /// `Intl.NumberFormat` option outside the supported subset (`signDisplay: "always"`,
+    /// `style: "unit"`, `notation: "scientific"`…) or a value `Intl` throws on (`currency:
+    /// "usdx"`, `minimumFractionDigits` over `maximumFractionDigits`): refused at `build`
+    /// rather than formatted differently from the front end.
+    UnsupportedFormat {
+        /// The locale code the format is listed under.
+        locale: String,
+        /// The format's name.
+        name: String,
+        /// The option (`signDisplay`, `notation`, `maximumFractionDigits`…).
+        option: String,
+    },
     /// The fetch closure of `ensure_async` failed for one file; the catalog is unchanged.
     Fetch {
         /// The manifest path that was being fetched.
@@ -73,6 +86,14 @@ impl fmt::Display for Error {
             Error::Config { path, reason } => write!(f, "{path}: {reason}"),
             Error::UnknownFile(path) => write!(f, "unknown file \"{path}\""),
             Error::Fetch { path, message } => write!(f, "cannot fetch {path}: {message}"),
+            Error::UnsupportedFormat {
+                locale,
+                name,
+                option,
+            } => write!(
+                f,
+                "number format \"{name}\" of \"{locale}\": option \"{option}\" is not supported"
+            ),
             Error::AlreadyInstalled => f.write_str("an i18n instance is installed already"),
             Error::NotInstalled => {
                 f.write_str("no i18n instance: install() one or set it in a scope")

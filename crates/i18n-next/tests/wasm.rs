@@ -7,6 +7,8 @@
 
 #[path = "support/compat.rs"]
 mod compat;
+#[path = "support/number.rs"]
+mod number;
 #[path = "support/platform.rs"]
 mod platform;
 
@@ -24,6 +26,18 @@ fn version_in_wasm() {
 fn compat_goldens_in_wasm() {
     if let Err(diff) = compat::run() {
         panic!("compat goldens differ:\n{diff}");
+    }
+}
+
+/// Given the number goldens (Node `Intl.NumberFormat`), when they are replayed in wasm,
+/// then every line matches, as on native: the CLDR statics and the float printing are the
+/// same code.
+#[wasm_bindgen_test]
+fn number_goldens_in_wasm() {
+    for golden in [number::NUMBER, number::PROPS, number::LOCALES] {
+        if let Err(diff) = number::run(golden) {
+            panic!("number goldens differ:\n{diff}");
+        }
     }
 }
 

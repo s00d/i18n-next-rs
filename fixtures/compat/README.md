@@ -31,6 +31,9 @@ What the JS library does, recorded so the Rust crate can be checked against it l
 | `text/` | the catalog of `text.md` |
 | `__golden__/text.md` | `resolveText` (the props of `<i18n-t>`: params, plural, defaultValue, html, hideIfEmpty, named `customPluralRule` stand-ins) as `<i18n-t>` shows it, the `missing` calls, and `foldTemplate` with slots |
 | `__golden__/plural-categories.md` | `Intl.PluralRules` itself, written by `scripts/cldr.mjs` (`pnpm -C scripts cldr`): the oracle of `tests/plural_props.rs` |
+| `__golden__/number.md` | `Intl.NumberFormat` through `FormatService.formatNumber` (22 locales × 36 values × 50 option sets, `num_name` for `currencyDisplay: name`) and named formats through `BaseI18n.tn` on the `i18n.json` of `number_config()` |
+| `__golden__/number-props.md` | 20 000 seeded random values × CLDR `modern` locales × supported options, the oracle of the property run in `tests/number_compat.rs` |
+| `__golden__/number-locales.md` | tag resolution (`locale(tag)`: a fixed set of formats) and autonyms, written by `scripts/cldr.mjs` |
 
 ## File format
 

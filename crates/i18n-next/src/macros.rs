@@ -10,8 +10,9 @@
 ///   the plural form, as `tc`;
 /// - `[a, b]`: positional `{0}`, `{1}`;
 /// - options with `@`, so `{page}` stays a parameter: `@page = ..`, `@locale = ..`,
-///   `@or = ..` (default), `@html`. `@number` / `@date` / `@relative` are reserved for the
-///   formatting stages and do not compile yet.
+///   `@or = ..` (default), `@html`, `@number = n` (fills `{number}` with `n` formatted in
+///   the text's locale, as `<i18n-t :number>`; feature `format`). `@date` / `@relative` are
+///   reserved for the date stage and do not compile yet.
 ///
 /// ```
 /// use i18n_next::{I18n, t};
@@ -43,8 +44,8 @@ macro_rules! t {
     (@opts $t:expr ; @html $(, $($rest:tt)*)?) => {
         $crate::t!(@opts $t.html() ; $($($rest)*)?)
     };
-    (@opts $t:expr ; @number $($rest:tt)*) => {
-        ::core::compile_error!("t!: `@number` is reserved: number formatting is not there yet (M5)")
+    (@opts $t:expr ; @number = $v:expr $(, $($rest:tt)*)?) => {
+        $crate::t!(@opts $t.number($v) ; $($($rest)*)?)
     };
     (@opts $t:expr ; @date $($rest:tt)*) => {
         ::core::compile_error!("t!: `@date` is reserved: date formatting is not there yet (M6)")
@@ -55,7 +56,7 @@ macro_rules! t {
     (@opts $t:expr ; @$other:ident $($rest:tt)*) => {
         ::core::compile_error!(::core::concat!(
             "t!: unknown option `@", ::core::stringify!($other),
-            "` (known: @page, @locale, @or, @html)"
+            "` (known: @page, @locale, @or, @html, @number)"
         ))
     };
     (@opts $t:expr ; count = $v:expr $(, $($rest:tt)*)?) => {
@@ -109,6 +110,39 @@ macro_rules! tc {
     };
     ($key:expr, $n:expr $(, $($rest:tt)*)?) => {
         $crate::t!(@opts $crate::t($key).count($n) ; $($($rest)*)?)
+    };
+}
+
+/// A number formatted now (JS `tn`), a `String`: `tn!(n)` and `tn!(n, "name")` (a named
+/// format) on the implicit instance, in the scope's locale; `tn!(i18n => n)` and
+/// `tn!(i18n => n, "name")` on an explicit [`I18n`](crate::I18n) or [`View`](crate::View).
+/// Feature `format`.
+///
+/// ```
+/// use i18n_next::{I18n, tn};
+///
+/// let i18n = I18n::builder()
+///     .formats(r#"{"en": {"eur": {"style": "currency", "currency": "EUR"}}}"#)
+///     .build()?;
+/// assert_eq!(tn!(i18n => 1234.5), "1,234.5");
+/// assert_eq!(tn!(i18n => 1234.5, "eur"), "€1,234.50");
+/// assert_eq!(tn!(i18n.with_locale("ru") => 1234.5), "1\u{a0}234,5");
+/// # Ok::<(), i18n_next::Error>(())
+/// ```
+#[cfg(feature = "format")]
+#[macro_export]
+macro_rules! tn {
+    ($i18n:expr => $n:expr, $name:expr $(,)?) => {
+        ($i18n).tn_as($n, $name)
+    };
+    ($i18n:expr => $n:expr $(,)?) => {
+        ($i18n).tn($n)
+    };
+    ($n:expr, $name:expr $(,)?) => {
+        $crate::tn_as($n, $name)
+    };
+    ($n:expr $(,)?) => {
+        $crate::tn($n)
     };
 }
 

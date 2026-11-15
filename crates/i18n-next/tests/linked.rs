@@ -255,3 +255,57 @@ fn messages_added_later_are_not_resolved() {
     assert_eq!(i18n.t("later"), "See @:brand");
     assert_eq!(i18n.t("title"), "Welcome to acme");
 }
+
+/// Given locales read on first use (`lazy_files`: a lazy root and a lazy page, beside an
+/// eager German root) and a page the app fetches itself (`remote`), when the app builds with
+/// links on, then each pair resolves its own links when it loads, over the layers of its
+/// view: a page links its root (read first if needed) and the fallback, a remote page
+/// resolves when its file arrives, and an evicted page resolves again when read again.
+#[test]
+fn lazy_and_remote_pairs_resolve_when_they_load() {
+    // step 1: build → nothing read yet, nothing reported
+    let guard = Guard::new();
+    let i18n = I18n::builder()
+        .locale("de")
+        .fallback("en")
+        .linked_messages(true)
+        .files([("de.json", br#"{"brand": "Akme"}"#.as_slice())])
+        .lazy_files([
+            (
+                "en.json",
+                br#"{"brand": "acme", "title": "Welcome to @:brand"}"#.as_slice(),
+            ),
+            (
+                "pages/big/en.json",
+                br#"{"cta": "Buy @.upper:{'brand'}: @:title"}"#,
+            ),
+            (
+                "pages/big/de.json",
+                br#"{"hint": "@.capitalize:{'brand'} @:nope"}"#,
+            ),
+        ])
+        .remote(["pages/shop/de.json"])
+        .evict_pages(1)
+        .missing(guard.missing())
+        .build()
+        .unwrap();
+
+    // step 2: the lazy English page in English → its root read too, links resolved
+    let en = i18n.with_locale("en");
+    assert_eq!(en.page("big").t("cta"), "Buy ACME: Welcome to acme");
+
+    // step 3: the lazy German page → its own links over the German root and the fallback;
+    // a broken link stays as written (the lazy path has no build to report to)
+    assert_eq!(i18n.page("big").t("hint"), "@.capitalize:{'brand'} @:nope");
+    assert_eq!(i18n.t("brand"), "Akme");
+
+    // step 4: a remote page → as written until its file arrives, then resolved
+    i18n.add_file("pages/shop/de.json", br#"{"buy": "Kaufen bei @:brand"}"#)
+        .unwrap();
+    assert_eq!(i18n.page("shop").t("buy"), "Kaufen bei Akme");
+
+    // step 5: evicted and read again → resolved again
+    let _ = i18n.page("big").t("hint");
+    assert_eq!(en.page("big").t("cta"), "Buy ACME: Welcome to acme");
+    guard.finish();
+}

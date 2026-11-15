@@ -483,7 +483,7 @@ fn add_messages_and_versions() {
     assert_eq!(i18n.version(), 3);
     assert_eq!(
         format!("{i18n:?}"),
-        "I18n { locale: \"fr\", version: 3, .. }"
+        "I18n { locale: \"fr\", version: 3, loads: 0, .. }"
     );
 }
 

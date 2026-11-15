@@ -216,8 +216,13 @@ impl fmt::Display for CheckReport {
 pub(crate) struct Facts {
     /// The default locale: keys and placeholders are compared with it.
     pub(crate) reference: Option<Arc<str>>,
-    /// Links left as written at `build` (`linked_messages(true)`).
-    pub(crate) broken: Vec<Broken>,
+    /// Links left as written at the last `build` / `reload` (`linked_messages(true)`).
+    pub(crate) broken: std::sync::Mutex<Vec<Broken>>,
+}
+
+/// Locks `m`, poisoned or not (the data is replaced whole).
+pub(crate) fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn page_name(page: Option<&Arc<str>>) -> String {
@@ -339,7 +344,7 @@ pub(crate) fn run<'a>(
         }
     }
 
-    for b in &facts.broken {
+    for b in lock(&facts.broken).iter() {
         if locales.contains(&b.locale) {
             items.push(CheckItem::BrokenLink {
                 locale: String::from(&*b.locale),

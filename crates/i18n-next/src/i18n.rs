@@ -8,12 +8,15 @@
 //! snapshot (`Arc` clones): only the active pointer changes.
 
 use crate::args::{Args, Count};
-use crate::catalog::{Chunk, Entry, Msg, Tree, WithCount, interpolate_once};
+use crate::catalog::{Entry, Msg, Tree, WithCount, interpolate_once};
+use crate::change::{Change, Listeners};
 use crate::check::{self, CheckReport};
 use crate::error::Error;
 use crate::hash::FastMap;
-use crate::loader::{self, Config, Kind};
+use crate::lazy::{Layer, LazyCtl};
+use crate::loader::{self, Config};
 use crate::plural::{self, Plural};
+use crate::source::{self, Pair, Sources};
 use std::cell::RefCell;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -21,29 +24,43 @@ use std::sync::{Arc, Mutex, RwLock};
 
 type Missing = Box<dyn Fn(&str, &str, &str) + Send + Sync>;
 
-/// One locale's chunks: the root (`index`) and its pages.
+/// One locale's chunks: the root (`index`) and its pages, ready or lazy.
 #[derive(Debug, Default, Clone)]
-struct LocaleData {
-    root: Option<Arc<Chunk>>,
-    pages: FastMap<Arc<str>, Arc<Chunk>>,
+pub(crate) struct LocaleData {
+    pub(crate) root: Option<Layer>,
+    pub(crate) pages: FastMap<Arc<str>, Layer>,
 }
 
 impl LocaleData {
     /// Page layer, then root layer.
     fn get(&self, page: Option<&str>, key: &str) -> Option<&Entry> {
         if let Some(p) = page
-            && let Some(e) = self.pages.get(p).and_then(|c| c.get(key))
+            && let Some(e) = self
+                .pages
+                .get(p)
+                .and_then(Layer::chunk)
+                .and_then(|c| c.get(key))
         {
             return Some(e);
         }
-        self.root.as_ref().and_then(|c| c.get(key))
+        self.root
+            .as_ref()
+            .and_then(Layer::chunk)
+            .and_then(|c| c.get(key))
+    }
+
+    /// The root (`None`) or page layer, as stored.
+    pub(crate) fn layer(&self, page: Option<&str>) -> Option<&Layer> {
+        match page {
+            None => self.root.as_ref(),
+            Some(p) => self.pages.get(p),
+        }
     }
 
     /// What `has` reads: page then root, own keys only (no texts `linked.rs` stored).
     fn has(&self, page: Option<&str>, key: &str) -> bool {
-        page.and_then(|p| self.pages.get(p))
-            .is_some_and(|c| c.has(key))
-            || self.root.as_ref().is_some_and(|c| c.has(key))
+        let has = |l: Option<&Layer>| l.and_then(Layer::chunk).is_some_and(|c| c.has(key));
+        has(page.and_then(|p| self.pages.get(p))) || has(self.root.as_ref())
     }
 }
 
@@ -51,7 +68,7 @@ type Chain = Arc<[Arc<LocaleData>]>;
 
 /// What the builder fixed: it does not change after `build`.
 #[derive(Debug, Default)]
-struct Meta {
+pub(crate) struct Meta {
     fallback: Option<Arc<str>>,
     links: FastMap<Arc<str>, Arc<str>>,
     iso: FastMap<Arc<str>, Arc<str>>,
@@ -66,6 +83,8 @@ struct Meta {
     formats: (Option<Box<str>>, Option<Box<str>>),
     /// What `check()` reads besides the chunks (M3).
     check: check::Facts,
+    /// `linked_messages(true)`: `build` and `reload` resolve links with it.
+    linked: Option<ResolveLinked>,
 }
 
 impl Meta {
@@ -74,7 +93,7 @@ impl Meta {
     }
 
     /// The page chunk a name reads: `""` and `index` are the root, an alias its target.
-    fn page<'a>(&'a self, page: Option<&'a str>) -> Option<&'a str> {
+    pub(crate) fn page<'a>(&'a self, page: Option<&'a str>) -> Option<&'a str> {
         let p = page.filter(|p| !p.is_empty() && *p != "index")?;
         let p = self.aliases.get(p).map_or(p, |t| &**t);
         (p != "index").then_some(p)
@@ -102,13 +121,13 @@ impl Meta {
     }
 }
 
-type DataMap = FastMap<Arc<str>, Arc<LocaleData>>;
+pub(crate) type DataMap = FastMap<Arc<str>, Arc<LocaleData>>;
 
-struct Snapshot {
-    version: u64,
-    locale: Arc<str>,
+pub(crate) struct Snapshot {
+    pub(crate) version: u64,
+    pub(crate) locale: Arc<str>,
     /// Shared between snapshots that differ only in the active locale.
-    data: Arc<DataMap>,
+    pub(crate) data: Arc<DataMap>,
     /// Chains of every known locale, disabled ones too (`with_locale` reads them, as a
     /// configured locale in `buildFallbackLocaleChain`); `set_locale` refuses the disabled.
     chains: Arc<FastMap<Arc<str>, Chain>>,
@@ -118,7 +137,7 @@ struct Snapshot {
     /// The global fallback's layer alone, never its links: what a locale that is not known
     /// reads (`buildFallbackLocaleChain` of an unconfigured code is `[fallback]`).
     fallback: Chain,
-    meta: Arc<Meta>,
+    pub(crate) meta: Arc<Meta>,
     /// Plural rules of the active locale (its `iso`, else its code); `None`: index rule.
     plural: Option<&'static Plural>,
     /// The same for every known locale, resolved once: a view in another locale reads
@@ -134,7 +153,7 @@ impl Meta {
 }
 
 impl Snapshot {
-    fn new(meta: Arc<Meta>, data: DataMap, locale: Arc<str>, version: u64) -> Snapshot {
+    pub(crate) fn new(meta: Arc<Meta>, data: DataMap, locale: Arc<str>, version: u64) -> Snapshot {
         let mut chains = FastMap::default();
         let names = meta
             .configured
@@ -186,7 +205,7 @@ impl Snapshot {
 
     /// The layers of `locale` (the active one when `None`). A locale that is not known has
     /// nothing of its own: it reads the global fallback alone.
-    fn layers(&self, locale: Option<&str>) -> &[Arc<LocaleData>] {
+    pub(crate) fn layers(&self, locale: Option<&str>) -> &[Arc<LocaleData>] {
         match locale {
             None => &self.active,
             Some(code) => self.chains.get(code).unwrap_or(&self.fallback),
@@ -240,7 +259,7 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 /// the cached snapshots of dead instances.
 static DROPS: AtomicU64 = AtomicU64::new(0);
 
-struct Inner {
+pub(crate) struct Inner {
     id: u64,
     version: AtomicU64,
     state: RwLock<Arc<Snapshot>>,
@@ -248,6 +267,13 @@ struct Inner {
     writer: Mutex<()>,
     missing: Option<Missing>,
     alive: Arc<AtomicBool>,
+    /// What `build` read: `reload` reads it again.
+    pub(crate) sources: Sources,
+    /// Lazy loads, eviction and remote fetches of this instance.
+    pub(crate) ctl: Arc<LazyCtl>,
+    /// `remote` manifest path → its pair (`add_file` accepts only these).
+    pub(crate) remote: FastMap<Box<str>, Pair>,
+    pub(crate) listeners: Listeners,
 }
 
 impl Drop for Inner {
@@ -268,7 +294,7 @@ impl Inner {
 
     /// `f` on the current snapshot: the thread cache when it is fresh, else one read lock.
     /// A hit is two atomic loads and a scan of four slots, no reference count.
-    fn read<R>(&self, mut f: impl FnMut(&Snapshot) -> R) -> R {
+    pub(crate) fn read<R>(&self, mut f: impl FnMut(&Snapshot) -> R) -> R {
         let version = self.version.load(Ordering::Acquire);
         // Relaxed: only compared here (a plain load on ARM); `refresh` acquires it.
         let drops = DROPS.load(Ordering::Relaxed);
@@ -344,26 +370,56 @@ impl Inner {
         (snap, gone)
     }
 
-    /// Builds the next snapshot from the current one and publishes it; `None` = no change.
-    fn write(
+    /// Builds the next snapshot from the current one and publishes it (`None`: no change);
+    /// what changed when something did.
+    pub(crate) fn write(
         &self,
         f: impl FnOnce(&Snapshot) -> Result<Option<Snapshot>, Error>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Change>, Error> {
         let _writer = match self.writer.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
         };
         let current = self.load();
-        if let Some(next) = f(&current)? {
-            let version = next.version;
-            let mut state = match self.state.write() {
-                Ok(g) => g,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            *state = Arc::new(next);
-            self.version.store(version, Ordering::Release);
+        Ok(f(&current)?.map(|next| {
+            let locale = next.locale.clone();
+            let version = self.publish(next);
+            Change { locale, version }
+        }))
+    }
+
+    fn publish(&self, next: Snapshot) -> u64 {
+        let version = next.version;
+        let mut state = match self.state.write() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *state = Arc::new(next);
+        self.version.store(version, Ordering::Release);
+        version
+    }
+
+    /// Evicts the oldest loaded pages past the limit (8b.16), called after a lazy load.
+    /// Skipped when a writer is busy, this thread included: a later load evicts then.
+    pub(crate) fn try_evict(&self) {
+        let Some(limit) = self.ctl.limit else {
+            return;
+        };
+        let _writer = match self.writer.try_lock() {
+            Ok(g) => g,
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
+        let current = self.load();
+        if let Some(data) = crate::evict::plan(&current.data, limit) {
+            let next = Snapshot::new(
+                current.meta.clone(),
+                data,
+                current.locale.clone(),
+                current.version + 1,
+            );
+            self.publish(next);
         }
-        Ok(())
     }
 }
 
@@ -401,7 +457,7 @@ enum Found {
 /// ```
 #[derive(Clone)]
 pub struct I18n {
-    inner: Arc<Inner>,
+    pub(crate) inner: Arc<Inner>,
 }
 
 /// Public facts about one locale: from `i18n.json`, builder calls and the files found.
@@ -424,12 +480,13 @@ impl fmt::Debug for I18n {
         f.debug_struct("I18n")
             .field("locale", &snap.locale)
             .field("version", &snap.version)
+            .field("loads", &self.inner.ctl.loads.load(Ordering::Relaxed))
             .finish_non_exhaustive()
     }
 }
 
 /// Validates a name passed in code for a chunk: not empty, not `__proto__`.
-fn chunk_names(locale: &str, page: Option<&str>) -> Result<(), Error> {
+pub(crate) fn chunk_names(locale: &str, page: Option<&str>) -> Result<(), Error> {
     if locale.is_empty() || locale == "__proto__" {
         return Err(Error::UnknownLocale(locale.to_owned()));
     }
@@ -440,7 +497,7 @@ fn chunk_names(locale: &str, page: Option<&str>) -> Result<(), Error> {
 }
 
 /// `messages:<locale>/<page>`: the path of text passed in code, in errors.
-fn messages_path(locale: &str, page: Option<&str>) -> String {
+pub(crate) fn messages_path(locale: &str, page: Option<&str>) -> String {
     let page = page.filter(|p| !p.is_empty()).unwrap_or("index");
     let mut path = String::with_capacity(10 + locale.len() + page.len());
     path.push_str("messages:");
@@ -467,7 +524,7 @@ impl I18n {
         if key.is_empty() {
             return String::new();
         }
-        let report = self.inner.missing.is_some();
+        let report = self.inner.missing.is_some() || crate::trace::MISSES;
         let found = self.inner.read(|s| match s.lookup(locale, page, key) {
             Some(Entry::Msg(Msg::Text(t))) => Found::Text(match args {
                 Some(a) => t.interpolate(a),
@@ -486,17 +543,24 @@ impl I18n {
             Found::Text(s) => s,
             Found::Node => key.to_owned(),
             Found::Miss(active) => {
-                if let Some(missing) = &self.inner.missing {
-                    let code = locale.or(active.as_deref()).unwrap_or("");
-                    let page = page.filter(|p| !p.is_empty()).unwrap_or("index");
-                    missing(code, key, page);
-                }
+                self.report(locale.or(active.as_deref()), page, key);
                 match args.and_then(|a| a.default_text().map(|d| (a, d))) {
                     Some((a, d)) => interpolate_once(d, a),
                     None => key.to_owned(),
                 }
             }
         }
+    }
+
+    /// A miss: the `missing` handler and, with `tracing`, a `warn!`.
+    #[cold]
+    fn report(&self, locale: Option<&str>, page: Option<&str>, key: &str) {
+        let code = locale.unwrap_or("");
+        let page = page.filter(|p| !p.is_empty()).unwrap_or("index");
+        if let Some(missing) = &self.inner.missing {
+            missing(code, key, page);
+        }
+        crate::trace::missing(code, page, key);
     }
 
     /// `tc` of `core/src/base.ts` with the default plural rule (`defaultPlural`).
@@ -508,7 +572,7 @@ impl I18n {
         count: Count,
         args: Option<&Args<'_>>,
     ) -> String {
-        let report = self.inner.missing.is_some();
+        let report = self.inner.missing.is_some() || crate::trace::MISSES;
         let params = WithCount { args, count };
         let found = self.inner.read(|s| {
             let plural = match locale {
@@ -530,11 +594,7 @@ impl I18n {
             Found::Text(s) => s,
             Found::Node => count_fallback(key, &params),
             Found::Miss(active) => {
-                if let Some(missing) = &self.inner.missing {
-                    let code = locale.or(active.as_deref()).unwrap_or("");
-                    let page = page.filter(|p| !p.is_empty()).unwrap_or("index");
-                    missing(code, key, page);
-                }
+                self.report(locale.or(active.as_deref()), page, key);
                 count_fallback(key, &params)
             }
         }
@@ -677,7 +737,7 @@ impl I18n {
     /// [`Error::DisabledLocale`] for a locale `i18n.json` disables, [`Error::UnknownLocale`]
     /// for one no file, config or builder call names. Nothing changes then.
     pub fn set_locale(&self, code: &str) -> Result<(), Error> {
-        self.inner.write(|s| {
+        let change = self.inner.write(|s| {
             if s.meta.disabled(code) {
                 return Err(Error::DisabledLocale(code.to_owned()));
             }
@@ -700,7 +760,11 @@ impl I18n {
                 plurals: s.plurals.clone(),
                 meta: s.meta.clone(),
             }))
-        })
+        })?;
+        if let Some(change) = change {
+            self.inner.listeners.send(&change);
+        }
+        Ok(())
     }
 
     /// The active locale, shared: no allocation.
@@ -763,13 +827,17 @@ impl I18n {
     /// = the root; an alias writes to its target). Incoming values win, objects merge.
     /// Readers see it in a new snapshot (version + 1); a new locale becomes known.
     ///
+    /// A lazy pair is loaded first, so the messages go over its files; a remote pair
+    /// that is not in yet keeps them until its files arrive. Messages added here are not
+    /// kept by [`I18n::reload`]: it rebuilds from the builder's sources.
+    ///
     /// # Errors
     /// [`Error::Json`] / [`Error::NotObject`] with the path `messages:<locale>/<page>`,
     /// [`Error::UnknownLocale`] / [`Error::UnknownPage`] for an empty or `__proto__` name.
     pub fn add_messages(&self, locale: &str, page: Option<&str>, json: &str) -> Result<(), Error> {
         chunk_names(locale, page)?;
         let tree = Tree::parse(json.as_bytes(), &messages_path(locale, page))?;
-        self.inner.write(|s| {
+        let change = self.inner.write(|s| {
             let mut data = DataMap::clone(&s.data);
             let mut slot = data
                 .get(locale)
@@ -783,10 +851,59 @@ impl I18n {
                 s.locale.clone(),
                 s.version + 1,
             )))
-        })
+        })?;
+        if let Some(change) = change {
+            self.inner.listeners.send(&change);
+        }
+        Ok(())
     }
 
-    /// The snapshot version: 0 after `build`, + 1 per change. Only grows.
+    /// Reads every source of the builder again (`dir` files, `files`, `extend`,
+    /// `messages`; lazy pairs start unloaded, remote files are missing again until the
+    /// next `ensure_async` / `add_file`) and publishes the result: version + 1,
+    /// subscribers notified. Readers keep answering from the old snapshot until the new one
+    /// is in. The active locale stays; messages added with `add_messages` are dropped.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder().messages("en", None, r#"{"a": "A"}"#).build()?;
+    /// i18n.add_messages("en", None, r#"{"a": "patched"}"#)?;
+    /// i18n.reload()?;
+    /// assert_eq!((i18n.t("a"), i18n.version()), ("A".to_owned(), 2));
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    /// What [`Builder::build`] returns for a source that cannot be read; the catalog stays
+    /// as it was.
+    pub fn reload(&self) -> Result<(), Error> {
+        let timer = crate::trace::Timer::start();
+        let inner = &*self.inner;
+        let change = inner.write(|s| {
+            let mut data = source::load(&inner.sources, &s.meta, &inner.ctl)?;
+            // linked messages again, over what was read again (M3, linked.rs)
+            if let Some(resolve) = s.meta.linked {
+                let broken = resolve(&mut data, &s.meta, inner.missing.as_ref());
+                *check::lock(&s.meta.check.broken) = broken;
+            }
+            let data = data.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
+            Ok(Some(Snapshot::new(
+                s.meta.clone(),
+                data,
+                s.locale.clone(),
+                s.version + 1,
+            )))
+        })?;
+        timer.done("reload", "", 0);
+        if let Some(change) = change {
+            self.inner.listeners.send(&change);
+        }
+        Ok(())
+    }
+
+    /// The snapshot version: 0 after `build`, + 1 per new snapshot (every change, and a
+    /// page eviction, which changes no answer). Only grows.
     #[must_use]
     pub fn version(&self) -> u64 {
         self.inner.version.load(Ordering::Acquire)
@@ -804,15 +921,34 @@ fn count_fallback(key: &str, params: &WithCount<'_, '_>) -> String {
 }
 
 /// Merges `tree` into a copy of the root (`None`) or page chunk of `slot`: the old chunk
-/// stays as it is for readers of older snapshots.
+/// stays as it is for readers of older snapshots. A lazy chunk is loaded first and becomes
+/// a ready one (never evicted: nothing would restore the messages); a remote one that is
+/// not in yet keeps the tree until its files arrive.
 fn merge_into(slot: &mut LocaleData, page: Option<&str>, tree: Tree) {
-    let chunk = match page {
-        None => slot.root.as_ref(),
-        Some(p) => slot.pages.get(p),
+    let layer = slot.layer(page);
+    let chunk = match layer {
+        // A remote pair answers its partial view before its files are in: not loaded.
+        Some(Layer::Lazy(cell)) => match if cell.remote {
+            cell.loaded()
+        } else {
+            cell.get()
+        } {
+            Some(loaded) => Some(loaded),
+            None => {
+                let waiting = Layer::Lazy(Arc::new(cell.with_over(tree)));
+                put(slot, page, waiting);
+                return;
+            }
+        },
+        Some(Layer::Ready(c)) => Some(&**c),
+        None => None,
     };
-    let mut merged = chunk.map(|c| Tree::clone(c)).unwrap_or_default();
+    let mut merged = chunk.cloned().unwrap_or_default();
     merged.merge(tree);
-    let chunk = Arc::new(merged);
+    put(slot, page, Layer::Ready(Arc::new(merged)));
+}
+
+fn put(slot: &mut LocaleData, page: Option<&str>, chunk: Layer) {
     match page {
         None => slot.root = Some(chunk),
         Some(p) => {
@@ -967,11 +1103,7 @@ pub struct Builder {
     fallback: Option<String>,
     links: Vec<(String, String)>,
     iso: Vec<(String, String)>,
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    dirs: Vec<std::path::PathBuf>,
-    files: Vec<(String, Vec<u8>)>,
-    messages: Vec<(String, Option<String>, String)>,
-    no_pages: bool,
+    sources: Sources,
     aliases: Vec<(String, String)>,
     config: Option<ConfigSource>,
     missing: Option<Missing>,
@@ -985,7 +1117,7 @@ impl fmt::Debug for Builder {
         f.debug_struct("Builder")
             .field("locale", &self.locale)
             .field("fallback", &self.fallback)
-            .field("files", &self.files.len())
+            .field("files", &self.sources.files.len())
             .finish_non_exhaustive()
     }
 }
@@ -1032,7 +1164,7 @@ impl Builder {
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     #[must_use]
     pub fn dir(mut self, path: impl AsRef<std::path::Path>) -> Self {
-        self.dirs.push(path.as_ref().to_path_buf());
+        self.sources.dirs.push(path.as_ref().to_path_buf());
         self
     }
 
@@ -1045,17 +1177,112 @@ impl Builder {
         P: AsRef<str>,
         B: AsRef<[u8]>,
     {
-        for (path, bytes) in files {
-            let path = path.as_ref().replace('\\', "/");
-            self.files.push((path, bytes.as_ref().to_vec()));
-        }
+        self.sources.files.extend(embedded(files));
+        self
+    }
+
+    /// Lists the root and page files under `path` at `build` without reading them: each
+    /// `(locale, page)` file is read on the first lookup that reaches its layer, once (not
+    /// on `wasm32-unknown-unknown`). A file that cannot be read then is skipped and
+    /// reported (stderr in debug builds, or `tracing`): its layer stays empty.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    #[must_use]
+    pub fn lazy_dir(mut self, path: impl AsRef<std::path::Path>) -> Self {
+        self.sources.lazy_dirs.push(path.as_ref().to_path_buf());
+        self.sources.lazy = Some(source::LAZY);
+        self
+    }
+
+    /// Embedded files like [`Builder::files`], parsed on first use of their
+    /// `(locale, page)` pair instead of at `build`, once.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .lazy_files([("en.json", br#"{"a": "A"}"#.as_slice()), ("pages/big/en.json", br#"{"b": "B"}"#)])
+    ///     .build()?;
+    /// assert_eq!(i18n.pages(), ["big"]);              // known from the name, not read yet
+    /// assert_eq!(i18n.page("big").t("b"), "B");       // read now
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn lazy_files<I, P, B>(mut self, files: I) -> Self
+    where
+        I: IntoIterator<Item = (P, B)>,
+        P: AsRef<str>,
+        B: AsRef<[u8]>,
+    {
+        self.sources.lazy_files.extend(embedded(files));
+        self.sources.lazy = Some(source::LAZY);
+        self
+    }
+
+    /// The files the app will bring itself, as paths in the locales layout (`de.json`,
+    /// `pages/settings/de.json`): known pairs, nothing loaded. A lookup answers from what
+    /// is in; [`I18n::ensure_async`] fetches what a locale and page lack,
+    /// [`I18n::add_file`] adds bytes fetched by hand. Paths outside the layout are ignored.
+    #[must_use]
+    pub fn remote<I>(mut self, manifest: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        self.sources
+            .remote
+            .extend(manifest.into_iter().map(|p| source::normalize(p.as_ref())));
+        self.sources.lazy = Some(source::LAZY);
+        self
+    }
+
+    /// Locale files of a library (8b.4), merged under the app's own: every `extend` call is
+    /// one layer, later calls over earlier ones, and the app's files and messages over all
+    /// of them, deep-merged per `(locale, page)`. The app can override any library string.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .extend([("en.json", br#"{"ui": {"ok": "OK", "cancel": "Cancel"}}"#.as_slice())])
+    ///     .files([("en.json", br#"{"ui": {"ok": "Fine"}}"#.as_slice())])
+    ///     .build()?;
+    /// assert_eq!((i18n.t("ui.ok"), i18n.t("ui.cancel")), ("Fine".into(), "Cancel".into()));
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn extend<I, P, B>(mut self, files: I) -> Self
+    where
+        I: IntoIterator<Item = (P, B)>,
+        P: AsRef<str>,
+        B: AsRef<[u8]>,
+    {
+        self.sources.extend.push(embedded(files).collect());
+        self
+    }
+
+    /// Keeps at most `n` lazily loaded pages (at least 1) and evicts the least recently
+    /// used beyond that (8b.16). Never evicted: root chunks, pairs with `messages` /
+    /// `add_messages`, ready (eager) chunks and pinned pages. An evicted local page loads
+    /// again on its next use, with the same answers; a remote one is missing until the next
+    /// `ensure_async`. Off by default.
+    #[must_use]
+    pub fn evict_pages(mut self, n: usize) -> Self {
+        self.sources.evict = Some(n.max(1));
+        self
+    }
+
+    /// Never evicts page `name` (Rust-only pages of the native UI: `tray`, `menu`).
+    #[must_use]
+    pub fn pin_page(mut self, name: &str) -> Self {
+        self.sources.pins.push(name.to_owned());
         self
     }
 
     /// A JSON object for the `(locale, page)` chunk (`None` = root), merged after files.
     #[must_use]
     pub fn messages(mut self, locale: &str, page: Option<&str>, json: &str) -> Self {
-        self.messages
+        self.sources
+            .messages
             .push((locale.to_owned(), page.map(str::to_owned), json.to_owned()));
         self
     }
@@ -1065,7 +1292,7 @@ impl Builder {
     /// either order. A [`Builder::page_alias`] then names nothing: it reads the root.
     #[must_use]
     pub fn pages(mut self, enabled: bool) -> Self {
-        self.no_pages = !enabled;
+        self.sources.no_pages = !enabled;
         self
     }
 
@@ -1209,85 +1436,13 @@ impl Builder {
             return Err(Error::DisabledLocale(String::from(&*locale)));
         }
 
-        // Files: (relative path, bytes, path for errors).
-        let mut files: Vec<(String, Vec<u8>, String)> = Vec::new();
-        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-        for dir in &self.dirs {
-            for (rel, full) in loader::list_dir(dir)? {
-                if loader::classify(&rel) == Kind::Ignore {
-                    continue;
-                }
-                let shown = full.to_string_lossy().into_owned();
-                let bytes = std::fs::read(&full).map_err(|source| Error::Io {
-                    path: shown.clone(),
-                    source,
-                })?;
-                files.push((rel, bytes, shown));
-            }
-        }
-        for (rel, bytes) in self.files {
-            let shown = rel.clone();
-            files.push((rel, bytes, shown));
-        }
-        // Path order (JS `<`), as the JS loader reads them. The index makes the order total,
-        // so an unstable sort is stable.
-        let mut order: Vec<usize> = (0..files.len()).collect();
-        order.sort_unstable_by(|&a, &b| loader::js_order(&files[a].0, &files[b].0).then(a.cmp(&b)));
-
-        let mut data: FastMap<Arc<str>, LocaleData> = FastMap::default();
-        // Merges `tree` over what the chunk holds, or `under` it.
-        let mut add = |locale: &str, page: Option<&str>, tree: Tree, under: bool| {
-            if !data.contains_key(locale) {
-                data.insert(Arc::from(locale), LocaleData::default());
-            }
-            let Some(slot) = data.get_mut(locale) else {
-                return;
-            };
-            let chunk = match page.filter(|p| *p != "index") {
-                None => slot.root.get_or_insert_with(Arc::default),
-                Some(p) => {
-                    if !slot.pages.contains_key(p) {
-                        slot.pages.insert(Arc::from(p), Arc::default());
-                    }
-                    let Some(c) = slot.pages.get_mut(p) else {
-                        return;
-                    };
-                    c
-                }
-            };
-            // Only `build` holds these chunks yet: `get_mut` always succeeds (no copy).
-            if let Some(chunk) = Arc::get_mut(chunk) {
-                if under {
-                    let above = std::mem::replace(chunk, tree);
-                    chunk.merge(above);
-                } else {
-                    chunk.merge(tree);
-                }
-            }
-        };
-        for &i in &order {
-            let (rel, bytes, shown) = &files[i];
-            // A root file goes under what came before it (`utils` `storeLoadedTranslationFile`):
-            // with folded pages, a page file wins over the root in either order.
-            let (locale, page, under) = match loader::classify(rel) {
-                Kind::Ignore => continue,
-                Kind::Root(l) => (l, None, true),
-                Kind::Page(_, l) if self.no_pages => (l, None, false),
-                Kind::Page(p, l) => (l, Some(p), false),
-            };
-            add(locale, page.as_deref(), Tree::parse(bytes, shown)?, under);
-        }
         for (from, to) in &self.aliases {
             meta.aliases.insert(Arc::from(&**from), Arc::from(&**to));
         }
-        for (locale, page, json) in &self.messages {
-            let page = page.as_deref();
-            chunk_names(locale, page)?;
-            let tree = Tree::parse(json.as_bytes(), &messages_path(locale, page))?;
-            add(locale, meta.page(page), tree, false);
-        }
+        let ctl = Arc::new(LazyCtl::new(self.sources.evict));
+        let mut data = source::load(&self.sources, &meta, &ctl)?;
         // Folded pages: an alias resolves to a page with no chunk, which reads the root.
-        if !self.no_pages {
+        if !self.sources.no_pages {
             for to in meta.aliases.values() {
                 let defined = &**to == "index" || data.values().any(|d| d.pages.contains_key(to));
                 if !defined {
@@ -1303,22 +1458,28 @@ impl Builder {
                 .as_deref()
                 .map_or_else(|| locale.clone(), Arc::from),
         );
+        meta.linked = self.linked;
         if let Some(resolve) = self.linked {
-            meta.check.broken = resolve(&mut data, &meta, self.missing.as_ref());
+            let broken = resolve(&mut data, &meta, self.missing.as_ref());
+            *check::lock(&meta.check.broken) = broken;
         }
 
         let data = data.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
         let snapshot = Snapshot::new(Arc::new(meta), data, locale, 0);
-        Ok(I18n {
-            inner: Arc::new(Inner {
-                id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
-                version: AtomicU64::new(0),
-                state: RwLock::new(Arc::new(snapshot)),
-                writer: Mutex::new(()),
-                missing: self.missing,
-                alive: Arc::new(AtomicBool::new(true)),
-            }),
-        })
+        let inner = Arc::new(Inner {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            version: AtomicU64::new(0),
+            state: RwLock::new(Arc::new(snapshot)),
+            writer: Mutex::new(()),
+            missing: self.missing,
+            alive: Arc::new(AtomicBool::new(true)),
+            remote: source::remote_index(&self.sources),
+            sources: self.sources,
+            ctl: ctl.clone(),
+            listeners: Listeners::default(),
+        });
+        let _ = ctl.owner.set(Arc::downgrade(&inner));
+        Ok(I18n { inner })
     }
 }
 
@@ -1328,8 +1489,10 @@ impl Builder {
 type ResolveLinked =
     fn(&mut FastMap<Arc<str>, LocaleData>, &Meta, Option<&Missing>) -> Vec<crate::linked::Broken>;
 
-/// Resolves the linked messages of `data` (`linked.rs`): the chunks go into one ordered map
-/// and back. Reports each message left as written once through `missing`.
+/// Resolves the linked messages of `data` (`linked.rs`): the ready chunks go into one ordered
+/// map and back; each lazy or remote pair gets what it needs to resolve its own messages when
+/// it loads ([`crate::lazy::LinkCtx`]). Reports each message left as written once through
+/// `missing`.
 fn resolve_linked(
     data: &mut FastMap<Arc<str>, LocaleData>,
     meta: &Meta,
@@ -1337,11 +1500,19 @@ fn resolve_linked(
 ) -> Vec<crate::linked::Broken> {
     let mut chunks = crate::linked::Chunks::new();
     for (code, d) in data.iter_mut() {
-        if let Some(root) = d.root.take() {
-            chunks.push(((code.clone(), None), root));
+        if let Some(Layer::Ready(c)) = d.root.take_if(|l| matches!(l, Layer::Ready(_))) {
+            chunks.push(((code.clone(), None), c));
         }
-        for (page, chunk) in d.pages.drain() {
-            chunks.push(((code.clone(), Some(page)), chunk));
+        let ready: Vec<Arc<str>> = d
+            .pages
+            .iter()
+            .filter(|(_, l)| matches!(l, Layer::Ready(_)))
+            .map(|(p, _)| p.clone())
+            .collect();
+        for p in ready {
+            if let Some(Layer::Ready(c)) = d.pages.remove(&p) {
+                chunks.push(((code.clone(), Some(p)), c));
+            }
         }
     }
     chunks.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -1351,15 +1522,20 @@ fn resolve_linked(
         iso: &meta.iso,
     };
     let broken = crate::linked::resolve(&mut chunks, &setup);
+    // a lazy pair keeps its cell: what was stored for its view is dropped, it resolves its
+    // own messages when it loads
     for ((code, page), chunk) in chunks {
         let d = data.entry(code).or_default();
         match page {
-            None => d.root = Some(chunk),
+            None if matches!(d.root, Some(Layer::Lazy(_))) => {}
+            None => d.root = Some(Layer::Ready(chunk)),
+            Some(p) if matches!(d.pages.get(&p), Some(Layer::Lazy(_))) => {}
             Some(p) => {
-                d.pages.insert(p, chunk);
+                d.pages.insert(p, Layer::Ready(chunk));
             }
         }
     }
+    crate::linked::lazy_contexts(data, &setup);
     if let Some(missing) = missing {
         let mut last = None;
         for b in &broken {
@@ -1388,10 +1564,26 @@ impl I18n {
                 .iter()
                 .filter(|(code, _)| !meta.disabled(code))
                 .flat_map(|(code, d)| {
-                    let root = d.root.iter().map(move |c| (code, None, &**c));
-                    root.chain(d.pages.iter().map(move |(p, c)| (code, Some(p), &**c)))
+                    let root = d
+                        .root
+                        .iter()
+                        .filter_map(move |l| Some((code, None, l.chunk()?)));
+                    let pages = d.pages.iter();
+                    root.chain(pages.filter_map(move |(p, l)| Some((code, Some(p), l.chunk()?))))
                 });
             check::run(chunks, &meta.check, |code| s.plural_of(code))
         })
     }
+}
+
+/// `(path with '/', shared bytes)` of embedded files.
+fn embedded<I, P, B>(files: I) -> impl Iterator<Item = (String, source::Bytes)>
+where
+    I: IntoIterator<Item = (P, B)>,
+    P: AsRef<str>,
+    B: AsRef<[u8]>,
+{
+    files
+        .into_iter()
+        .map(|(p, b)| (source::normalize(p.as_ref()), Arc::from(b.as_ref())))
 }

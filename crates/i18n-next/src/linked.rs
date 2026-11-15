@@ -33,6 +33,11 @@
 //! reads the texts as resolved for the locale it falls back to. Messages added later
 //! (`add_messages`) are not resolved, as in Nuxt (`$mergeTranslations`).
 //!
+//! Lazy pairs: a lazy or remote pair is not part of the pass above; it resolves its own
+//! messages when it loads ([`lazy_contexts`]) over the other layers of its view (its locale's root,
+//! read first if needed; eager layers; other locales' lazy layers if loaded already). Other views'
+//! messages are not re-resolved for it, and its broken links are not reported.
+//!
 //! Known difference, not copied: `valueAt` reads JS own properties, so `@:list.length` is the
 //! length of the array `list`; a lookup has no `length` (`fixtures/compat/README.md`).
 
@@ -44,6 +49,8 @@ mod case_data;
 use crate::catalog::{AtString, Chunk, Entry, Msg, hole_ranges, is_js_space};
 use crate::check::LinkError;
 use crate::hash::FastMap;
+use crate::i18n::LocaleData;
+use crate::lazy::{Layer, LinkCtx, LinkLayer};
 use case::Lang;
 use std::sync::Arc;
 
@@ -687,4 +694,83 @@ pub(crate) fn resolve(chunks: &mut Chunks, setup: &Setup<'_>) -> Vec<Broken> {
         (&a.locale, &a.page, &a.key, &a.link).cmp(&(&b.locale, &b.page, &b.key, &b.link))
     });
     broken
+}
+
+// ---- lazy and remote pairs (`lazy.rs`) ----
+
+/// Gives every lazy or remote pair of `data` its [`LinkCtx`]: on load it resolves its own
+/// linked messages over the other layers of its view (module docs, "Lazy pairs").
+pub(crate) fn lazy_contexts(data: &FastMap<Arc<str>, LocaleData>, setup: &Setup<'_>) {
+    for (code, d) in data {
+        let pairs = std::iter::once((None, d.root.as_ref()))
+            .chain(d.pages.iter().map(|(p, l)| (Some(p), Some(l))));
+        for (page, layer) in pairs {
+            let Some(Layer::Lazy(cell)) = layer else {
+                continue;
+            };
+            let mut layers = Vec::new();
+            for c in chain(setup, code) {
+                let Some(other) = data.get(c) else { continue };
+                let wanted = page.map(|p| Some(&**p)).into_iter().chain([None]);
+                for p in wanted {
+                    if c == &**code && p == page.map(|p| &**p) {
+                        continue;
+                    }
+                    match other.layer(p) {
+                        Some(Layer::Ready(chunk)) => layers.push(LinkLayer::Ready(chunk.clone())),
+                        Some(Layer::Lazy(l)) => {
+                            let may_load = c == &**code && p.is_none();
+                            layers.push(LinkLayer::Lazy(Arc::downgrade(l), may_load));
+                        }
+                        None => {}
+                    }
+                }
+            }
+            let tag = setup
+                .iso
+                .get(code)
+                .filter(|t| !t.is_empty())
+                .unwrap_or(code);
+            let _ = cell.linked.set(Arc::new(LinkCtx {
+                layers,
+                tag: tag.clone(),
+                resolve: resolve_tree,
+            }));
+        }
+    }
+}
+
+/// Resolves the own linked messages of a lazy pair's `tree` as it loads, over `others`, the
+/// other layers of its view (strongest first), by the case rules of `tag`.
+fn resolve_tree(tree: &mut Chunk, others: &[&Chunk], tag: &str) {
+    let mut strings = tree.strings_with_at();
+    if strings.is_empty() {
+        return;
+    }
+    strings.sort_unstable_by(|a, b| (a.hidden, &a.key).cmp(&(b.hidden, &b.key)));
+    let done: Vec<(AtString, Option<Arc<str>>)> = {
+        let layers = std::iter::once(&*tree)
+            .chain(others.iter().copied())
+            .collect();
+        let mut r = Resolver::new(layers, Lang::of(Some(tag)));
+        strings
+            .into_iter()
+            .map(|s| {
+                let text = if s.hidden {
+                    r.message(&s.key, &s.raw).ok()
+                } else {
+                    match r.outcome(&s.key) {
+                        Outcome::Text(t) => Some(t),
+                        _ => None,
+                    }
+                };
+                (s, text)
+            })
+            .collect()
+    };
+    for (s, text) in done {
+        if let Some(t) = text.filter(|t| *t != s.raw) {
+            tree.set_message(&s.key, s.own, &t);
+        }
+    }
 }

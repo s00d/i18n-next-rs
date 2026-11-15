@@ -178,3 +178,87 @@ fn writers_on_one_instance_lose_nothing() {
         }
     }
 }
+
+/// Lazy and remote loads of `i18n` (its `Debug` shows them).
+fn loads(i18n: &I18n) -> u64 {
+    let d = format!("{i18n:?}");
+    let at = d.find("loads: ").unwrap() + 7;
+    d[at..]
+        .split(|c: char| !c.is_ascii_digit())
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+/// Given a lazy page nobody has read, when eight threads released by one barrier read it
+/// at once, then the file is parsed exactly once (the others wait for that load) and all
+/// eight see its text.
+#[test]
+fn lazy_load_race_on_one_pair_loads_once() {
+    const THREADS: usize = 8;
+    for round in 0..50 {
+        let body = format!(r#"{{"t": "page {round}"}}"#);
+        let i18n = I18n::builder()
+            .lazy_files([("pages/p/en.json", body.as_bytes())])
+            .build()
+            .unwrap();
+        let start = Arc::new(Barrier::new(THREADS));
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let (i18n, start) = (i18n.clone(), start.clone());
+                thread::spawn(move || {
+                    start.wait();
+                    i18n.page("p").t("t")
+                })
+            })
+            .collect();
+        for h in handles {
+            assert_eq!(h.join().unwrap(), format!("page {round}"));
+        }
+        // step: one load for eight racing readers
+        assert_eq!(loads(&i18n), 1, "round {round}");
+    }
+}
+
+/// Given 16 lazy pages with `evict_pages(3)`, when eight threads read all pages in
+/// different orders (loading, evicting and reloading under each other), then every answer
+/// is the page's own text: eviction never shows a reader a missing or foreign page.
+#[test]
+fn eviction_under_concurrent_readers_is_invisible() {
+    const THREADS: usize = 8;
+    const PAGES: usize = 16;
+    let files: Vec<(String, String)> = (0..PAGES)
+        .map(|p| (format!("pages/p{p}/en.json"), format!(r#"{{"t": "{p}"}}"#)))
+        .chain(std::iter::once((
+            "en.json".to_owned(),
+            r#"{"root": "R"}"#.to_owned(),
+        )))
+        .collect();
+    let i18n = I18n::builder()
+        .lazy_files(files.iter().map(|(p, b)| (p, b)))
+        .evict_pages(3)
+        .build()
+        .unwrap();
+    let start = Arc::new(Barrier::new(THREADS));
+    let handles: Vec<_> = (0..THREADS)
+        .map(|t| {
+            let (i18n, start) = (i18n.clone(), start.clone());
+            thread::spawn(move || {
+                start.wait();
+                for round in 0..200 {
+                    let p = (t * 5 + round * 7) % PAGES;
+                    let page = i18n.page(&format!("p{p}"));
+                    assert_eq!(page.t("t"), p.to_string());
+                    assert_eq!(page.t("root"), "R");
+                }
+            })
+        })
+        .collect();
+    for h in handles {
+        h.join().unwrap();
+    }
+    // step: loads happened again after evictions, versions only for evictions
+    assert!(loads(&i18n) > PAGES as u64);
+    assert!(i18n.version() > 0);
+}

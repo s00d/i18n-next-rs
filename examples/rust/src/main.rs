@@ -143,6 +143,60 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
         "bad name",
         expect(refused, "unknown locale \"../../etc/passwd\""),
     ));
+
+    // M3: the same folder read lazily, a library's strings under the app's, subscribe and
+    // reload (watch is left out: it polls a thread).
+    let library: [(&str, &[u8]); 1] = [(
+        "en.json",
+        br#"{"lib": {"powered": "Powered by a library"}, "nav": {"home": "Library home"}}"#,
+    )];
+    let lazy = I18n::builder()
+        .config(examples.join("i18n.json"))
+        .lazy_dir(examples.join("locales"))
+        .extend(library)
+        .build()?;
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    let _sub = lazy.subscribe(move |c| {
+        log.lock()
+            .unwrap()
+            .push(format!("{}@{}", c.locale, c.version))
+    });
+    stops.extend([
+        (
+            "lazy",
+            expect(
+                format!(
+                    "{} / {}",
+                    lazy.pages().join(","),
+                    lazy.page("settings").t("title")
+                ),
+                "settings / Settings",
+            ),
+        ),
+        (
+            "extend",
+            expect(
+                format!("{} / {}", lazy.t("lib.powered"), lazy.t("nav.home")),
+                "Powered by a library / Home",
+            ),
+        ),
+    ]);
+    lazy.set_locale("ru")?;
+    lazy.reload()?;
+    stops.extend([
+        (
+            "reload",
+            expect(
+                format!("{} v{}", lazy.page("settings").t("title"), lazy.version()),
+                "Настройки v2",
+            ),
+        ),
+        (
+            "subscribe",
+            expect(seen.lock().unwrap().join(", "), "ru@1, ru@2"),
+        ),
+    ]);
     Ok(stops)
 }
 

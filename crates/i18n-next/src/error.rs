@@ -43,6 +43,16 @@ pub enum Error {
         /// Which field is wrong.
         reason: &'static str,
     },
+    /// A path `add_file` was given that the `remote` manifest does not list (8b.2: names
+    /// only from the catalog).
+    UnknownFile(String),
+    /// The fetch closure of `ensure_async` failed for one file; the catalog is unchanged.
+    Fetch {
+        /// The manifest path that was being fetched.
+        path: String,
+        /// What the closure's error said (its `Display`).
+        message: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -57,6 +67,32 @@ impl fmt::Display for Error {
             Error::DisabledLocale(code) => write!(f, "locale \"{code}\" is disabled"),
             Error::UnknownPage(name) => write!(f, "unknown page \"{name}\""),
             Error::Config { path, reason } => write!(f, "{path}: {reason}"),
+            Error::UnknownFile(path) => write!(f, "unknown file \"{path}\""),
+            Error::Fetch { path, message } => write!(f, "cannot fetch {path}: {message}"),
+        }
+    }
+}
+
+impl Error {
+    /// A copy for every waiter of one shared fetch (`Error` is not `Clone`: `Io` holds an
+    /// `io::Error`, which `add_file` never returns; anything else becomes `Fetch` with its
+    /// text).
+    pub(crate) fn duplicate(&self, file: &str) -> Error {
+        match self {
+            Error::Json { path, offset, kind } => Error::Json {
+                path: path.clone(),
+                offset: *offset,
+                kind,
+            },
+            Error::NotObject { path } => Error::NotObject { path: path.clone() },
+            Error::Fetch { path, message } => Error::Fetch {
+                path: path.clone(),
+                message: message.clone(),
+            },
+            other => Error::Fetch {
+                path: file.to_owned(),
+                message: other.to_string(),
+            },
         }
     }
 }

@@ -294,7 +294,8 @@ fn hot_path_allocations() {
     }
 
     // case: a message of a million empty forms (`"|"` × 10^6) keeps its forms as ranges of
-    // the one text: 12 bytes a form plus the text, not a string each (49× the input before).
+    // the one text: 12 bytes a form plus the text, not a string each (49× the input before),
+    // plus the source text the builder keeps for `reload` (1×).
     let pipes = format!("{{\"p\": \"{}\"}}", "|".repeat(1_000_000));
     let base = dhat::HeapStats::get().curr_bytes;
     let many = I18n::builder()
@@ -304,7 +305,7 @@ fn hot_path_allocations() {
         .unwrap();
     let grown = dhat::HeapStats::get().curr_bytes - base;
     assert!(
-        grown < 14 * pipes.len(),
+        grown < 15 * pipes.len(),
         "{grown} bytes held for a {} byte message",
         pipes.len()
     );
@@ -357,6 +358,70 @@ fn hot_path_allocations() {
         left < grown / 20,
         "{left} of {grown} bytes still live after both threads read another instance"
     );
+
+    // case: a loaded lazy page, eviction off and on → get() 0 blocks, t() 1 block: the
+    // lazy layer and the LRU stamp allocate nothing on the hot path.
+    for evict in [false, true] {
+        let mut b = I18n::builder().lazy_files([
+            ("en.json", br#"{"root": "R"}"#.as_slice()),
+            ("pages/p/en.json", br#"{"t": "page"}"#),
+        ]);
+        if evict {
+            b = b.evict_pages(4);
+        }
+        let lazy = b.build().unwrap();
+        let page = lazy.page("p");
+        let _ = (page.t("t"), page.t("root"));
+        let n = blocks(|| {
+            std::hint::black_box(page.get("t"));
+            std::hint::black_box(page.get("root"));
+            std::hint::black_box(page.has("t"));
+        });
+        assert_eq!(n, 0, "lazy get/has, evict {evict}: {n} blocks");
+        let n = blocks(|| {
+            std::hint::black_box(page.t("t"));
+        });
+        assert_eq!(n, 1, "lazy t, evict {evict}: {n} blocks");
+    }
+
+    // case: the first access of a lazy page allocates about what parsing the file at
+    // `build` would (the chunk itself), not per lookup: a 200-key page file costs one
+    // bounded load, and the next lookups only their result.
+    let big_page = {
+        let mut s = String::from("{");
+        for k in 0..200 {
+            if k > 0 {
+                s.push(',');
+            }
+            s.push_str(&format!("\"k{k}\":\"value {k}\""));
+        }
+        s.push('}');
+        s
+    };
+    let eager_blocks = blocks(|| {
+        std::hint::black_box(
+            I18n::builder()
+                .files([("pages/p/en.json", big_page.as_bytes())])
+                .build()
+                .unwrap(),
+        );
+    });
+    let lazy = I18n::builder()
+        .lazy_files([("pages/p/en.json", big_page.as_bytes())])
+        .build()
+        .unwrap();
+    let page = lazy.page("p");
+    let first = blocks(|| {
+        std::hint::black_box(page.get("k7"));
+    });
+    assert!(
+        first > 200 && first < eager_blocks,
+        "first lazy access: {first} blocks (an eager build: {eager_blocks})"
+    );
+    let n = blocks(|| {
+        std::hint::black_box(page.get("k8"));
+    });
+    assert_eq!(n, 0, "second lazy access: {n} blocks");
 
     // case: a miss down the whole chain with a default → 1 block (the interpolated
     // default). Last on purpose: a failure here leaves every case above checked.

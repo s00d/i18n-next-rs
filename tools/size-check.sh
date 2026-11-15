@@ -8,13 +8,18 @@
 #   tools/size-check.sh               # print sizes only (push to main)
 #   tools/size-check.sh <base-dir>    # also compare with the same build of <base-dir>
 #
-# Fails when a variant grows by more than SIZE_THRESHOLD_PCT (default 2) percent.
-# A base without tools/size-probe has no baseline: the sizes are printed, nothing fails.
+# Fails when a variant is over its budget (tools/size-budget.env: MICRO_BUDGET, FULL_BUDGET,
+# net bytes). Growth over SIZE_THRESHOLD_PCT (default 2) percent against the base is reported
+# as a warning to read in the PR, not a failure: a new feature legitimately adds code, and the
+# owner's guideline is "about 100 KB is a real size, don't contort the design for less".
+# A base without tools/size-probe has no baseline: the sizes are printed.
 # Size is deterministic for one toolchain and one Cargo.lock, so this does not flake.
 set -euo pipefail
 
 THRESHOLD="${SIZE_THRESHOLD_PCT:-2}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=size-budget.env
+. "${HERE}/tools/size-budget.env"
 BASE="${1:-}"
 OUT="${HERE}/target/size"
 mkdir -p "${OUT}"
@@ -75,11 +80,16 @@ for variant in micro full; do
     printf '%-6s %8s bytes  (base %s, %s)\n' "${variant}" "${head_bytes}" \
       "${base_bytes}" "$(fmt_growth "${growth}")"
     if (( growth > THRESHOLD * 100 )); then
-      echo "::error::${variant} .wasm grew more than ${THRESHOLD}%: ${base_bytes} -> ${head_bytes} bytes"
-      status=1
+      echo "::warning::${variant} .wasm grew more than ${THRESHOLD}%: ${base_bytes} -> ${head_bytes} bytes"
     fi
   else
     printf '%-6s %8s bytes  (no baseline)\n' "${variant}" "${head_bytes}"
+  fi
+  budget_var="$(echo "${variant}" | tr '[:lower:]' '[:upper:]')_BUDGET"
+  budget="${!budget_var}"
+  if (( head_bytes > budget )); then
+    echo "::error::${variant} .wasm is ${head_bytes} net bytes, over its budget of ${budget} (tools/size-budget.env)"
+    status=1
   fi
 done
 exit "${status}"

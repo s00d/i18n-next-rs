@@ -100,6 +100,17 @@ pub(crate) enum Msg {
     Plural(Box<PluralMsg>),
 }
 
+impl Msg {
+    /// A string leaf: plural when it has a `|`.
+    pub(crate) fn new(s: &str) -> Msg {
+        if s.contains('|') {
+            Msg::Plural(Box::new(PluralMsg::new(s)))
+        } else {
+            Msg::Text(Template::new(s))
+        }
+    }
+}
+
 /// `a | b | c`, split once at load (DESIGN 4.5): `tc` parses nothing. The forms are ranges
 /// of the one shared text, so a message of many tiny forms (`"|"` × 10^6) costs 12 bytes a
 /// form, not a string each.
@@ -208,7 +219,7 @@ impl Entry {
 }
 
 /// JS `\s`: ECMAScript WhiteSpace and LineTerminator.
-fn is_js_space(c: char) -> bool {
+pub(crate) fn is_js_space(c: char) -> bool {
     matches!(
         c,
         '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
@@ -374,6 +385,9 @@ pub(crate) enum Node {
     },
     Null,
     Leaf(Entry),
+    /// A linked message resolved for this chunk's view from a weaker layer's text
+    /// (`linked.rs`): lookups read it like a leaf, `has` and `check` do not see it.
+    Linked(Entry),
 }
 
 /// The longest dotted path (`a.b.0.c`) a document may reach, in bytes. Every leaf stores
@@ -432,7 +446,7 @@ impl Tree {
             match map.get(key)? {
                 Node::Null => None,
                 Node::Obj { .. } | Node::Arr { .. } => Some(&NODE),
-                Node::Leaf(e) => Some(e),
+                Node::Leaf(e) | Node::Linked(e) => Some(e),
             }
         }
         // The root key "" is never read (`t("")` reads nothing).
@@ -516,14 +530,7 @@ impl Tree {
                 }
                 Event::ObjectStart => (Some(false), Node::Obj { kids: true }),
                 Event::ArrayStart => (Some(true), Node::Arr { kids: true }),
-                Event::Str(s) => (
-                    None,
-                    Node::Leaf(Entry::Msg(if s.contains('|') {
-                        Msg::Plural(Box::new(PluralMsg::new(&s)))
-                    } else {
-                        Msg::Text(Template::new(&s))
-                    })),
-                ),
+                Event::Str(s) => (None, Node::Leaf(Entry::Msg(Msg::new(&s)))),
                 Event::Num(n) => (
                     None,
                     Node::Leaf(Entry::Value(number_to_js_string(n).into())),
@@ -627,5 +634,122 @@ impl Tree {
                 self.own.insert(k, node);
             }
         }
+    }
+}
+
+// ---- linked messages and `check()` (M3, `linked.rs` / `check.rs`) ----
+
+/// Byte ranges of the placeholder names in `raw` (without the braces), as `t` fills them.
+pub(crate) fn hole_ranges(raw: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
+    Holes::new(raw)
+}
+
+/// A string leaf of a chunk that has an `@` ([`Tree::strings_with_at`]).
+pub(crate) struct AtString {
+    pub(crate) key: Arc<str>,
+    /// In the map of root keys with a dot.
+    pub(crate) own: bool,
+    /// A walk path an own root key covers: no lookup reaches it.
+    pub(crate) hidden: bool,
+    pub(crate) raw: Arc<str>,
+}
+
+impl PluralMsg {
+    /// Number of forms, the `=0 ` marker, the shape `tc` reads.
+    pub(crate) fn layout(&self) -> (usize, bool, &Shape) {
+        (self.forms.len(), self.marked, &self.shape)
+    }
+}
+
+impl Tree {
+    /// Whether an own root key (not `null`) covers the walk path `key`.
+    fn covered(&self, key: &str) -> bool {
+        matches!(self.own.get(key), Some(n) if !matches!(n, Node::Null))
+    }
+
+    /// [`Tree::get`], except that the root key `""` is readable: a link `@:{''}` reads it
+    /// (`valueAt` of `linked-messages`), `t("")` does not.
+    pub(crate) fn link_target(&self, key: &str) -> Option<&Entry> {
+        if key.is_empty() {
+            return match self.walk.get(key)? {
+                Node::Null => None,
+                Node::Obj { .. } | Node::Arr { .. } => Some(&NODE),
+                Node::Leaf(e) | Node::Linked(e) => Some(e),
+            };
+        }
+        self.get(key)
+    }
+
+    /// Every own string leaf with an `@`, in no particular order.
+    pub(crate) fn strings_with_at(&self) -> Vec<AtString> {
+        let out: Vec<AtString> = [(&self.own, true), (&self.walk, false)]
+            .into_iter()
+            .flat_map(|(map, own)| {
+                map.iter().filter_map(move |(k, n)| match n {
+                    Node::Leaf(e @ Entry::Msg(_)) => e
+                        .text()
+                        .filter(|t| t.contains('@'))
+                        .map(|t| (k.clone(), own, t.clone())),
+                    _ => None,
+                })
+            })
+            .map(|(key, own, raw)| AtString {
+                hidden: !own && self.covered(&key),
+                key,
+                own,
+                raw,
+            })
+            .collect();
+        out
+    }
+
+    /// Replaces the string leaf at `key` (in the own map when `own`) with `text`.
+    pub(crate) fn set_message(&mut self, key: &str, own: bool, text: &str) {
+        let map = if own { &mut self.own } else { &mut self.walk };
+        if let Some(node) = map.get_mut(key) {
+            *node = Node::Leaf(Entry::Msg(Msg::new(text)));
+        }
+    }
+
+    /// Stores what this chunk's view reads at `key` where a weaker layer's stored answer
+    /// is not it ([`Node::Linked`]).
+    pub(crate) fn insert_linked(&mut self, key: &str, entry: Entry) {
+        self.walk.insert(Arc::from(key), Node::Linked(entry));
+    }
+
+    /// What `has` sees: [`Tree::get`] without [`Node::Linked`] texts.
+    pub(crate) fn has(&self, key: &str) -> bool {
+        if key.is_empty() {
+            return false;
+        }
+        let read = |map: &FastMap<Arc<str>, Node>| match map.get(key) {
+            None | Some(Node::Null) => None,
+            Some(Node::Linked(_)) => Some(false),
+            Some(_) => Some(true),
+        };
+        match read(&self.own) {
+            Some(true) => true,
+            _ => read(&self.walk) == Some(true),
+        }
+    }
+
+    /// Only linked texts: a chunk `linked.rs` made for a view, no file behind it.
+    pub(crate) fn only_linked(&self) -> bool {
+        !self.walk.is_empty()
+            && self.own.is_empty()
+            && self.walk.values().all(|n| matches!(n, Node::Linked(_)))
+    }
+
+    /// The messages and values a lookup reaches, own texts only (no [`Node::Linked`]).
+    pub(crate) fn leaves(&self) -> impl Iterator<Item = (&str, &Entry)> {
+        let own = self.own.iter().filter_map(|(k, n)| match n {
+            Node::Leaf(e) => Some((&**k, e)),
+            _ => None,
+        });
+        let walk = self.walk.iter().filter_map(|(k, n)| match n {
+            Node::Leaf(e) if !k.is_empty() && !self.covered(k) => Some((&**k, e)),
+            _ => None,
+        });
+        own.chain(walk)
     }
 }

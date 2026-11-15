@@ -4,12 +4,14 @@
 mod args;
 mod catalog;
 mod change;
+mod check;
 mod error;
 mod evict;
 mod hash;
 mod i18n;
 mod json;
 mod lazy;
+mod linked;
 mod loader;
 mod plural;
 mod remote;
@@ -23,6 +25,7 @@ mod watch;
 
 pub use args::{Arg, Args, Count};
 pub use change::{Change, Subscription};
+pub use check::{CheckItem, CheckReport, LinkError};
 pub use error::Error;
 pub use i18n::{Builder, I18n, LocaleInfo, View};
 #[cfg(all(

@@ -128,6 +128,51 @@ pub(crate) struct LazyChunk {
     /// only the builder's lazy sources reach `new`, so an app without them links none of
     /// the loading code (wasm size).
     miss: fn(&LazyChunk) -> Option<&Tree>,
+    /// `linked_messages(true)`: how the pair resolves its own linked messages on load.
+    pub(crate) linked: OnceLock<Arc<LinkCtx>>,
+}
+
+/// One layer of a lazy pair's view, for its linked messages (M3, `linked.rs`).
+pub(crate) enum LinkLayer {
+    Ready(Arc<Chunk>),
+    /// Weak: views of two locales that fall back to each other would hold each other. `true`:
+    /// the same locale's root under a page, which the load may read first (no cycle: a root's
+    /// view holds no page); another locale's pair is read only when it is loaded already.
+    Lazy(Weak<LazyChunk>, bool),
+}
+
+/// What a lazy pair needs to resolve its own linked messages when it loads: the other layers
+/// of its view, strongest first, and the tag of its locale. Set at `build` / `reload`.
+pub(crate) struct LinkCtx {
+    pub(crate) layers: Vec<LinkLayer>,
+    pub(crate) tag: Arc<str>,
+    pub(crate) resolve: fn(&mut Tree, &[&Chunk], &str),
+}
+
+impl LinkCtx {
+    fn apply(&self, tree: &mut Tree) {
+        // the upgraded cells live as long as the borrowed chunks
+        let cells: Vec<Option<Arc<LazyChunk>>> = self
+            .layers
+            .iter()
+            .map(|l| match l {
+                LinkLayer::Ready(_) => None,
+                LinkLayer::Lazy(w, _) => w.upgrade(),
+            })
+            .collect();
+        let layers: Vec<&Chunk> = self
+            .layers
+            .iter()
+            .zip(&cells)
+            .filter_map(|(l, cell)| match (l, cell) {
+                (LinkLayer::Ready(c), _) => Some(&**c),
+                (LinkLayer::Lazy(_, true), Some(cell)) => cell.get(),
+                (LinkLayer::Lazy(_, false), Some(cell)) => cell.loaded(),
+                (LinkLayer::Lazy(..), None) => None,
+            })
+            .collect();
+        (self.resolve)(tree, &layers, &self.tag);
+    }
 }
 
 impl std::fmt::Debug for LazyChunk {
@@ -182,19 +227,28 @@ impl LazyChunk {
             evictable,
             ctl,
             miss,
+            linked: OnceLock::new(),
         }
+    }
+
+    /// The same link context in a new cell of this pair.
+    fn keep_links(&self, next: LazyChunk) -> LazyChunk {
+        if let Some(ctx) = self.linked.get() {
+            let _ = next.linked.set(ctx.clone());
+        }
+        next
     }
 
     /// The same pair, not loaded: what eviction puts in its place.
     pub(crate) fn fresh(&self) -> LazyChunk {
-        LazyChunk::parts(
+        self.keep_links(LazyChunk::parts(
             self.files.clone(),
             self.base.clone(),
             self.over.clone(),
             self.evictable,
             self.ctl.clone(),
             self.miss,
-        )
+        ))
     }
 
     /// The same pair with one more tree over its files (not loaded yet, so the tree waits
@@ -215,7 +269,7 @@ impl LazyChunk {
             self.miss,
         );
         *lock(&next.arrived) = lock(&self.arrived).clone();
-        next
+        self.keep_links(next)
     }
 
     pub(crate) fn loaded(&self) -> Option<&Tree> {
@@ -334,6 +388,9 @@ impl LazyChunk {
         tree.merge(files);
         for o in self.over.iter() {
             tree.merge(Tree::clone(o));
+        }
+        if let Some(ctx) = self.linked.get() {
+            ctx.apply(&mut tree);
         }
         (tree, ok)
     }

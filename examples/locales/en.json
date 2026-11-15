@@ -4,7 +4,9 @@
     "settings": "Settings"
   },
   "greeting": "Hello, {name}!",
-  "footer": "Made with i18n-next",
+  "brand": "i18n-next",
+  "footer": "Made with @:brand",
+  "shout": "@.upper:{'nav.home'}!",
   "apples": "no apples | one apple | {count} apples",
   "cart": "=0 Your cart is empty | {count} item | {count} items"
 }

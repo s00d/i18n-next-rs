@@ -89,5 +89,9 @@ name = "plural"
 harness = false
 
 [[bench]]
+name = "linked"
+harness = false
+
+[[bench]]
 name = "sources"
 harness = false

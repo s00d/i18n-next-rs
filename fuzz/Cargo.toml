@@ -1,0 +1,57 @@
+[package]
+name = "i18n-next-fuzz"
+description = "cargo-fuzz targets of i18n-next (DESIGN 8b.11): local only, like cargo mutants"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Run locally (nightly, cargo-fuzz), never in CI. Seeds: the fixtures, read in place (libFuzzer
+# takes extra corpus directories after the first, writable one):
+#
+#   cargo +nightly fuzz run load_json fuzz/corpus/load_json fixtures/compat fixtures/json-test-suite -- -max_total_time=60
+#   cargo +nightly fuzz run template  fuzz/corpus/template  fixtures/compat -- -max_total_time=60
+#   cargo +nightly fuzz run linked    fuzz/corpus/linked    fixtures/compat/linked -- -max_total_time=60
+#   cargo +nightly fuzz run page_names "$PWD"/fuzz/corpus/page_names "$PWD"/fixtures/compat/locales -- -max_total_time=60
+#   (absolute paths: the target runs in an empty directory of its own and checks it stays empty)
+#
+# Its own workspace and lock, outside the main one: `cargo test --workspace` never builds it.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+i18n-next = { path = "../crates/i18n-next" }
+serde_json = "1"
+
+[[bin]]
+name = "load_json"
+path = "fuzz_targets/load_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "template"
+path = "fuzz_targets/template.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "linked"
+path = "fuzz_targets/linked.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "page_names"
+path = "fuzz_targets/page_names.rs"
+test = false
+doc = false
+bench = false

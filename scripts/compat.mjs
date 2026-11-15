@@ -1,12 +1,12 @@
 // Compat golden generator: runs a case matrix through the published @i18n-micro/core and
 // @i18n-micro/utils (the oracle) and writes fixtures/compat/__golden__/*.md.
 // Format and the Rust mapping contract: fixtures/compat/README.md. Run: pnpm -C scripts compat
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BaseI18n, getByPath, interpolate } from '@i18n-micro/core'
 import { listTranslationFiles, loadTranslationDir } from '@i18n-micro/utils/load-dir'
-import { buildFallbackLocaleChain } from '@i18n-micro/utils/merge-source'
+import { buildFallbackLocaleChain, mergeSourceTranslations } from '@i18n-micro/utils/merge-source'
 import { classifyTranslationRelativePath } from '@i18n-micro/utils/parse-path'
 import { resolveTranslationPayloadPage } from '@i18n-micro/utils/payload-url'
 
@@ -513,3 +513,107 @@ for (const [locale, fallback, page, key, count, params, def] of CATALOG_CASES) {
   pluralLines.push([`tc_missing(${call})`, s(catalog.missed.map((m) => m.join(' ')).join('; '))])
 }
 write('plural', 'plural', pluralLines)
+
+// ---- linked: `@:key` through the Nuxt module's own merge (`mergeSourceTranslations`, linkedMessages) ----
+// Each (locale, page) view is the module's premerged chunk: the fallback chain's root and page files merged,
+// then `resolveLinkedMessages` over the whole of it, the case modifiers by the locale's `iso` (else its code).
+// Results are spelled as `t` returns them in Rust: numbers and booleans as strings, subtrees `<node>`.
+const LINKED_DIR = here('../fixtures/compat/linked')
+const LINKED_LOCALES = [
+  { code: 'en', iso: 'en-US' },
+  { code: 'de', iso: 'de-DE' },
+  { code: 'de-at', iso: 'de-AT', fallbackLocale: 'de' },
+  { code: 'de-ch', fallbackLocale: 'de' },
+  { code: 'tr', iso: 'tr-TR' },
+  { code: 'el', iso: 'el-GR' },
+  { code: 'lt' },
+  { code: 'xx', iso: 'en_US' },
+]
+const LINKED_PAGES = ['index', 'about', 'contact', 'nopage']
+const linkedFiles = new Map()
+const walkDir = (dir, rel) => {
+  for (const name of readdirSync(dir).sort()) {
+    const full = `${dir}/${name}`
+    const r = rel ? `${rel}/${name}` : name
+    if (statSync(full).isDirectory()) walkDir(full, r)
+    else linkedFiles.set(r, JSON.parse(readFileSync(full, 'utf8')))
+  }
+}
+walkDir(LINKED_DIR, '')
+const tEnc = (v) => (v === undefined || v === null ? '<missing>' : typeof v === 'object' ? '<node>' : s(String(v)))
+const linkedView = (locale, page, linkedMessages, locales = LINKED_LOCALES, read = (f) => linkedFiles.get(f) ?? {}) =>
+  mergeSourceTranslations({ locale, pageName: page, locales, globalFallbackLocale: 'en', readLocaleFile: read, linkedMessages, warn: () => {} })
+const linkedLines = []
+for (const { code } of LINKED_LOCALES) {
+  for (const page of LINKED_PAGES) {
+    const tree = await linkedView(code, page, true)
+    const plain = await linkedView(code, page, false)
+    for (const p of leafPaths(tree, null, [])) {
+      linkedLines.push([`linked_t(${s(code)}, ${s(page)}, ${s(p)})`, tEnc(getByPath(tree, p))])
+      // off by default: the same view without `linkedMessages` keeps every `@:` as written
+      linkedLines.push([`plain_t(${s(code)}, ${s(page)}, ${s(p)})`, tEnc(getByPath(plain, p))])
+    }
+    // placeholders of a linked text interpolate when the message is read
+    for (const key of ['greet', 'capName', 'upperName', 'lowerHole', 'greetDe', 'plural']) {
+      const v = getByPath(tree, key)
+      if (typeof v !== 'string') continue
+      const params = { name: 'Ann', Name: 'Bo', count: 3 }
+      linkedLines.push([`linked_tp(${s(code)}, ${s(page)}, ${s(key)}, ${lit(params)})`, s(interpolate(v, params))])
+    }
+  }
+}
+
+// ---- case modifiers: toLocaleUpperCase / toLocaleLowerCase by tag, through the same merge ----
+// One locale `p` with `iso: tag` ("" = no iso: the code `p`, which no tag accepts: the default mapping).
+const CASE_TAGS = ['tr', 'TR', 'tr-TR', 'tur', 'az', 'az-Cyrl', 'aze', 'lt', 'lit', 'el', 'el-GR', 'ell', 'gre', 'en', 'de', 'nl', 'hy', 'en_US', '']
+const caseTexts = new Map(CASE_TAGS.map((t) => [t, new Set()]))
+const addCase = (tags, texts) => {
+  for (const t of tags) for (const x of texts) caseTexts.get(t).add(x)
+}
+addCase(CASE_TAGS, [
+  'istanbul', 'DİYARBAKIR', 'IŞIK ışık', 'iIİı', 'İ', 'i̇', 'J́', 'Į̃', 'Ì Í Ĩ', 'ŠIAULIAI', 'άλφα',
+  'ΆΛΦΑ', 'όλα τα ή', 'Σ ΟΔΟΣ ΣΣ', 'ΟΔΟΣ.', 'ﬁ ß ŉ', 'straße', 'Hello {name} and i', '{name} is here', 'i{a}i', 'I{ b}I',
+  '  leading', '', 'ǅ ǆ Ǆ', 'ΐΰ', 'ᾳ ᾼ', 'x', 'ÀÉÎÕÜ àéîõü', 'Привет Мир', 'ǰ', 'İ́', 'Ⅻ ⓐ', 'ꞵ Ꞵ', 'a|B|c',
+])
+const MARKS = ['̇', '́', '̀', '̣', '̨', '̴', '̖', 'ͅ', 'a', '']
+const combos = (bases) => bases.flatMap((b) => MARKS.flatMap((m1) => MARKS.map((m2) => b + m1 + m2)))
+addCase(['lt', 'lit'], combos(['I', 'J', 'Į', 'i', 'j', 'į', 'Ì', 'a', 'ɨ']))
+addCase(['tr', 'az', 'aze'], combos(['I', 'İ', 'i', 'ı', 'a']))
+// every combining mark of the common blocks, after the letters the dot rules look back to or ahead from
+const markRanges = [[0x300, 0x36f], [0x483, 0x489], [0x591, 0x5c7], [0x610, 0x61a], [0x64b, 0x65f], [0x1ab0, 0x1aff], [0x1dc0, 0x1dff], [0x20d0, 0x20f0], [0xfe20, 0xfe2f]]
+for (const [a, b] of markRanges) {
+  for (let c = a; c <= b; c++) {
+    const m = String.fromCodePoint(c)
+    if (!/\p{Assigned}/u.test(m)) continue
+    addCase(['lt'], [`I${m}`, `I${m}́`, `i${m}̇`, `Į${m}̃`])
+    addCase(['tr'], [`I${m}̇`, `I${m}`])
+    addCase(['el'], [`η${m}`, `ή${m}α`, `ά${m}ι`])
+  }
+}
+for (const c of '\'.:·ʹʰ1-­‍’ыZ ') addCase(['el', ''], [`ή${c}α`, `ή${c}1`, `α${c}ή`, `Α${c}Σ`, `ΑΣ${c}Β`, `Σ${c}Α`])
+const softDotted = [...Array(0x20000).keys()].filter((c) => /\p{Soft_Dotted}/u.test(String.fromCodePoint(c)))
+addCase(['lt'], softDotted.flatMap((c) => [`${String.fromCodePoint(c)}̇`, `${String.fromCodePoint(c)}̣̇`]))
+// every Greek letter alone and in context (ICU GreekUpper letter data)
+for (const [a, b] of [[0x370, 0x3ff], [0x1f00, 0x1fff]]) {
+  for (let c = a; c <= b; c++) {
+    const g = String.fromCodePoint(c)
+    if (!/\p{Assigned}/u.test(g)) continue
+    addCase(['el'], [g, `${g}ι`, `α${g}`, `${g}́`, `ά${g}`])
+  }
+}
+addCase(['el'], ['Ω', 'άυλος', 'Μαΐου', 'ευφυΐα', 'νεράιδα', 'ἀέρι', 'ᾠδή', 'ή', 'Ή', 'ή ή', 'αή', 'ή.', 'ή', 'ῄ', 'ϔ ϓ ϒ', 'άι', 'ά̈ι', 'ΐ́'])
+const caseLines = []
+for (const [tag, texts] of caseTexts) {
+  const list = [...texts]
+  const tree = {}
+  list.forEach((x, i) => {
+    tree[`t${i}`] = x
+    for (const m of ['upper', 'lower', 'capitalize']) tree[`${m}${i}`] = `@.${m}:t${i}`
+  })
+  const locales = [tag === '' ? { code: 'p' } : { code: 'p', iso: tag }]
+  const out = await linkedView('p', 'index', true, locales, (f) => (f === 'p.json' ? tree : {}))
+  list.forEach((x, i) => {
+    for (const m of ['upper', 'lower', 'capitalize']) caseLines.push([`case(${s(tag)}, ${s(m)}, ${s(x)})`, s(out[`${m}${i}`])])
+  })
+}
+write('linked', 'linked messages', [...linkedLines, ...caseLines])

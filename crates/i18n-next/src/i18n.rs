@@ -10,6 +10,7 @@
 use crate::args::{Args, Count};
 use crate::catalog::{Entry, Msg, Tree, WithCount, interpolate_once};
 use crate::change::{Change, Listeners};
+use crate::check::{self, CheckReport};
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::lazy::{Layer, LazyCtl};
@@ -55,6 +56,12 @@ impl LocaleData {
             Some(p) => self.pages.get(p),
         }
     }
+
+    /// What `has` reads: page then root, own keys only (no texts `linked.rs` stored).
+    fn has(&self, page: Option<&str>, key: &str) -> bool {
+        let has = |l: Option<&Layer>| l.and_then(Layer::chunk).is_some_and(|c| c.has(key));
+        has(page.and_then(|p| self.pages.get(p))) || has(self.root.as_ref())
+    }
 }
 
 type Chain = Arc<[Arc<LocaleData>]>;
@@ -74,6 +81,10 @@ pub(crate) struct Meta {
     /// Raw `numberFormats` / `datetimeFormats` of `i18n.json`, for M5 / M6.
     #[allow(dead_code, reason = "read by the formats of M5 / M6")]
     formats: (Option<Box<str>>, Option<Box<str>>),
+    /// What `check()` reads besides the chunks (M3).
+    check: check::Facts,
+    /// `linked_messages(true)`: `build` and `reload` resolve links with it.
+    linked: Option<ResolveLinked>,
 }
 
 impl Meta {
@@ -215,7 +226,7 @@ impl Snapshot {
             Some(code) if self.chains.contains_key(code) => self.data.get(code).map(|d| &**d),
             Some(_) => None,
         };
-        own.is_some_and(|d| d.get(self.meta.page(page), key).is_some())
+        own.is_some_and(|d| d.has(self.meta.page(page), key))
     }
 }
 
@@ -870,7 +881,12 @@ impl I18n {
         let timer = crate::trace::Timer::start();
         let inner = &*self.inner;
         let change = inner.write(|s| {
-            let data = source::load(&inner.sources, &s.meta, &inner.ctl)?;
+            let mut data = source::load(&inner.sources, &s.meta, &inner.ctl)?;
+            // linked messages again, over what was read again (M3, linked.rs)
+            if let Some(resolve) = s.meta.linked {
+                let broken = resolve(&mut data, &s.meta, inner.missing.as_ref());
+                *check::lock(&s.meta.check.broken) = broken;
+            }
             let data = data.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
             Ok(Some(Snapshot::new(
                 s.meta.clone(),
@@ -1091,6 +1107,9 @@ pub struct Builder {
     aliases: Vec<(String, String)>,
     config: Option<ConfigSource>,
     missing: Option<Missing>,
+    /// `linked_messages(true)`: the resolver, as a pointer so an app that never turns links
+    /// on links none of their code (no case tables in its `.wasm`).
+    linked: Option<ResolveLinked>,
 }
 
 impl fmt::Debug for Builder {
@@ -1309,6 +1328,33 @@ impl Builder {
         self
     }
 
+    /// Resolves linked messages at `build` (`@:key`, `@.upper:key`, `@.lower:key`,
+    /// `@.capitalize:key`, `@:{'key'}`), as the Nuxt module's `linkedMessages: true`: each
+    /// `(locale, page)` view is resolved over everything it reads (its page, root and fallback
+    /// locales), the case modifiers by the locale's `iso`. Lookups then read plain text: no
+    /// cost at `t`. A link to a missing key, a subtree or a cycle leaves the whole message as
+    /// written and calls `missing(locale, key, page)` once; [`I18n::check`] lists it. Off by
+    /// default: `@:` may be plain text. Text added later with `add_messages` is not resolved.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .linked_messages(true)
+    ///     .messages("en", None, r#"{"brand": "acme", "title": "Welcome to @:brand",
+    ///                              "shout": "@.upper:brand", "intro": "@.capitalize:{'brand'}."}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.t("title"), "Welcome to acme");
+    /// assert_eq!(i18n.t("shout"), "ACME");
+    /// assert_eq!(i18n.t("intro"), "Acme.");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn linked_messages(mut self, enabled: bool) -> Self {
+        self.linked = enabled.then_some(resolve_linked as ResolveLinked);
+        self
+    }
+
     fn read_config(&self) -> Result<Config, Error> {
         match &self.config {
             None => Ok(Config::default()),
@@ -1394,7 +1440,7 @@ impl Builder {
             meta.aliases.insert(Arc::from(&**from), Arc::from(&**to));
         }
         let ctl = Arc::new(LazyCtl::new(self.sources.evict));
-        let data = source::load(&self.sources, &meta, &ctl)?;
+        let mut data = source::load(&self.sources, &meta, &ctl)?;
         // Folded pages: an alias resolves to a page with no chunk, which reads the root.
         if !self.sources.no_pages {
             for to in meta.aliases.values() {
@@ -1403,6 +1449,19 @@ impl Builder {
                     return Err(Error::UnknownPage(String::from(&**to)));
                 }
             }
+        }
+
+        // ---- linked messages and check() (M3, linked.rs / check.rs) ----
+        meta.check.reference = Some(
+            config
+                .default_locale
+                .as_deref()
+                .map_or_else(|| locale.clone(), Arc::from),
+        );
+        meta.linked = self.linked;
+        if let Some(resolve) = self.linked {
+            let broken = resolve(&mut data, &meta, self.missing.as_ref());
+            *check::lock(&meta.check.broken) = broken;
         }
 
         let data = data.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
@@ -1421,6 +1480,99 @@ impl Builder {
         });
         let _ = ctl.owner.set(Arc::downgrade(&inner));
         Ok(I18n { inner })
+    }
+}
+
+// ---- linked messages and check() (M3, linked.rs / check.rs) ----
+
+/// [`resolve_linked`] as the builder keeps it.
+type ResolveLinked =
+    fn(&mut FastMap<Arc<str>, LocaleData>, &Meta, Option<&Missing>) -> Vec<crate::linked::Broken>;
+
+/// Resolves the linked messages of `data` (`linked.rs`): the ready chunks go into one ordered
+/// map and back; each lazy or remote pair gets what it needs to resolve its own messages when
+/// it loads ([`crate::lazy::LinkCtx`]). Reports each message left as written once through
+/// `missing`.
+fn resolve_linked(
+    data: &mut FastMap<Arc<str>, LocaleData>,
+    meta: &Meta,
+    missing: Option<&Missing>,
+) -> Vec<crate::linked::Broken> {
+    let mut chunks = crate::linked::Chunks::new();
+    for (code, d) in data.iter_mut() {
+        if let Some(Layer::Ready(c)) = d.root.take_if(|l| matches!(l, Layer::Ready(_))) {
+            chunks.push(((code.clone(), None), c));
+        }
+        let ready: Vec<Arc<str>> = d
+            .pages
+            .iter()
+            .filter(|(_, l)| matches!(l, Layer::Ready(_)))
+            .map(|(p, _)| p.clone())
+            .collect();
+        for p in ready {
+            if let Some(Layer::Ready(c)) = d.pages.remove(&p) {
+                chunks.push(((code.clone(), Some(p)), c));
+            }
+        }
+    }
+    chunks.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    let setup = crate::linked::Setup {
+        links: &meta.links,
+        fallback: meta.fallback.as_deref(),
+        iso: &meta.iso,
+    };
+    let broken = crate::linked::resolve(&mut chunks, &setup);
+    // a lazy pair keeps its cell: what was stored for its view is dropped, it resolves its
+    // own messages when it loads
+    for ((code, page), chunk) in chunks {
+        let d = data.entry(code).or_default();
+        match page {
+            None if matches!(d.root, Some(Layer::Lazy(_))) => {}
+            None => d.root = Some(Layer::Ready(chunk)),
+            Some(p) if matches!(d.pages.get(&p), Some(Layer::Lazy(_))) => {}
+            Some(p) => {
+                d.pages.insert(p, Layer::Ready(chunk));
+            }
+        }
+    }
+    crate::linked::lazy_contexts(data, &setup);
+    if let Some(missing) = missing {
+        let mut last = None;
+        for b in &broken {
+            let at = (&b.locale, &b.page, &b.key);
+            if last != Some(at) {
+                missing(&b.locale, &b.key, b.page.as_deref().unwrap_or("index"));
+                last = Some(at);
+            }
+        }
+    }
+    broken
+}
+
+impl I18n {
+    /// Checks the catalog (DESIGN 8b.8): pages with a file in only some locales, keys of
+    /// the default locale missing elsewhere, `{placeholders}` that differ from the default
+    /// locale's, plural form counts that do not fit the locale's CLDR categories, links that
+    /// left a linked message as written. Disabled locales are skipped. Meant for tests:
+    /// `assert!(i18n.check().is_clean(), "{}", i18n.check())`.
+    #[must_use]
+    pub fn check(&self) -> CheckReport {
+        self.inner.read(|s| {
+            let meta = &s.meta;
+            let chunks = s
+                .data
+                .iter()
+                .filter(|(code, _)| !meta.disabled(code))
+                .flat_map(|(code, d)| {
+                    let root = d
+                        .root
+                        .iter()
+                        .filter_map(move |l| Some((code, None, l.chunk()?)));
+                    let pages = d.pages.iter();
+                    root.chain(pages.filter_map(move |(p, l)| Some((code, Some(p), l.chunk()?))))
+                });
+            check::run(chunks, &meta.check, |code| s.plural_of(code))
+        })
     }
 }
 

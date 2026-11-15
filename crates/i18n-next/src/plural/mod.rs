@@ -295,6 +295,23 @@ impl Plural {
         }
     }
 
+    /// Names of the categories small counts reach, without `zero` (`check()` messages).
+    pub(crate) fn named_names(&self) -> Vec<&'static str> {
+        self.named
+            .list
+            .iter()
+            .take(self.named.len)
+            .map(|c| match c {
+                Category::Zero => "zero",
+                Category::One => "one",
+                Category::Two => "two",
+                Category::Few => "few",
+                Category::Many => "many",
+                Category::Other => "other",
+            })
+            .collect()
+    }
+
     /// The category of a whole count.
     pub(crate) fn category(&self, count: Whole) -> Category {
         match count {
@@ -631,6 +648,19 @@ fn language_alias(key: &str, tag: &str) -> Option<&'static str> {
     (bare || key != tag).then(|| nth(rules::ALIAS_VALUES, &rules::ALIAS_VALUES_ENDS, at))
 }
 
+/// `f` of the language subtag `Intl` canonicalizes `tag` to (`iw` → `he`), lowercase; `None`
+/// when `Intl` rejects the tag (the case modifiers of linked messages, `linked/case.rs`).
+pub(crate) fn canonical_language<R>(tag: &str, f: impl FnOnce(&str) -> R) -> Option<R> {
+    let t = parse(tag)?;
+    let replacement = t
+        .variant_alias
+        .or_else(|| language_alias(t.language.as_str(), tag));
+    Some(match replacement {
+        Some(r) => f(Buf::<8>::of(r.split('-').next().unwrap_or(""), lower).as_str()),
+        None => f(t.language.as_str()),
+    })
+}
+
 /// The rule set `Intl.PluralRules` uses for `tag`, `None` for the index rule.
 pub(crate) fn rule_index(tag: &str) -> Option<usize> {
     let t = parse(tag)?;
@@ -760,6 +790,32 @@ impl Shape {
             }
             _ => by_index(),
         }
+    }
+
+    /// What `check()` says of a plural message with this shape in a locale with `plural`
+    /// rules (`None`: the index rule, any count of 2 or more forms reads): `None` when `tc`
+    /// reads it by category as written; else the form counts it expects and whether only the
+    /// shape is off (the count matches, yet `tc` falls back to the index rule).
+    ///
+    /// Expected: the unmarked shape `zero | <one form per category small counts reach>`
+    /// (`ru`: 4, `en`: 3); a `=0 ` marked message also takes one form per category of the
+    /// locale (`en`: `=0 none | one | other`).
+    pub(crate) fn check(
+        &self,
+        marked: bool,
+        plural: Option<&Plural>,
+    ) -> Option<(Vec<usize>, bool)> {
+        let p = plural?;
+        let named = p.named.len + 1;
+        let mut expected = vec![named];
+        if marked && p.all.len + 1 != named {
+            expected.push(p.all.len + 1);
+        }
+        if !expected.contains(&self.len) {
+            return Some((expected, false));
+        }
+        let shape_off = !marked && p.named.len >= 3 && !self.unmarked(p);
+        shape_off.then_some((expected, true))
     }
 
     /// `unmarkedIndex` applies: a zero form without `{`, then one form per named category,

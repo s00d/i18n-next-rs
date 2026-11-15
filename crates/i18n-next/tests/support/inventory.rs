@@ -530,6 +530,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "fallback_for",
                 "files",
                 "iso",
+                "linked_messages",
                 "lazy_dir",
                 "lazy_files",
                 "locale",
@@ -541,12 +542,14 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "remote",
             ],
         ));
+        want.extend(methods("CheckReport", &["is_clean"]));
         want.extend(methods(
             "I18n",
             &[
                 "add_file",
                 "add_messages",
                 "builder",
+                "check",
                 "ensure_async",
                 "get",
                 "has",

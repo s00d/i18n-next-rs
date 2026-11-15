@@ -1,0 +1,8 @@
+{
+  "brand": "Akme",
+  "shout": "@.upper:brand",
+  "nav": { "home": "Startseite" },
+  "greetDe": "Hallo @:withName",
+  "cycleA": "DA",
+  "deOnly": "nur deutsch @:brand"
+}

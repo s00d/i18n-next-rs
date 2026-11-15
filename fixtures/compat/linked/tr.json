@@ -1,0 +1,8 @@
+{
+  "city": "istanbul",
+  "big": "DİYARBAKIR IŞIK",
+  "upCity": "@.upper:city",
+  "capCity": "@.capitalize:city",
+  "lowBig": "@.lower:big",
+  "shoutBrand": "@.upper:brand"
+}

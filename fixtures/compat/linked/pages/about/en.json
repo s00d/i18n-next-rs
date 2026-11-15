@@ -1,0 +1,6 @@
+{
+  "brand": "acme-about",
+  "pageOnly": "page text",
+  "title2": "@:title on about",
+  "toRoot": "@:nav.home from the page"
+}

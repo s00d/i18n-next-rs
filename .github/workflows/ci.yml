@@ -258,6 +258,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo run -p playground-rust --locked -- --check
 
+  compat:
+    # The JS oracle (@i18n-micro/core and utils, pinned in scripts/package.json) must still
+    # produce the committed goldens: a diff means the oracle or the fixtures changed.
+    name: compat goldens up to date
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C scripts compat
+      - run: git diff --exit-code fixtures/compat
+
   # Public API snapshots in api/ (DESIGN 8b.9): any change shows up as a diff in the PR.
   public-api:
     name: public API

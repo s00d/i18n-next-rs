@@ -13,7 +13,9 @@ include = ["/src/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/R
     # Workspace checks, not crate tests: version_sync reads the root Cargo.toml, the other
     # members and the plugin package.json; bench_inventory reads api/<crate>.txt at the
     # workspace root. None of them exist in the published package.
-    "!/tests/version_sync.rs", "!/tests/bench_inventory.rs", "!/tests/support/inventory.rs"]
+    "!/tests/version_sync.rs", "!/tests/bench_inventory.rs", "!/tests/support/inventory.rs",
+    # Reads the JSONTestSuite corpus from fixtures/ at the workspace root.
+    "!/tests/json_differential.rs"]
 
 [lints]
 workspace = true
@@ -43,6 +45,12 @@ time = []
 proptest = "1.12"
 dhat = "0.3"
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+# Oracles for the own `json` and `hash` (DESIGN 7.3a): differential tests and the
+# comparison benches only, never a runtime dependency (2.3).
+serde_json = "1.0.154"
+serde = "1.0.229"
+foldhash = "0.2"
+rustc-hash = "2.1"
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 gungraun = "0.20"
@@ -50,15 +58,14 @@ gungraun = "0.20"
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
 
-# proptest drives the session models from M1 on (DESIGN 7.3); declared in M0 so the
-# test skeleton and its version are settled with the rest of the tooling.
-[package.metadata.cargo-machete]
-ignored = ["proptest"]
-
 [[bench]]
 name = "lookup"
 harness = false
 
 [[bench]]
 name = "instructions"
+harness = false
+
+[[bench]]
+name = "json"
 harness = false

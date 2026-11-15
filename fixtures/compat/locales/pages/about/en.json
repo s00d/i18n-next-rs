@@ -1,0 +1,7 @@
+{
+  "title": "About us",
+  "nav": { "home": "Home (about page)" },
+  "shadow": "en-about-page",
+  "page_only": "about-en",
+  "page_null": "en-page"
+}

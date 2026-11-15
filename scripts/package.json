@@ -4,6 +4,9 @@
   "private": true,
   "description": "Generators for compat goldens, CLDR data, tzdb and the performance table. Versions are pinned: CLDR equals the one in Node CI.",
   "type": "module",
+  "scripts": {
+    "compat": "node compat.mjs"
+  },
   "devDependencies": {
     "@i18n-micro/core": "2.1.0",
     "@i18n-micro/utils": "2.1.1",

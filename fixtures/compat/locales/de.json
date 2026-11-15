@@ -1,0 +1,11 @@
+{
+  "nav": { "home": "Startseite", "about": "Über uns" },
+  "greeting": "Hallo, {name}!",
+  "only_de": "Nur Deutsch",
+  "shadow": "de-root",
+  "a.b": null,
+  "a": { "b": "verschachtelt" },
+  "list": ["null-de"],
+  "num": { "int": 2 },
+  "bool": { "yes": false }
+}

@@ -1,0 +1,6 @@
+{
+  "nav": { "home": "Главная" },
+  "greeting": "Привет, {name}!",
+  "nil_override": null,
+  "empty": "не пусто"
+}

@@ -1,13 +1,17 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
-// Building blocks of the catalog (M1, DESIGN 2.3). Their tests and the `json` bench
-// include these files with `#[path]`, so they stay crate-private and the public API
-// does not change.
-#[allow(dead_code, reason = "used by the catalog, which lands next in M1")]
+mod args;
+mod catalog;
+mod error;
 mod hash;
-#[allow(dead_code, reason = "used by the catalog, which lands next in M1")]
+mod i18n;
 mod json;
+mod loader;
+
+pub use args::{Arg, Args};
+pub use error::Error;
+pub use i18n::{Builder, I18n, LocaleInfo, View};
 
 /// The crate version, as published (`CARGO_PKG_VERSION`).
 ///

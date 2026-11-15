@@ -1,5 +1,6 @@
-//! Calls what an app would call, so the linker keeps exactly that part of i18n-next.
-//! Grows with the API (M1: build a catalog from embedded files and call `t`).
+//! Calls what an app would call, so the linker keeps exactly that part of i18n-next:
+//! a catalog built from embedded files (root + page), `t`, `t_with`, a page view and a
+//! locale switch.
 //!
 //! A binary, not a cdylib: exporting from a cdylib needs `#[unsafe(no_mangle)]` (or
 //! wasm-bindgen glue, ~26 KB), and the probe stays under `forbid(unsafe_code)`. The std
@@ -12,7 +13,25 @@
 #[cfg(feature = "empty")]
 use i18n_next as _;
 
+#[cfg(not(feature = "empty"))]
 fn main() {
-    #[cfg(not(feature = "empty"))]
-    std::hint::black_box(i18n_next::version().len());
+    use i18n_next::{Args, I18n};
+    use std::hint::black_box;
+
+    let files: [(&str, &[u8]); 4] = [
+        ("en.json", include_bytes!("../../../examples/locales/en.json")),
+        ("ru.json", include_bytes!("../../../examples/locales/ru.json")),
+        ("pages/settings/en.json", include_bytes!("../../../examples/locales/pages/settings/en.json")),
+        ("pages/settings/ru.json", include_bytes!("../../../examples/locales/pages/settings/ru.json")),
+    ];
+    let Ok(i18n) = I18n::builder().locale("ru").fallback("en").files(black_box(files)).build() else {
+        return;
+    };
+    black_box(i18n.t(black_box("nav.home")));
+    black_box(i18n.t_with(black_box("greeting"), &Args::new().str("name", black_box("Ann"))));
+    black_box(i18n.page(black_box("settings")).t(black_box("title")));
+    let _ = black_box(i18n.set_locale(black_box("en")));
 }
+
+#[cfg(feature = "empty")]
+fn main() {}

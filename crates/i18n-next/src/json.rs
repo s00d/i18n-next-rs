@@ -53,7 +53,7 @@ pub(crate) enum JsonErrorKind {
 }
 
 impl JsonErrorKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::UnexpectedEof => "unexpected end of input",
             Self::UnexpectedByte => "unexpected byte",
@@ -430,6 +430,10 @@ impl<'a> Reader<'a> {
 /// Appends `s` quoted and escaped exactly like JS `JSON.stringify`: `"` and `\`, the
 /// short escapes `\b \f \n \r \t`, other control characters below U+0020 as `\u00xx`
 /// (lowercase hex); everything else, U+007F and U+2028 / U+2029 included, as is.
+#[allow(
+    dead_code,
+    reason = "the payload writer of M7; tested and benched already"
+)]
 pub(crate) fn write_str(out: &mut String, s: &str) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     out.reserve(s.len() + 2);
@@ -464,57 +468,156 @@ pub(crate) fn write_str(out: &mut String, s: &str) {
 
 /// ECMAScript `Number::toString` of the `f64` that raw JSON number text denotes.
 ///
-/// Digits come from Rust's shortest round-trip formatting (`{:e}`, the same shortest
-/// digits JS uses); the layout follows ECMA-262 `Number::toString`: plain digits up to
-/// 21 integer digits, `0.000ddd` down to 1e-7, exponent form (`1e+21`, `1.5e-7`) outside.
+/// A number with at most 15 significant digits in the normal range is laid out from its
+/// own digits: such a decimal survives the round trip through `f64` unchanged, so its
+/// shortest digits are its digits (no `f64` parsing or formatting, which would cost the
+/// micro build about 30 KB of `.wasm`, DESIGN 2.4). Anything else goes through `f64`
+/// with the `format` feature; without it, the digits are kept as written (normalized),
+/// which differs from JS only past 15 significant digits or outside 1e-306..1e308.
 pub(crate) fn number_to_js_string(raw: &str) -> String {
-    let v: f64 = raw.parse().unwrap_or(f64::NAN);
-    if v.is_nan() {
-        return String::from("NaN");
-    }
-    if v == 0.0 {
-        return String::from("0");
-    }
-    if v.is_infinite() {
-        return String::from(if v.is_sign_negative() {
-            "-Infinity"
-        } else {
-            "Infinity"
-        });
-    }
-    let sci = format!("{:e}", v.abs());
-    let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
-    let exp: i32 = exp.parse().unwrap_or(0);
-    // Digits d0 . rest: k digits in all, the decimal point after n of them.
-    let (d0, rest) = (&mantissa[..1], mantissa.get(2..).unwrap_or(""));
-    let k = 1 + rest.len() as i32;
-    let n = exp + 1;
     let mut out = String::new();
-    if v.is_sign_negative() {
+    let negative = raw.starts_with('-');
+    let body = raw.trim_start_matches('-');
+    let (mantissa, exp) = match body.find(['e', 'E']) {
+        Some(i) => (&body[..i], body[i + 1..].trim_start_matches('+')),
+        None => (body, "0"),
+    };
+    let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let digits = || int.bytes().chain(frac.bytes());
+    let lead = digits().take_while(|&b| b == b'0').count();
+    let total = int.len() + frac.len();
+    let trail = digits().rev().take_while(|&b| b == b'0').count();
+    if lead == total {
+        out.push('0');
+        return out;
+    }
+    let sig: Vec<u8> = digits().skip(lead).take(total - lead - trail).collect();
+    // value = 0.sig × 10^n; a huge exponent is clamped, it only picks the slow path
+    let exp: i64 = exp.parse().unwrap_or(if exp.starts_with('-') {
+        -100_000
+    } else {
+        100_000
+    });
+    let n = (int.len() as i64 - lead as i64).saturating_add(exp.clamp(-100_000, 100_000));
+    let fast = sig.len() <= 15 && n > -306 && n < 309;
+    #[cfg(feature = "format")]
+    if !fast {
+        push_js_number(&mut out, raw.parse().unwrap_or(f64::NAN));
+        return out;
+    }
+    let _ = fast;
+    // ASCII digits.
+    let sig = std::str::from_utf8(&sig).unwrap_or("0");
+    layout(&mut out, negative, sig, n as i32);
+    out
+}
+
+/// ECMA-262 `Number::toString` layout of `0.digits × 10^n` (`digits` without leading or
+/// trailing zeros): plain digits up to 21 integer digits, `0.000ddd` down to 1e-7,
+/// exponent form (`1e+21`, `1.5e-7`) outside.
+fn layout(out: &mut String, negative: bool, digits: &str, n: i32) {
+    let (d0, rest) = digits.split_at(1);
+    let k = digits.len() as i32;
+    if negative {
         out.push('-');
     }
     if k <= n && n <= 21 {
-        out.push_str(d0);
-        out.push_str(rest);
+        out.push_str(digits);
         out.extend(std::iter::repeat_n('0', (n - k) as usize));
     } else if 0 < n && n <= 21 {
-        let split = (n - 1) as usize;
-        out.push_str(d0);
-        out.push_str(&rest[..split]);
+        let (a, b) = digits.split_at(n as usize);
+        out.push_str(a);
         out.push('.');
-        out.push_str(&rest[split..]);
+        out.push_str(b);
     } else if -6 < n && n <= 0 {
         out.push_str("0.");
         out.extend(std::iter::repeat_n('0', (-n) as usize));
-        out.push_str(d0);
-        out.push_str(rest);
+        out.push_str(digits);
     } else {
         out.push_str(d0);
         if !rest.is_empty() {
             out.push('.');
             out.push_str(rest);
         }
-        out.push_str(&format!("e{:+}", n - 1));
+        out.push('e');
+        let e = n - 1;
+        out.push(if e < 0 { '-' } else { '+' });
+        push_u64(out, u64::from(e.unsigned_abs()));
     }
-    out
+}
+
+/// Stack buffer for `{:e}` of an `f64`: the longest is `2.2250738585072014e-308`
+/// (23 bytes), so formatting never touches the heap.
+#[cfg(feature = "format")]
+struct ExpBuf {
+    bytes: [u8; 32],
+    len: usize,
+}
+
+#[cfg(feature = "format")]
+impl fmt::Write for ExpBuf {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let end = self.len + s.len();
+        let slot = self.bytes.get_mut(self.len..end).ok_or(fmt::Error)?;
+        slot.copy_from_slice(s.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
+
+/// Appends ECMAScript `Number::toString(v)` (JS `String(v)`) to `out`, with no heap
+/// temporary: shortest round-trip digits from Rust's `{:e}` (the same digits JS uses) in
+/// the [`layout`] of ECMA-262; `NaN`, `Infinity`, `-Infinity`, and `-0` as `0`.
+#[cfg(feature = "format")]
+pub(crate) fn push_js_number(out: &mut String, v: f64) {
+    if v.is_nan() {
+        out.push_str("NaN");
+        return;
+    }
+    if v == 0.0 {
+        out.push('0');
+        return;
+    }
+    if v.is_infinite() {
+        out.push_str(if v < 0.0 { "-Infinity" } else { "Infinity" });
+        return;
+    }
+    let mut buf = ExpBuf {
+        bytes: [0; 32],
+        len: 0,
+    };
+    // Cannot fail: 32 bytes hold every finite `f64` in `{:e}`.
+    let _ = fmt::Write::write_fmt(&mut buf, format_args!("{:e}", v.abs()));
+    let sci = std::str::from_utf8(&buf.bytes[..buf.len]).unwrap_or("0e0");
+    let (mantissa, exp) = sci.split_once('e').unwrap_or((sci, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let mut digits = [0u8; 20];
+    let mut k = 0;
+    for b in mantissa.bytes().filter(u8::is_ascii_digit) {
+        digits[k] = b;
+        k += 1;
+    }
+    layout(
+        out,
+        v < 0.0,
+        std::str::from_utf8(&digits[..k]).unwrap_or("0"),
+        exp + 1,
+    );
+}
+
+/// Appends the decimal digits of `n` (no `core::fmt`).
+pub(crate) fn push_u64(out: &mut String, mut n: u64) {
+    let mut digits = [0u8; 20];
+    let mut i = digits.len();
+    loop {
+        i -= 1;
+        digits[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    for &d in &digits[i..] {
+        out.push(char::from(d));
+    }
 }

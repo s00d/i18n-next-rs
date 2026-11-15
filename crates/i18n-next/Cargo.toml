@@ -14,8 +14,8 @@ include = ["/src/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/R
     # members and the plugin package.json; bench_inventory reads api/<crate>.txt at the
     # workspace root. None of them exist in the published package.
     "!/tests/version_sync.rs", "!/tests/bench_inventory.rs", "!/tests/support/inventory.rs",
-    # Reads the JSONTestSuite corpus from fixtures/ at the workspace root.
-    "!/tests/json_differential.rs"]
+    # Read the JSONTestSuite corpus / compat goldens from fixtures/ at the workspace root.
+    "!/tests/json_differential.rs", "!/tests/compat.rs", "!/tests/support/compat.rs", "!/tests/wasm.rs"]
 
 [lints]
 workspace = true

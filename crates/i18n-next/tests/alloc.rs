@@ -144,6 +144,63 @@ fn hot_path_allocations() {
         format!("Hallo, Ann! 3 neu, A{long}")
     );
 
+    // case: tc() → exactly 1 block (the result) on every path: a plural by category
+    // (ru, unmarked), by index, `=0 `, a big f64 count (shortest digits on the stack), one
+    // trimmed form, a number, a subtree and a miss (the key), tc_with with 4 parameters
+    // and a default, a view in another locale (its tag resolved on the call).
+    let ru = I18n::builder()
+        .locale("ru")
+        .fallback("en")
+        .messages(
+            "ru",
+            None,
+            r#"{"apples": "нет | {count} яблоко | {count} яблока | {count} яблок",
+                "car": "car | cars", "marked": "=0 none | {count} one | {count} other",
+                "plain": "  {count} things {name}  ", "n": 5, "tree": {"a": "b"},
+                "greet": "{name} {n} {a} {b} | {name}: {count} | {name}, {count}, {a}{b}"}"#,
+        )
+        .messages("en", None, r#"{"apples": "one | {count} apples"}"#)
+        .missing(|_, _, _| {})
+        .build()
+        .unwrap();
+    let en = ru.with_locale("en");
+    let _ = (ru.tc("apples", 1), en.tc("apples", 2));
+    let cases: [(&str, &dyn Fn() -> String); 12] = [
+        ("tc unmarked", &|| ru.tc("apples", 21)),
+        ("tc index", &|| ru.tc("car", 3)),
+        ("tc marked", &|| ru.tc("marked", 1000)),
+        ("tc big f64", &|| ru.tc("apples", 2f64.powi(61))),
+        ("tc one form", &|| ru.tc("plain", 3)),
+        ("tc number", &|| ru.tc("n", 3)),
+        ("tc subtree", &|| ru.tc("tree", 3)),
+        ("tc miss", &|| ru.tc("nope", 3)),
+        ("tc_with", &|| ru.tc_with("greet", 7, &args)),
+        ("tc_with long", &|| {
+            ru.tc_with(
+                "greet",
+                i64::MIN,
+                &Args::new().str("name", long).str("a", long),
+            )
+        }),
+        ("tc_with miss default", &|| {
+            ru.tc_with(
+                "nope",
+                1.5,
+                &Args::new().str("x", long).or("{x} {count} {x}"),
+            )
+        }),
+        ("view tc", &|| en.tc("apples", 21)),
+    ];
+    for (what, f) in cases {
+        let n = blocks(|| {
+            std::hint::black_box(f());
+        });
+        assert_eq!(n, 1, "{what}: {n} blocks for {:?}", f());
+    }
+    assert_eq!(ru.tc("apples", 21), "21 яблоко");
+    assert_eq!(ru.tc("apples", 2f64.powi(61)), "2305843009213694000 яблок");
+    assert_eq!(en.tc("apples", 21), "21 apples");
+
     // case: a dropped instance leaves no snapshot behind in thread caches. Two live
     // threads cache a big catalog, every handle is dropped, then each thread reads another
     // instance → live bytes fall back near the baseline (the reads purge the dead slots;

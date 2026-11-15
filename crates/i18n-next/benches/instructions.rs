@@ -61,7 +61,29 @@ fn t_with(i18n: I18n) -> String {
 }
 
 #[cfg(target_os = "linux")]
-library_benchmark_group!(name = lookup; benchmarks = version, t, get, t_with);
+fn plural_catalog() -> I18n {
+    let i18n = I18n::builder()
+        .locale("ru")
+        .messages(
+            "ru",
+            None,
+            r#"{"apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок"}"#,
+        )
+        .build()
+        .unwrap();
+    let _ = i18n.tc("apples", 1);
+    i18n
+}
+
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+#[bench::unmarked_ru(setup = plural_catalog)]
+fn tc(i18n: I18n) -> String {
+    black_box(i18n.tc(black_box("apples"), black_box(21)))
+}
+
+#[cfg(target_os = "linux")]
+library_benchmark_group!(name = lookup; benchmarks = version, t, get, t_with, tc);
 
 #[cfg(target_os = "linux")]
 main!(library_benchmark_groups = lookup);

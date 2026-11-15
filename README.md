@@ -5,8 +5,9 @@ i18n for Rust and Tauri on the same locale files as
 per-page translations) for a Rust backend, native menus and tray, a Vue WebView and
 Rust frontends in wasm.
 
-**Status: early.** The repository holds the project skeleton; the API is being built
-stage by stage. Nothing is published yet.
+**Status: early.** The API is being built stage by stage: the catalog (pages, fallback
+chains, `i18n.json`) and plurals (`tc`, CLDR 48 rules checked against `Intl.PluralRules`)
+work. Nothing is published yet.
 
 | Package | What |
 | --- | --- |
@@ -26,6 +27,8 @@ cargo test --doc --workspace         # doctests
 cargo bench -p i18n-next             # criterion benches
 cargo run -p playground-rust -- --check
 tools/size-check.sh                  # .wasm size of the micro and full builds
+pnpm -C scripts cldr                 # regenerate plural rules (src/plural/rules.rs)
+pnpm -C scripts compat               # regenerate the compat goldens
 ```
 
 MSRV: Rust 1.90. License: MIT.

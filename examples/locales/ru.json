@@ -4,5 +4,6 @@
     "settings": "Настройки"
   },
   "greeting": "Привет, {name}!",
-  "apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок"
+  "apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок",
+  "cart": "=0 Корзина пуста | {count} товар | {count} товара | {count} товаров"
 }

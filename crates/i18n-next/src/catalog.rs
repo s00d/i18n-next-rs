@@ -12,11 +12,57 @@
 //! collisions): nulls and containers stay in it as markers, so a merge knows what an
 //! incoming value replaces.
 
-use crate::args::Args;
+use crate::args::{Args, Count};
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::json::{Event, Reader, number_to_js_string};
+use crate::plural::{Plural, Shape};
 use std::sync::Arc;
+
+/// Where placeholder values come from: [`Args`], or `tc`'s args with `{count}` on top.
+pub(crate) trait Params {
+    /// Appends the value of `name`; `false` when there is none (`{name}` stays).
+    fn put(&self, name: &str, out: &mut String) -> bool;
+    /// Bytes one value adds at most.
+    fn max_len(&self) -> usize;
+}
+
+impl Params for Args<'_> {
+    fn put(&self, name: &str, out: &mut String) -> bool {
+        match self.find(name) {
+            Some(v) => {
+                v.write(out);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn max_len(&self) -> usize {
+        self.max_value_len()
+    }
+}
+
+/// `tc` params: JS `{ ...params, count }`, so `{count}` is the count whatever `args` say.
+pub(crate) struct WithCount<'x, 'a> {
+    pub(crate) args: Option<&'x Args<'a>>,
+    pub(crate) count: Count,
+}
+
+impl Params for WithCount<'_, '_> {
+    fn put(&self, name: &str, out: &mut String) -> bool {
+        if name == "count" {
+            self.count.write(out);
+            return true;
+        }
+        self.args.is_some_and(|a| a.put(name, out))
+    }
+
+    fn max_len(&self) -> usize {
+        // `-9223372036854775808`; `-2.2250738585072014e-308`
+        self.args.map_or(0, Params::max_len).max(24)
+    }
+}
 
 /// A string leaf, tokenized once at load: `{name}` ranges are found here, never on `t`.
 #[derive(Debug, Clone)]
@@ -26,10 +72,58 @@ pub(crate) struct Template {
     holes: Box<[(u32, u32)]>,
 }
 
-/// A message. Plurals and linked messages join in M2 / M3.
+/// A message. Linked messages join in M3.
 #[derive(Debug, Clone)]
 pub(crate) enum Msg {
     Text(Template),
+    /// A string with `|`: `t` reads its text, `tc` one of its forms.
+    Plural(Box<PluralMsg>),
+}
+
+/// `a | b | c`, split once at load (DESIGN 4.5): `tc` parses nothing.
+#[derive(Debug, Clone)]
+pub(crate) struct PluralMsg {
+    /// The whole string, for `t` / `get` (JS `t` interpolates the string with its pipes).
+    pub(crate) text: Template,
+    /// Starts with the `=0 ` marker.
+    marked: bool,
+    /// The forms, trimmed (JS `trim`) and tokenized one by one: `{a|b}` is no placeholder.
+    forms: Box<[Template]>,
+    shape: Shape,
+}
+
+/// The `=0 ` marker of `text.ts`: the first form for 0, the others by category.
+const ZERO_MARKER: &str = "=0 ";
+
+impl PluralMsg {
+    fn new(raw: &str) -> PluralMsg {
+        let marked = raw.starts_with(ZERO_MARKER);
+        let body = raw
+            .get(if marked { ZERO_MARKER.len() } else { 0 }..)
+            .unwrap_or("");
+        PluralMsg {
+            text: Template::new(raw),
+            marked,
+            forms: body
+                .split('|')
+                .map(|f| Template::new(f.trim_matches(is_js_space)))
+                .collect(),
+            shape: Shape::new(body.split('|')),
+        }
+    }
+
+    /// The form `count` picks (`pluralForm`), interpolated with `params`.
+    pub(crate) fn pick(
+        &self,
+        count: Count,
+        plural: Option<&Plural>,
+        params: &impl Params,
+    ) -> String {
+        let at = self.shape.index(self.marked, count.whole(), plural);
+        self.forms
+            .get(at)
+            .map_or_else(String::new, |f| f.interpolate(params))
+    }
 }
 
 /// What a dotted key holds in one chunk.
@@ -47,6 +141,7 @@ impl Entry {
     pub(crate) fn text(&self) -> Option<&Arc<str>> {
         match self {
             Entry::Msg(Msg::Text(t)) => Some(&t.raw),
+            Entry::Msg(Msg::Plural(p)) => Some(&p.text.raw),
             Entry::Value(v) => Some(v),
             Entry::Node => None,
         }
@@ -95,17 +190,39 @@ impl Template {
     }
 
     /// The text with every placeholder `args` has replaced, in one allocation.
-    pub(crate) fn interpolate(&self, args: &Args<'_>) -> String {
+    pub(crate) fn interpolate(&self, args: &impl Params) -> String {
         if self.holes.is_empty() {
             return String::from(&*self.raw);
         }
         let raw = &*self.raw;
-        let mut out = String::with_capacity(raw.len() + self.holes.len() * args.max_value_len());
+        let mut out = String::with_capacity(raw.len() + self.holes.len() * args.max_len());
         let mut from = 0;
         for &(s, e) in &self.holes {
             from = substitute(raw, from, s as usize, e as usize, args, &mut out);
         }
         out.push_str(raw.get(from..).unwrap_or(""));
+        out
+    }
+
+    /// The one form of a `tc` on a string without `|`: the `=0 ` marker dropped, trimmed
+    /// (JS `trim`), interpolated. Whitespace is never inside a placeholder, so the holes
+    /// of the whole string inside the trimmed range are those of the form.
+    pub(crate) fn single_form(&self, args: &impl Params) -> String {
+        let raw = &*self.raw;
+        let body = raw.strip_prefix(ZERO_MARKER).unwrap_or(raw);
+        let trimmed = body.trim_matches(is_js_space);
+        let start = trimmed.as_ptr() as usize - raw.as_ptr() as usize;
+        let end = start + trimmed.len();
+        let holes = self
+            .holes
+            .iter()
+            .filter(|&&(s, e)| s as usize > start && (e as usize) < end);
+        let mut out = String::with_capacity(trimmed.len() + holes.clone().count() * args.max_len());
+        let mut from = start;
+        for &(s, e) in holes {
+            from = substitute(raw, from, s as usize, e as usize, args, &mut out);
+        }
+        out.push_str(raw.get(from..end).unwrap_or(""));
         out
     }
 }
@@ -118,23 +235,28 @@ fn substitute(
     from: usize,
     s: usize,
     e: usize,
-    args: &Args<'_>,
+    args: &impl Params,
     out: &mut String,
 ) -> usize {
-    match raw.get(s..e).and_then(|name| args.find(name)) {
-        Some(value) => {
-            out.push_str(raw.get(from..s - 1).unwrap_or(""));
-            value.write(out);
-            e + 1
-        }
-        None => from,
+    let Some(name) = raw.get(s..e) else {
+        return from;
+    };
+    let mark = out.len();
+    out.push_str(raw.get(from..s - 1).unwrap_or(""));
+    if args.put(name, out) {
+        e + 1
+    } else {
+        out.truncate(mark);
+        from
     }
 }
 
 /// [`Template::new`] + [`Template::interpolate`] in one pass, for text used once (the
 /// default of `t_with`): no `Template` is built.
-pub(crate) fn interpolate_once(raw: &str, args: &Args<'_>) -> String {
-    let mut out = String::with_capacity(raw.len() + args.max_value_len());
+pub(crate) fn interpolate_once(raw: &str, args: &impl Params) -> String {
+    // Every `{` may open a placeholder: sized once, never reallocated.
+    let holes = raw.bytes().filter(|&b| b == b'{').count();
+    let mut out = String::with_capacity(raw.len() + holes * args.max_len());
     let mut from = 0;
     let mut open = None;
     for (i, c) in raw.char_indices() {
@@ -309,7 +431,14 @@ impl Tree {
                 }
                 Event::ObjectStart => (Some(false), Node::Obj { kids: true }),
                 Event::ArrayStart => (Some(true), Node::Arr { kids: true }),
-                Event::Str(s) => (None, Node::Leaf(Entry::Msg(Msg::Text(Template::new(&s))))),
+                Event::Str(s) => (
+                    None,
+                    Node::Leaf(Entry::Msg(if s.contains('|') {
+                        Msg::Plural(Box::new(PluralMsg::new(&s)))
+                    } else {
+                        Msg::Text(Template::new(&s))
+                    })),
+                ),
                 Event::Num(n) => (
                     None,
                     Node::Leaf(Entry::Value(number_to_js_string(n).into())),

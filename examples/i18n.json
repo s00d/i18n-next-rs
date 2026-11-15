@@ -3,7 +3,8 @@
   "fallbackLocale": "en",
   "locales": [
     { "code": "en", "iso": "en-US", "displayName": "English" },
-    { "code": "ru", "iso": "ru-RU", "displayName": "Русский" }
+    { "code": "ru", "iso": "ru-RU", "displayName": "Русский" },
+    { "code": "ar", "iso": "ar-EG", "dir": "rtl", "displayName": "العربية" }
   ],
   "numberFormats": {
     "en": { "currency": { "style": "currency", "currency": "USD" } },

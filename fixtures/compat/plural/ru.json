@@ -1,0 +1,8 @@
+{
+  "apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок",
+  "car": "машина | машины | машин",
+  "marked": "=0 ничего | {count} штука | {count} штуки | {count} штук",
+  "greet": "{name}: нет | {name}: {count} новое | {name}: {count} новых | {name}: {count} новых",
+  "yes": true,
+  "nil": null
+}

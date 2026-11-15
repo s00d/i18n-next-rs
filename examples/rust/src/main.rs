@@ -47,7 +47,7 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
         ),
         (
             "locales",
-            expect(codes.join(", "), "en (English), ru (Русский)"),
+            expect(codes.join(", "), "en (English), ru (Русский), ar (العربية)"),
         ),
         ("pages", expect(i18n.pages().join(", "), "settings")),
         ("t", expect(i18n.t("nav.home"), "Home")),
@@ -65,6 +65,46 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
             ),
         ),
     ];
+    // M2: plurals by the CLDR rules of each locale's `iso` (en-US, ru-RU, ar-EG).
+    let tc = |code: &str, key: &str, counts: &[i64]| {
+        let view = i18n.with_locale(code);
+        let forms: Vec<String> = counts.iter().map(|&n| view.tc(key, n)).collect();
+        forms.join(" / ")
+    };
+    stops.extend([
+        (
+            "tc en",
+            expect(
+                tc("en", "apples", &[0, 1, 5]),
+                "no apples / one apple / 5 apples",
+            ),
+        ),
+        (
+            "tc ru",
+            expect(
+                tc("ru", "apples", &[0, 1, 3, 11, 21]),
+                "нет яблок / 1 яблоко / 3 яблока / 11 яблок / 21 яблоко",
+            ),
+        ),
+        (
+            "tc ar",
+            expect(
+                tc("ar", "apples", &[0, 1, 2, 3, 11, 100]),
+                "لا تفاح / تفاحة واحدة / تفاحتان / 3 تفاحات / 11 تفاحة / 100 تفاحة",
+            ),
+        ),
+        (
+            "tc =0",
+            expect(
+                tc("ru", "cart", &[0, 2, 5]),
+                "Корзина пуста / 2 товара / 5 товаров",
+            ),
+        ),
+        (
+            "tc_with",
+            expect(i18n.tc_with("cart", 1, &Args::new()), "1 item"),
+        ),
+    ]);
     i18n.set_locale("ru")?;
     stops.extend([
         ("set_locale", expect(settings.t("language"), "Язык")),

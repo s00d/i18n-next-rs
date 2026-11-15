@@ -874,3 +874,105 @@ fn default_text_placeholders_follow_js_whitespace() {
     assert_eq!(i18n.t_with("k", &args), want);
     assert_eq!(guard.seen(), ["en|index|nope"]);
 }
+
+/// Given an `i18n.json` where the code `ua` has `iso: uk-UA` and `en` has a malformed iso,
+/// when the app counts apples in each locale, then `ua` follows the Ukrainian categories,
+/// `en` (no rules for `en_US`) the index rule, and a view in another locale its own rules.
+#[test]
+fn plurals_follow_the_iso_tag() {
+    // step 1: build from the config → both locales known, `ua` active
+    let i18n = I18n::builder()
+        .config_json(
+            r#"{"defaultLocale": "ua", "locales": [
+                {"code": "ua", "iso": "uk-UA"}, {"code": "en", "iso": "en_US"}]}"#,
+        )
+        .messages(
+            "ua",
+            None,
+            r#"{"apples": "немає яблук | {count} яблуко | {count} яблука | {count} яблук"}"#,
+        )
+        .messages(
+            "en",
+            None,
+            r#"{"apples": "no apples | {count} apple | {count} apples | {count} lots"}"#,
+        )
+        .build()
+        .unwrap();
+
+    // step 2: Ukrainian categories, the zero form for 0
+    let ua: Vec<String> = [0, 1, 2, 5, 11, 21, 22, 25, 101]
+        .iter()
+        .map(|&n| i18n.tc("apples", n))
+        .collect();
+    assert_eq!(
+        ua,
+        [
+            "немає яблук",
+            "1 яблуко",
+            "2 яблука",
+            "5 яблук",
+            "11 яблук",
+            "21 яблуко",
+            "22 яблука",
+            "25 яблук",
+            "101 яблуко"
+        ]
+    );
+
+    // step 3: a view in `en`: `en_US` is no BCP 47 tag → index rule, the last form past the end
+    let en = i18n.with_locale("en");
+    assert_eq!(en.tc("apples", 1), "1 apple");
+    assert_eq!(en.tc("apples", 3), "3 lots");
+    assert_eq!(en.tc("apples", 21), "21 lots");
+
+    // step 4: switch the active locale → the same rules as the view
+    i18n.set_locale("en").unwrap();
+    assert_eq!(i18n.tc("apples", 21), "21 lots");
+
+    // step 5: a negative or fractional count → the last form, `{count}` as JS prints it
+    i18n.set_locale("ua").unwrap();
+    assert_eq!(i18n.tc("apples", -1), "-1 яблук");
+    assert_eq!(i18n.tc("apples", 1.5), "1.5 яблук");
+}
+
+/// Given messages of every kind, when the app calls `tc` on each, then plurals pick a form,
+/// a string without `|` is its own form, a number comes back as is, and a boolean, a
+/// subtree or a miss fall back to the default or the key; only the miss is reported.
+#[test]
+fn tc_on_every_kind_of_value() {
+    let guard = Guard::new();
+    let i18n = I18n::builder()
+        .messages(
+            "en",
+            None,
+            r#"{"car": "car | cars", "plain": "  {count} things  ", "n": 7, "flag": true,
+                "tree": {"a": "b"}, "marked": "=0 none | one | {count} many"}"#,
+        )
+        .missing(guard.missing())
+        .build()
+        .unwrap();
+
+    // step 1: plural forms; `t` keeps the whole string
+    assert_eq!(i18n.tc("car", 0), "car");
+    assert_eq!(i18n.tc("car", 7), "cars");
+    assert_eq!(i18n.t("car"), "car | cars");
+    assert_eq!(i18n.tc("marked", 0), "none");
+    assert_eq!(i18n.tc("marked", 2), "2 many");
+
+    // step 2: one form, trimmed and interpolated; a number as is
+    assert_eq!(i18n.tc("plain", 3), "3 things");
+    assert_eq!(i18n.tc("n", 3), "7");
+
+    // step 3: a boolean and a subtree have no plural → default or key, no report
+    let d = Args::new().or("{count} default");
+    assert_eq!(i18n.tc("flag", 2), "flag");
+    assert_eq!(i18n.tc_with("tree", 2, &d), "2 default");
+    assert_eq!(guard.seen(), Vec::<String>::new());
+
+    // step 4: a miss is reported; an empty default stays empty (unlike `t_with`)
+    guard.allow("en|index|nope");
+    guard.allow("en|settings|gone");
+    assert_eq!(i18n.tc_with("nope", 1, &Args::new().or("")), "");
+    assert_eq!(i18n.page("settings").tc("gone", 1), "gone");
+    assert_eq!(guard.seen(), ["en|index|nope", "en|settings|gone"]);
+}

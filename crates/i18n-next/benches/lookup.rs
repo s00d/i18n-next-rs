@@ -413,10 +413,70 @@ fn concurrency(c: &mut Criterion) {
     g.finish();
 }
 
+/// `tc` (DESIGN 7.7: plural index, unmarked, `=0 `): `ru` active, `en` as a view locale.
+fn plurals(c: &mut Criterion) {
+    let i18n = I18n::builder()
+        .locale("ru")
+        .fallback("en")
+        .messages(
+            "ru",
+            None,
+            r#"{"apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок",
+                "car": "машина | машины | машин", "marked": "=0 ничего | {count} штука | {count} штуки | {count} штук",
+                "greet": "{name}: нет | {name}: {count} новое | {name}: {count} новых | {name}: {count} новых",
+                "plain": "{count} шт."}"#,
+        )
+        .messages("ru", Some("cart"), r#"{"items": "пусто | {count} товар | {count} товара | {count} товаров"}"#)
+        .messages("en", None, r#"{"apples": "no apples | one apple | {count} apples"}"#)
+        .build()
+        .unwrap();
+    c.bench_function("i18n/tc/index", |b| {
+        b.iter(|| i18n.tc(black_box("car"), black_box(2)))
+    });
+    c.bench_function("i18n/tc/unmarked_ru", |b| {
+        b.iter(|| i18n.tc(black_box("apples"), black_box(21)))
+    });
+    c.bench_function("i18n/tc/unmarked_ru_1000", |b| {
+        b.iter(|| i18n.tc(black_box("apples"), black_box(1021)))
+    });
+    c.bench_function("i18n/tc/marked", |b| {
+        b.iter(|| i18n.tc(black_box("marked"), black_box(5)))
+    });
+    c.bench_function("i18n/tc/fraction", |b| {
+        b.iter(|| i18n.tc(black_box("apples"), black_box(1.5)))
+    });
+    c.bench_function("i18n/tc/one_form", |b| {
+        b.iter(|| i18n.tc(black_box("plain"), black_box(3)))
+    });
+    c.bench_function("i18n/tc/miss", |b| {
+        b.iter(|| i18n.tc(black_box("nope"), black_box(3)))
+    });
+    let name = Args::new().str("name", "Аня");
+    c.bench_function("i18n/tc_with/args_1", |b| {
+        b.iter(|| i18n.tc_with(black_box("greet"), black_box(5), black_box(&name)))
+    });
+    let default = Args::new().or("{count} шт.");
+    c.bench_function("i18n/tc_with/miss_default", |b| {
+        b.iter(|| i18n.tc_with(black_box("nope"), black_box(5), black_box(&default)))
+    });
+    let cart = i18n.page("cart");
+    let en = i18n.with_locale("en");
+    c.bench_function("view/tc/page_unmarked_ru", |b| {
+        b.iter(|| cart.tc(black_box("items"), black_box(22)))
+    });
+    c.bench_function("view/tc/other_locale_index", |b| {
+        b.iter(|| en.tc(black_box("apples"), black_box(5)))
+    });
+    c.bench_function("view/tc_with/page_args_1", |b| {
+        b.iter(|| cart.tc_with(black_box("items"), black_box(3), black_box(&name)))
+    });
+}
+
 criterion_group!(
     benches,
     i18n_lookup,
     view_lookup,
+    plurals,
     args,
     write,
     build,

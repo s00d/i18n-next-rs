@@ -24,6 +24,9 @@ What the JS library does, recorded so the Rust crate can be checked against it l
 | `__golden__/lookup.md` | `t` (raw lookup) and `has` over keys × locale configs × pages |
 | `__golden__/interpolate.md` | `interpolate(template, params)` and `t(key, params[, default])` through the instance |
 | `__golden__/options.md` | `disablePageLocales` loading, `routesLocaleLinks` page aliases, per-locale fallback chains |
+| `plural/` | the catalog of the `tc_in` lines of `plural.md` |
+| `__golden__/plural.md` | `tc` through the instance (`defaultPlural` → `pluralForm` + `interpolate`) |
+| `__golden__/plural-categories.md` | `Intl.PluralRules` itself, written by `scripts/cldr.mjs` (`pnpm -C scripts cldr`): the oracle of `tests/plural_props.rs` |
 
 ## File format
 
@@ -157,6 +160,30 @@ Options of `@i18n-micro/utils` and the Nuxt module that core alone does not show
   `BaseI18n.resolveLookup` with that locale as both locale and fallback (its page, then its root), and the first
   non-null step wins. Rust: `config_json` with the same `locales[]` and `fallbackLocale`, `with_locale(locale)
   .page(page)`.
+
+### `plural.md`
+
+- `tc("<tag>", "<template>", <count>) → "<result>"`: an instance whose one locale `p` has `localeIso: {p: tag}`
+  and the template as message `k`, `tc("k", count)`. Tags: real locales, `uk-UA`, `de-AT`, `pt-PT`, `iw`,
+  `zh-Hant-TW`, an unknown `xx` and the malformed `en_US` (both: index rule). Templates: per tag, the unmarked
+  category shape built from its categories and each way out of it (a form too many / few, `{` in the zero form,
+  a shared form without `{count}`), `=0 ` forms of every length that matters; for a few tags also index forms,
+  trimming, empty forms, `|` only. Counts: 0..25, 100..112, 199..201, 1000, 1e6, 1e18, 1e21, 2^61, 1.5, -1, -0,
+  NaN, Infinity. Rust: `.locale("p").iso("p", tag)`; a safe integer goes through the integer `Count`, any
+  other count through `f64`.
+- `tc_code("<code>", "<template>", <count>)`: the same with no iso, the code is the tag.
+- `tc_in(<ctx>, "<key>", <count>, <params>, <default>) → <result>`: `tc` on the `plural/` catalog in context
+  `<locale>|<fallback>, <page>`; `tc(key, count, default)` without params, else `tc(key, {count, ...params},
+  default)`. Rust: `view.tc` / `view.tc_with(key, count, args.or(default))`.
+- `tc_missing(<same>) → "<locale> <key> <route>; …"`: the `missingHandler` calls of that `tc`.
+- A count JS gets from `params.count` (a string, `null`, nothing) has no Rust spelling and is not recorded.
+
+### `plural-categories.md`
+
+`category`-style lines per locale `Intl.PluralRules` supports by its own name: `categories` (the
+`pluralCategories`), `integers` (one letter per count 0..1000: `z o t f m x` for zero … other), `decimals` and
+`big` (the numbers of `decimal_list()` / `big_list()`), and `tag("<tag>") → "<resolved locale>"` (or `<none>` /
+`<invalid>`) for every alias, region, script and malformed tag tried. Rust needs no Node to read it.
 
 ## Contract for Rust
 

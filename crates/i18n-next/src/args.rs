@@ -5,6 +5,7 @@
 #[cfg(feature = "format")]
 use crate::json::push_js_number;
 use crate::json::push_u64;
+use crate::plural::Whole;
 
 /// One parameter value, printed like JS `String(value)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -94,6 +95,103 @@ impl From<f64> for Arg<'_> {
 impl From<bool> for Arg<'_> {
     fn from(b: bool) -> Self {
         Arg::Bool(b)
+    }
+}
+
+/// The count of [`I18n::tc`](crate::I18n::tc): an integer, or (feature `format`) an `f64`.
+///
+/// It picks the plural form and fills `{count}`, printed as JS prints the number. A
+/// negative, fractional or non-finite count takes the last form, as in JS. Integers are
+/// exact: a `u64` past 2^53 is read as written, where JS would round it first.
+///
+/// ```
+/// use i18n_next::Count;
+///
+/// let _ = [Count::from(3), Count::from(3u64), Count::from(3usize), Count::from(-1i64)];
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Count(CountRepr);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CountRepr {
+    Whole(u64),
+    Negative(i64),
+    #[cfg(feature = "format")]
+    Float(f64),
+}
+
+impl Count {
+    /// The count as `pluralForm` reads it: whole and not negative, else `None` (last form).
+    pub(crate) fn whole(self) -> Option<Whole> {
+        match self.0 {
+            CountRepr::Whole(n) => Some(Whole::Int(n)),
+            CountRepr::Negative(_) => None,
+            // `-0.0 >= 0.0`: JS `Number.isInteger(-0) && !(-0 < 0)`, the zero form.
+            #[cfg(feature = "format")]
+            CountRepr::Float(x) if x >= 0.0 && x.fract() == 0.0 => {
+                // Below 2^53 every whole f64 is exact and spelled with its own digits.
+                if x < 9_007_199_254_740_992.0 {
+                    Some(Whole::Int(x as u64))
+                } else {
+                    Some(Whole::Big(x))
+                }
+            }
+            #[cfg(feature = "format")]
+            CountRepr::Float(_) => None,
+        }
+    }
+
+    /// Appends the count as JS `String(count)` writes it.
+    pub(crate) fn write(self, out: &mut String) {
+        match self.0 {
+            CountRepr::Whole(n) => push_u64(out, n),
+            CountRepr::Negative(n) => {
+                out.push('-');
+                push_u64(out, n.unsigned_abs());
+            }
+            #[cfg(feature = "format")]
+            CountRepr::Float(v) => push_js_number(out, v),
+        }
+    }
+}
+
+impl From<i64> for Count {
+    fn from(n: i64) -> Self {
+        Count(match u64::try_from(n) {
+            Ok(n) => CountRepr::Whole(n),
+            Err(_) => CountRepr::Negative(n),
+        })
+    }
+}
+
+impl From<i32> for Count {
+    fn from(n: i32) -> Self {
+        Count::from(i64::from(n))
+    }
+}
+
+impl From<u64> for Count {
+    fn from(n: u64) -> Self {
+        Count(CountRepr::Whole(n))
+    }
+}
+
+impl From<u32> for Count {
+    fn from(n: u32) -> Self {
+        Count(CountRepr::Whole(u64::from(n)))
+    }
+}
+
+impl From<usize> for Count {
+    fn from(n: usize) -> Self {
+        Count(CountRepr::Whole(n as u64))
+    }
+}
+
+#[cfg(feature = "format")]
+impl From<f64> for Count {
+    fn from(v: f64) -> Self {
+        Count(CountRepr::Float(v))
     }
 }
 
@@ -231,6 +329,11 @@ impl<'a> Args<'a> {
 
     pub(crate) fn default_text(&self) -> Option<&'a str> {
         self.default.filter(|d| !d.is_empty())
+    }
+
+    /// The default as given: `tc` keeps an empty one (JS `defaultValue ?? key`).
+    pub(crate) fn default_raw(&self) -> Option<&'a str> {
+        self.default
     }
 
     /// Every parameter, oldest first: the inline ones, or all of them in the `Vec` once

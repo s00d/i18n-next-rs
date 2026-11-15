@@ -1,6 +1,6 @@
 //! Calls what an app would call, so the linker keeps exactly that part of i18n-next:
-//! a catalog built from embedded files (root + page), `t`, `t_with`, a page view and a
-//! locale switch.
+//! a catalog built from embedded files (root + page), `t`, `t_with`, a page view, a
+//! plural (`tc`) and a locale switch.
 //!
 //! A binary, not a cdylib: exporting from a cdylib needs `#[unsafe(no_mangle)]` (or
 //! wasm-bindgen glue, ~26 KB), and the probe stays under `forbid(unsafe_code)`. The std
@@ -30,6 +30,7 @@ fn main() {
     black_box(i18n.t(black_box("nav.home")));
     black_box(i18n.t_with(black_box("greeting"), &Args::new().str("name", black_box("Ann"))));
     black_box(i18n.page(black_box("settings")).t(black_box("title")));
+    black_box(i18n.tc(black_box("apples"), black_box(21)));
     let _ = black_box(i18n.set_locale(black_box("en")));
 }
 

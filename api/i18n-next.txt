@@ -85,6 +85,27 @@ impl core::default::Default for i18n_next::Builder
 pub fn i18n_next::Builder::default() -> i18n_next::Builder
 impl core::fmt::Debug for i18n_next::Builder
 pub fn i18n_next::Builder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::Count(_)
+impl core::clone::Clone for i18n_next::Count
+pub fn i18n_next::Count::clone(&self) -> i18n_next::Count
+impl core::cmp::PartialEq for i18n_next::Count
+pub fn i18n_next::Count::eq(&self, &i18n_next::Count) -> bool
+impl core::convert::From<f64> for i18n_next::Count
+pub fn i18n_next::Count::from(f64) -> Self
+impl core::convert::From<i32> for i18n_next::Count
+pub fn i18n_next::Count::from(i32) -> Self
+impl core::convert::From<i64> for i18n_next::Count
+pub fn i18n_next::Count::from(i64) -> Self
+impl core::convert::From<u32> for i18n_next::Count
+pub fn i18n_next::Count::from(u32) -> Self
+impl core::convert::From<u64> for i18n_next::Count
+pub fn i18n_next::Count::from(u64) -> Self
+impl core::convert::From<usize> for i18n_next::Count
+pub fn i18n_next::Count::from(usize) -> Self
+impl core::fmt::Debug for i18n_next::Count
+pub fn i18n_next::Count::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for i18n_next::Count
+impl core::marker::StructuralPartialEq for i18n_next::Count
 pub struct i18n_next::I18n
 impl i18n_next::I18n
 pub fn i18n_next::I18n::add_messages(&self, &str, core::option::Option<&str>, &str) -> core::result::Result<(), i18n_next::Error>
@@ -98,6 +119,8 @@ pub fn i18n_next::I18n::pages(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn i18n_next::I18n::set_locale(&self, &str) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::I18n::t(&self, &str) -> alloc::string::String
 pub fn i18n_next::I18n::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
+pub fn i18n_next::I18n::tc(&self, &str, impl core::convert::Into<i18n_next::Count>) -> alloc::string::String
+pub fn i18n_next::I18n::tc_with(&self, &str, impl core::convert::Into<i18n_next::Count>, &i18n_next::Args<'_>) -> alloc::string::String
 pub fn i18n_next::I18n::try_t(&self, &str) -> core::option::Option<alloc::string::String>
 pub fn i18n_next::I18n::version(&self) -> u64
 pub fn i18n_next::I18n::with_locale(&self, &str) -> i18n_next::View
@@ -126,6 +149,8 @@ pub fn i18n_next::View::locale(&self) -> alloc::sync::Arc<str>
 pub fn i18n_next::View::page(&self, &str) -> i18n_next::View
 pub fn i18n_next::View::t(&self, &str) -> alloc::string::String
 pub fn i18n_next::View::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
+pub fn i18n_next::View::tc(&self, &str, impl core::convert::Into<i18n_next::Count>) -> alloc::string::String
+pub fn i18n_next::View::tc_with(&self, &str, impl core::convert::Into<i18n_next::Count>, &i18n_next::Args<'_>) -> alloc::string::String
 pub fn i18n_next::View::try_t(&self, &str) -> core::option::Option<alloc::string::String>
 pub fn i18n_next::View::with_locale(&self, &str) -> i18n_next::View
 impl core::clone::Clone for i18n_next::View

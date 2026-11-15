@@ -357,3 +357,132 @@ for (const locale of ['en', 'de', 'de-at', 'ru', 'fr', 'pt', 'zz', 'xx']) {
   }
 }
 write('options', 'options', optionLines)
+
+// ---- plural: `tc` through the instance (defaultPlural → pluralForm + interpolate) ----
+// An instance whose one locale `p` has `localeIso: { p: tag }` (the tag plurals go by), or
+// no iso at all (`tc_code`: the code is the tag), and one message `k`.
+class Single extends BaseI18n {
+  constructor(code, iso, template) {
+    super({ missingWarn: false, missingHandler: () => {}, localeIso: iso === undefined ? {} : { [code]: iso } })
+    this.code = code
+    this.loadTranslationsCore(code, { k: template }, false, 'index')
+  }
+  getLocale() { return this.code }
+  getFallbackLocale() { return this.code }
+  getRoute() { return 'index' }
+}
+const CATEGORY_ORDER = ['zero', 'one', 'two', 'few', 'many', 'other']
+/** `createLocalePlural` of core: the named and all categories of a tag, `null` when Intl does not know it. */
+function facts(tag) {
+  try {
+    if (Intl.PluralRules.supportedLocalesOf(tag).length === 0) return null
+  } catch {
+    return null
+  }
+  const rules = new Intl.PluralRules(tag)
+  const small = new Set(Array.from({ length: 200 }, (_, n) => rules.select(n)))
+  const all = new Set(rules.resolvedOptions().pluralCategories)
+  return {
+    named: CATEGORY_ORDER.filter((c) => small.has(c) && c !== 'zero'),
+    all: CATEGORY_ORDER.filter((c) => all.has(c)),
+  }
+}
+// Templates for every tag, built from its categories: the unmarked category shape and each way
+// out of it, `=0 ` marked forms of every length that matters.
+function localeTemplates(tag) {
+  const f = facts(tag) ?? { named: ['one', 'few', 'many'], all: ['one', 'other'] }
+  const { named, all } = f
+  const counted = named.map((c) => `{count} ${c}`)
+  return [
+    ['zero', ...counted].join(' | '),
+    ['zero', ...named].join(' | '),
+    ['zero', ...named.map((c, i) => (i === 0 ? c : `{count} ${c}`))].join(' | '),
+    ['zero', ...named.map((c, i) => (i === named.length - 1 ? c : `{count} ${c}`))].join(' | '),
+    ['zero {count}', ...counted].join(' | '),
+    ['zero', ...counted, 'extra {count}'].join(' | '),
+    ['zero', ...counted.slice(1)].join(' | '),
+    `=0 zero | ${named.join(' | ')}`,
+    `=0 zero | ${all.join(' | ')}`,
+    `=0 zero | ${all.map((c) => `{count} ${c}`).join(' | ')} | extra`,
+  ]
+}
+// Templates whose answer does not depend on the categories as much: run on fewer tags.
+const GENERIC_TEMPLATES = [
+  'car | cars', 'no cars | one car | {count} cars', 'a | b | c | d', 'a | b | c | d | e | f', 'single', '  padded {count}  ',
+  '{count}', 'x|y', '|', '||', ' | ', 'a||c', '  a  |  b  ', '\ta |　b\n', 'a | {count} b', '{a|b} | {count}',
+  '=0 none', '=0 none | some', '=0 none | one | many', '=0 none | f1 | f2 | f3', '=0 none | f1 | f2 | f3 | f4',
+  '=0 none | f1 | f2 | f3 | f4 | f5 | f6', '=0none | x', ' =0 none | x', '=0 ', '=0 |a', '=0  two spaces | x', '',
+  'zero | {count} one | {count} few | {count} many', 'zero | {count} one | {count} other',
+  'zero | {count} zero | {count} one | {count} two | {count} few | {count} many | {count} other',
+]
+const PLURAL_TAGS = [
+  'en', 'ru', 'uk', 'pl', 'ar', 'fr', 'lv', 'ja', 'he', 'cy', 'ga', 'sl', 'br', 'mt', 'uk-UA', 'xx', 'en_US', 'de-AT', 'pt-PT',
+  'pt', 'iw', 'zh-Hant-TW', 'ro', 'cs', 'lt', 'gd', 'kw',
+]
+const GENERIC_TAGS = ['en', 'ru', 'ar', 'fr', 'cy', 'xx']
+const COUNTS = []
+for (let n = 0; n <= 25; n++) COUNTS.push(n)
+for (let n = 100; n <= 112; n++) COUNTS.push(n)
+COUNTS.push(199, 200, 201, 1000, 1000000, 1e18, 1e21, 2 ** 61, 1.5, -1, -0, Number.NaN, Number.POSITIVE_INFINITY, Number('x'))
+const pluralLines = []
+const runTc = (code, iso, template, count) => new Single(code, iso, template).tc('k', count)
+for (const tag of PLURAL_TAGS) {
+  const templates = [...new Set([...localeTemplates(tag), ...(GENERIC_TAGS.includes(tag) ? GENERIC_TEMPLATES : [])])]
+  for (const template of templates) {
+    for (const count of COUNTS) pluralLines.push([`tc(${s(tag)}, ${s(template)}, ${lit(count)})`, enc(runTc('p', tag, template, count))])
+  }
+}
+// The code itself as the tag, no iso: a free-form code Intl does not know takes the index rule.
+for (const code of ['ru', 'ua', 'xx', 'en_US', 'uk', 'ar']) {
+  for (const template of localeTemplates(code === 'ua' ? 'uk' : code)) {
+    for (const count of [0, 1, 2, 3, 5, 11, 21, 22, 101, 1.5, -1]) {
+      pluralLines.push([`tc_code(${s(code)}, ${s(template)}, ${lit(count)})`, enc(runTc(code, undefined, template, count))])
+    }
+  }
+}
+
+// tc on a catalog: value kinds, params, defaults, misses, pages, the fallback locale.
+const PLURAL_DIR = here('../fixtures/compat/plural')
+const pluralCatalog = loadTranslationDir(PLURAL_DIR)
+class Catalog extends BaseI18n {
+  constructor() {
+    super({ missingWarn: false, missingHandler: (locale, key, route) => this.missed.push([locale, key, route]) })
+    this.missed = []
+    this.ctx = ['en', 'en', 'index']
+    for (const locale of Object.keys(pluralCatalog.root)) this.loadTranslationsCore(locale, pluralCatalog.root[locale], false, 'index')
+    for (const page of Object.keys(pluralCatalog.routes)) {
+      for (const locale of Object.keys(pluralCatalog.routes[page])) this.loadTranslationsCore(locale, pluralCatalog.routes[page][locale], false, page)
+    }
+  }
+  getLocale() { return this.ctx[0] }
+  getFallbackLocale() { return this.ctx[1] }
+  getRoute() { return this.ctx[2] }
+}
+const catalog = new Catalog()
+const PLURAL_KEYS = [
+  'apples', 'car', 'marked', 'greet', 'plain', 'spaced', 'zero_marker', 'pipe', 'empty', 'num', 'neg', 'big', 'yes', 'no', 'tree',
+  'list', 'list.0', 'nil', 'en_only', 'page_only', 'nope', '',
+]
+const CATALOG_CASES = []
+for (const [locale, fallback, page] of [['en', 'en', 'index'], ['ru', 'en', 'index'], ['en', 'en', 'about'], ['xx', 'en', 'index']]) {
+  for (const key of PLURAL_KEYS) {
+    for (const count of [0, 1, 2, 5, 21, 1.5, -1]) CATALOG_CASES.push([locale, fallback, page, key, count, undefined, undefined])
+  }
+  for (const key of ['greet', 'plain', 'nope', 'yes', 'tree', 'empty', 'apples']) {
+    CATALOG_CASES.push([locale, fallback, page, key, 3, { name: 'Ann' }, undefined])
+    CATALOG_CASES.push([locale, fallback, page, key, 3, { name: 'Ann' }, 'Default {name} {count}'])
+    CATALOG_CASES.push([locale, fallback, page, key, 3, undefined, 'Default {count}'])
+    CATALOG_CASES.push([locale, fallback, page, key, 3, undefined, ''])
+    CATALOG_CASES.push([locale, fallback, page, key, 1.5, {}, 'D {count}'])
+  }
+}
+for (const [locale, fallback, page, key, count, params, def] of CATALOG_CASES) {
+  catalog.ctx = [locale, fallback, page]
+  catalog.missed = []
+  const arg = params === undefined ? count : { count, ...params }
+  const r = def === undefined ? catalog.tc(key, arg) : catalog.tc(key, arg, def)
+  const call = `${ctx(locale, fallback, page)}, ${s(key)}, ${lit(count)}, ${lit(params)}, ${lit(def)}`
+  pluralLines.push([`tc_in(${call})`, enc(r)])
+  pluralLines.push([`tc_missing(${call})`, s(catalog.missed.map((m) => m.join(' ')).join('; '))])
+}
+write('plural', 'plural', pluralLines)

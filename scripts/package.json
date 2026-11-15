@@ -5,7 +5,8 @@
   "description": "Generators for compat goldens, CLDR data, tzdb and the performance table. Versions are pinned: CLDR equals the one in Node CI.",
   "type": "module",
   "scripts": {
-    "compat": "node compat.mjs"
+    "compat": "node compat.mjs",
+    "cldr": "node cldr.mjs"
   },
   "devDependencies": {
     "@i18n-micro/core": "2.1.0",

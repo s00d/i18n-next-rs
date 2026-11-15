@@ -1,0 +1,677 @@
+//! Plurals (DESIGN 5, 1.1): CLDR cardinal rules generated into [`rules`], a tag resolved the
+//! way `Intl.PluralRules.supportedLocalesOf` resolves it, and the form selection of
+//! `@i18n-micro/core` `pluralForm` (`core/src/text.ts`).
+//!
+//! - A tag is the locale's `iso`, else its code. A tag `Intl` would reject (`en_US`, a RangeError)
+//!   or not support (`ua`, `xx`) has no rules: such a locale takes the index rule, never a host
+//!   default. A supported tag resolves like `BestAvailableLocale`: aliases first (`iw` → `he`,
+//!   `620` → `PT`), then region and script are dropped until a known locale is left
+//!   (`de-AT` → `de`, `pt-Latn-PT` → `pt`, `pt-PT` stays).
+//! - Per rule set, the facts `localePlural` keeps per locale (categories of the counts 0..199,
+//!   which of them several counts share) are computed on first use from the rule itself and
+//!   cached: 200 rule calls once, 0.46–1.1 µs (bench `plural/compute/*`), against 8 KB of
+//!   tables (200 bytes × 40 rule sets) in every binary. A count under 200 then reads the
+//!   table (0.6 ns), a larger one calls the rule (1.5–7.7 ns).
+//!
+//! Self-contained (no `crate::` paths): tests and benches include it with `#[path]`.
+
+#[rustfmt::skip]
+#[allow(
+    clippy::nonminimal_bool,
+    clippy::manual_range_patterns,
+    reason = "generated: negations stay `!(..)` (spike S8), lists stay as CLDR writes them"
+)]
+mod rules;
+
+use std::sync::OnceLock;
+
+/// A CLDR plural category, in template order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum Category {
+    Zero,
+    One,
+    Two,
+    Few,
+    Many,
+    Other,
+}
+
+const CATEGORIES: [Category; 6] = [
+    Category::Zero,
+    Category::One,
+    Category::Two,
+    Category::Few,
+    Category::Many,
+    Category::Other,
+];
+
+/// The operands of UTS 35 plural rules: `n` absolute value, `i` integer digits, `v` / `w`
+/// visible fraction digits with / without trailing zeros, `f` / `t` those digits as a
+/// number, `e` / `c` the compact exponent (always 0 here: no compact notation).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Operands {
+    pub(crate) n: f64,
+    pub(crate) i: u64,
+    pub(crate) v: u64,
+    pub(crate) w: u64,
+    pub(crate) f: u64,
+    pub(crate) t: u64,
+    pub(crate) e: u64,
+    pub(crate) c: u64,
+}
+
+/// ICU keeps the integer digits of a plural operand modulo 10^18 (`DecimalQuantity::toLong`
+/// truncates), so `1e18` has `i = 0` and is `one` in French, as in every browser.
+const I_MOD: u64 = 1_000_000_000_000_000_000;
+
+impl Operands {
+    /// A whole number.
+    pub(crate) fn int(n: u64) -> Operands {
+        Operands {
+            n: n as f64,
+            i: n % I_MOD,
+            v: 0,
+            w: 0,
+            f: 0,
+            t: 0,
+            e: 0,
+            c: 0,
+        }
+    }
+
+    /// A whole `f64` past 2^53, as `Intl.PluralRules` (ICU) reads it: `n` is the double
+    /// itself; `i` is the last 18 of its shortest decimal digits, turned into a double
+    /// (`getPluralOperand` returns one) and taken modulo as that double. `2^61` is
+    /// `2305843009213694000`: `i` = 305843009213694000 → 305843009213694016, so `i % 10`
+    /// is 6, not the 2 of the exact value nor the 0 of the digits.
+    #[cfg(feature = "format")]
+    pub(crate) fn whole_f64(x: f64) -> Operands {
+        struct Digits(u64);
+        impl std::fmt::Write for Digits {
+            fn write_str(&mut self, s: &str) -> std::fmt::Result {
+                for b in s.bytes().filter(u8::is_ascii_digit) {
+                    self.0 = (self.0 % (I_MOD / 10)) * 10 + u64::from(b - b'0');
+                }
+                Ok(())
+            }
+        }
+        let x = x.abs();
+        // `{}` of a whole f64: its shortest digits padded with zeros, never an exponent.
+        let mut d = Digits(0);
+        let _ = std::fmt::Write::write_fmt(&mut d, format_args!("{x}"));
+        Operands {
+            n: x,
+            i: d.0 as f64 as u64,
+            ..Operands::int(0)
+        }
+    }
+
+    /// A decimal as written (`"1.50"`): `v`, `w`, `f`, `t` from its fraction digits.
+    #[cfg(test)]
+    #[allow(
+        dead_code,
+        reason = "used by tests that include this module with #[path]"
+    )]
+    pub(crate) fn parse(s: &str) -> Operands {
+        let (int, frac) = s.split_once('.').unwrap_or((s, ""));
+        let digits = |d: &str| d.bytes().fold(0u64, |a, b| a * 10 + u64::from(b - b'0'));
+        let trimmed = frac.trim_end_matches('0');
+        Operands {
+            n: s.parse().unwrap_or(0.0),
+            i: digits(int) % I_MOD,
+            v: frac.len() as u64,
+            w: trimmed.len() as u64,
+            f: digits(frac),
+            t: digits(trimmed),
+            e: 0,
+            c: 0,
+        }
+    }
+}
+
+/// A count `pluralForm` reads by category: whole and not negative. Past 2^53 an `f64` keeps
+/// its own spelling (see [`Operands::whole_f64`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Whole {
+    Int(u64),
+    #[cfg(feature = "format")]
+    Big(f64),
+}
+
+/// A category list in template order.
+#[derive(Debug, Clone, Copy)]
+struct Cats {
+    list: [Category; 6],
+    len: usize,
+}
+
+impl Cats {
+    fn from_mask(mask: u8) -> Cats {
+        let mut cats = Cats {
+            list: [Category::Other; 6],
+            len: 0,
+        };
+        for c in CATEGORIES {
+            if mask & (1 << c as u8) != 0
+                && let Some(slot) = cats.list.get_mut(cats.len)
+            {
+                *slot = c;
+                cats.len += 1;
+            }
+        }
+        cats
+    }
+
+    fn position(&self, c: Category) -> Option<usize> {
+        self.list.iter().take(self.len).position(|&x| x == c)
+    }
+}
+
+/// `CATEGORY_PROBE` of `text.ts`: counts below it are read from a table.
+const PROBE: usize = 200;
+
+/// What `localePlural` of `text.ts` keeps per locale, here per rule set.
+#[derive(Debug)]
+pub(crate) struct Plural {
+    select: fn(&Operands) -> Category,
+    /// Every category of the rule set (`pluralCategories`).
+    all: Cats,
+    /// Categories counts under [`PROBE`] reach, without `zero`.
+    named: Cats,
+    /// Bit `k`: several counts under [`PROBE`] share `named[k]`, so its form must show `{count}`.
+    shared: u8,
+    small: [Category; PROBE],
+}
+
+impl Plural {
+    fn new(rule: &rules::Rule) -> Plural {
+        let mut small = [Category::Other; PROBE];
+        let mut seen = [0usize; 6];
+        for (n, slot) in small.iter_mut().enumerate() {
+            *slot = (rule.select)(&Operands::int(n as u64));
+            if let Some(k) = seen.get_mut(*slot as usize) {
+                *k += 1;
+            }
+        }
+        let reached = seen
+            .iter()
+            .enumerate()
+            .filter(|&(c, &k)| k > 0 && c != Category::Zero as usize)
+            .fold(0u8, |m, (c, _)| m | 1 << c);
+        let named = Cats::from_mask(reached);
+        let shared = (0..named.len)
+            .filter(|&k| {
+                let c = named.list.get(k).map_or(0, |&c| c as usize);
+                seen.get(c).is_some_and(|&n| n > 1)
+            })
+            .fold(0u8, |m, k| m | 1 << k);
+        Plural {
+            select: rule.select,
+            all: Cats::from_mask(rule.categories),
+            named,
+            shared,
+            small,
+        }
+    }
+
+    /// The category of a whole count.
+    pub(crate) fn category(&self, count: Whole) -> Category {
+        match count {
+            Whole::Int(n) => match self.small.get(n as usize) {
+                Some(&c) if n < PROBE as u64 => c,
+                _ => (self.select)(&Operands::int(n)),
+            },
+            #[cfg(feature = "format")]
+            Whole::Big(x) => (self.select)(&Operands::whole_f64(x)),
+        }
+    }
+}
+
+static DATA: [OnceLock<Plural>; rules::RULES.len()] =
+    [const { OnceLock::new() }; rules::RULES.len()];
+
+/// The rules of a tag, `None` for one `Intl.PluralRules` rejects or does not support.
+pub(crate) fn for_tag(tag: &str) -> Option<&'static Plural> {
+    let i = rule_index(tag)?;
+    let slot = DATA.get(i)?;
+    if let Some(p) = slot.get() {
+        return Some(p);
+    }
+    let p = compute(i)?;
+    Some(slot.get_or_init(|| p))
+}
+
+/// The data of rule set `i`, computed afresh (what [`for_tag`] caches; benches time it).
+pub(crate) fn compute(i: usize) -> Option<Plural> {
+    rules::RULES.get(i).map(Plural::new)
+}
+
+/// The select function and category mask of rule set `i` (tests).
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "used by tests that include this module with #[path]"
+)]
+pub(crate) fn rule(i: usize) -> (fn(&Operands) -> Category, u8) {
+    (rules::RULES[i].select, rules::RULES[i].categories)
+}
+
+/// The rule set of a locale `Intl` knows by this exact name (`pt-PT`, `de`).
+pub(crate) fn locale_rule(name: &str) -> Option<usize> {
+    let at = find(rules::LOCALES, &rules::LOCALES_ENDS, name)?;
+    rules::LOCALE_RULES.get(at).map(|&r| usize::from(r))
+}
+
+/// Entry `i` of a concatenated string table.
+fn nth(table: &'static str, ends: &[u16], i: usize) -> &'static str {
+    let start = i
+        .checked_sub(1)
+        .and_then(|j| ends.get(j))
+        .map_or(0, |&e| usize::from(e));
+    let end = ends.get(i).map_or(start, |&e| usize::from(e));
+    table.get(start..end).unwrap_or("")
+}
+
+/// Binary search of `key` in a sorted concatenated string table.
+fn find(table: &'static str, ends: &[u16], key: &str) -> Option<usize> {
+    let (mut lo, mut hi) = (0, ends.len());
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        match nth(table, ends, mid).as_bytes().cmp(key.as_bytes()) {
+            std::cmp::Ordering::Less => lo = mid + 1,
+            std::cmp::Ordering::Greater => hi = mid,
+            std::cmp::Ordering::Equal => return Some(mid),
+        }
+    }
+    None
+}
+
+fn alpha(s: &str) -> bool {
+    s.bytes().all(|b| b.is_ascii_alphabetic())
+}
+
+fn digit(s: &str) -> bool {
+    s.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn alnum(s: &str) -> bool {
+    s.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+/// A short ASCII string on the stack.
+#[derive(Clone, Copy)]
+struct Buf<const N: usize> {
+    bytes: [u8; N],
+    len: usize,
+}
+
+impl<const N: usize> Buf<N> {
+    const fn new() -> Self {
+        Buf {
+            bytes: [0; N],
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, s: &str, case: impl Fn(u8) -> u8) {
+        for b in s.bytes() {
+            if let Some(slot) = self.bytes.get_mut(self.len) {
+                *slot = case(b);
+                self.len += 1;
+            }
+        }
+    }
+
+    fn of(s: &str, case: impl Fn(u8) -> u8) -> Self {
+        let mut buf = Self::new();
+        buf.push(s, case);
+        buf
+    }
+
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(self.bytes.get(..self.len).unwrap_or(&[])).unwrap_or("")
+    }
+}
+
+fn lower(b: u8) -> u8 {
+    b.to_ascii_lowercase()
+}
+
+fn upper(b: u8) -> u8 {
+    b.to_ascii_uppercase()
+}
+
+/// The parts of a well-formed tag that pick a rule.
+struct Tag<'a> {
+    language: Buf<8>,
+    script: Option<&'a str>,
+    region: Option<&'a str>,
+    /// The first variant (aliases like `art-lojban` name one).
+    variants: [Option<&'a str>; 2],
+}
+
+/// `unicode_locale_id` of UTS 35 as ECMA-402 `IsStructurallyValidLanguageTag` checks it:
+/// `None` where `Intl` throws a RangeError (`en_US`, `root`, `i-klingon`, a repeated variant
+/// or singleton). Extensions are checked by shape only (singleton, then subtags of 2..8).
+fn parse(tag: &str) -> Option<Tag<'_>> {
+    let mut parts = tag.split('-').peekable();
+    let language = parts.next()?;
+    if !(alpha(language) && matches!(language.len(), 2 | 3 | 5..=8)) {
+        return None;
+    }
+    let mut out = Tag {
+        language: Buf::of(language, lower),
+        script: None,
+        region: None,
+        variants: [None; 2],
+    };
+    let mut seen_variants: [Buf<8>; 8] = [Buf::new(); 8];
+    let mut n_variants = 0;
+    let mut stage = 0;
+    while let Some(&s) = parts.peek() {
+        if s.len() == 1 {
+            break;
+        }
+        parts.next();
+        if stage == 0 && s.len() == 4 && alpha(s) {
+            out.script = Some(s);
+            stage = 1;
+        } else if stage <= 1 && ((s.len() == 2 && alpha(s)) || (s.len() == 3 && digit(s))) {
+            out.region = Some(s);
+            stage = 2;
+        } else if alnum(s)
+            && (matches!(s.len(), 5..=8)
+                || (s.len() == 4 && s.as_bytes().first().is_some_and(u8::is_ascii_digit)))
+        {
+            let v = Buf::<8>::of(s, lower);
+            let known = seen_variants.get(..n_variants.min(8)).unwrap_or(&[]);
+            if known.iter().any(|k| k.as_str() == v.as_str()) {
+                return None;
+            }
+            if let Some(slot) = seen_variants.get_mut(n_variants) {
+                *slot = v;
+            }
+            if let Some(slot) = out.variants.get_mut(n_variants) {
+                *slot = Some(s);
+            }
+            n_variants += 1;
+            stage = 2;
+        } else {
+            return None;
+        }
+    }
+    // Extensions and private use.
+    let mut singletons = 0u64;
+    while let Some(s) = parts.next() {
+        let c = *s.as_bytes().first()?;
+        if s.len() != 1 || !c.is_ascii_alphanumeric() {
+            return None;
+        }
+        let c = c.to_ascii_lowercase();
+        if c == b'x' {
+            let mut any = false;
+            for p in parts.by_ref() {
+                if p.is_empty() || p.len() > 8 || !alnum(p) {
+                    return None;
+                }
+                any = true;
+            }
+            return any.then_some(out);
+        }
+        let bit = 1u64 << (c % 64);
+        if singletons & bit != 0 {
+            return None;
+        }
+        singletons |= bit;
+        // The subtags up to the next singleton.
+        let mut ext = Vec::new();
+        while let Some(&p) = parts.peek() {
+            if p.len() == 1 {
+                break;
+            }
+            if !(matches!(p.len(), 2..=8) && alnum(p)) {
+                return None;
+            }
+            ext.push(p);
+            parts.next();
+        }
+        let valid = match c {
+            b'u' => unicode_extension(&ext),
+            b't' => transformed_extension(&ext),
+            _ => !ext.is_empty(),
+        };
+        if !valid {
+            return None;
+        }
+    }
+    Some(out)
+}
+
+/// `unicode_locale_extensions` after `-u`: attributes (3..8), then keywords: a key
+/// (alphanumeric + letter) and its type subtags (3..8).
+fn unicode_extension(ext: &[&str]) -> bool {
+    let mut keys = false;
+    for p in ext {
+        let b = p.as_bytes();
+        if b.len() == 2 {
+            if !b.get(1).is_some_and(u8::is_ascii_alphabetic) {
+                return false;
+            }
+            keys = true;
+        } else if !keys && !(3..=8).contains(&b.len()) {
+            return false;
+        }
+    }
+    !ext.is_empty()
+}
+
+/// `transformed_extensions` after `-t`: an optional language id, then fields: a key
+/// (letter + digit) and one or more values (3..8).
+fn transformed_extension(ext: &[&str]) -> bool {
+    let mut i = 0;
+    let mut lang = false;
+    if let Some(l) = ext.first()
+        && alpha(l)
+        && matches!(l.len(), 2 | 3 | 5..=8)
+    {
+        lang = true;
+        i = 1;
+        if ext.get(i).is_some_and(|s| s.len() == 4 && alpha(s)) {
+            i += 1;
+        }
+        if ext
+            .get(i)
+            .is_some_and(|s| (s.len() == 2 && alpha(s)) || (s.len() == 3 && digit(s)))
+        {
+            i += 1;
+        }
+        while ext.get(i).is_some_and(|s| {
+            matches!(s.len(), 5..=8)
+                || (s.len() == 4 && s.as_bytes().first().is_some_and(u8::is_ascii_digit))
+        }) {
+            i += 1;
+        }
+    }
+    let mut fields = false;
+    while let Some(key) = ext.get(i) {
+        let b = key.as_bytes();
+        if !(b.len() == 2 && b[0].is_ascii_alphabetic() && b[1].is_ascii_digit()) {
+            return false;
+        }
+        i += 1;
+        let start = i;
+        while ext.get(i).is_some_and(|s| (3..=8).contains(&s.len())) {
+            i += 1;
+        }
+        if i == start {
+            return false;
+        }
+        fields = true;
+    }
+    lang || fields
+}
+
+/// Looks `key` up in the sorted region alias table.
+fn region_alias(key: &str) -> Option<&'static str> {
+    rules::REGION_ALIASES
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, to)| *to)
+}
+
+/// The replacement of a language alias key, unless `tag` is that key itself, bare and
+/// lowercase, and V8 passes such a tag through (`bh`).
+fn language_alias(key: &str, tag: &str) -> Option<&'static str> {
+    let at = find(rules::ALIAS_KEYS, &rules::ALIAS_KEYS_ENDS, key)?;
+    let bare = rules::ALIAS_BARE.get(at).copied().unwrap_or(true);
+    (bare || key != tag).then(|| nth(rules::ALIAS_VALUES, &rules::ALIAS_VALUES_ENDS, at))
+}
+
+/// The rule set `Intl.PluralRules` uses for `tag`, `None` for the index rule.
+pub(crate) fn rule_index(tag: &str) -> Option<usize> {
+    let t = parse(tag)?;
+    let mut language = t.language;
+    let mut script = t.script.map(|s| {
+        let mut b = Buf::<4>::of(s, lower);
+        if let Some(first) = b.bytes.first_mut() {
+            *first = first.to_ascii_uppercase();
+        }
+        b
+    });
+    let mut region = t.region.map(|r| Buf::<3>::of(r, upper));
+    // A `language-variant` alias first (`art-lojban`), then the language alone (`iw`).
+    let mut replacement = None;
+    for v in t.variants.iter().flatten() {
+        let mut key = Buf::<17>::of(language.as_str(), lower);
+        key.push("-", lower);
+        key.push(v, lower);
+        replacement = replacement.or_else(|| language_alias(key.as_str(), tag));
+    }
+    let replacement = replacement.or_else(|| language_alias(language.as_str(), tag));
+    if let Some(r) = replacement {
+        let mut parts = r.split('-');
+        language = Buf::of(parts.next().unwrap_or(""), lower);
+        for p in parts {
+            if p.len() == 4 && alpha(p) && script.is_none() {
+                script = Some(Buf::of(p, |b| b));
+            } else if (p.len() == 2 || p.len() == 3) && region.is_none() {
+                region = Some(Buf::of(p, upper));
+            }
+        }
+    }
+    if let Some(r) = &region
+        && let Some(to) = region_alias(r.as_str())
+    {
+        region = Some(Buf::of(to, upper));
+    }
+    // BestAvailableLocale: the longest known prefix of language[-script][-region].
+    let mut candidate = Buf::<17>::of(language.as_str(), |b| b);
+    let base = candidate.len;
+    if let Some(s) = &script {
+        candidate.push("-", |b| b);
+        candidate.push(s.as_str(), |b| b);
+    }
+    let with_script = candidate.len;
+    if let Some(r) = &region {
+        candidate.push("-", |b| b);
+        candidate.push(r.as_str(), |b| b);
+        if let Some(i) = locale_rule(candidate.as_str()) {
+            return Some(i);
+        }
+    }
+    candidate.len = with_script;
+    if with_script > base
+        && let Some(i) = locale_rule(candidate.as_str())
+    {
+        return Some(i);
+    }
+    candidate.len = base;
+    locale_rule(candidate.as_str())
+}
+
+/// What `pluralForm` reads from a template's forms besides their text, found once at load.
+#[derive(Debug, Clone)]
+pub(crate) struct Shape {
+    len: usize,
+    /// The first form has a `{`: no categories (`unmarkedIndex`).
+    first_brace: bool,
+    /// Bit `k`: form `k` has `{count}` (forms past 63 never matter: a locale has ≤ 6).
+    counts: u64,
+}
+
+impl Shape {
+    /// From the forms as split (trimmed or not: neither changes `{` or `{count}`).
+    pub(crate) fn new<'a>(forms: impl Iterator<Item = &'a str>) -> Shape {
+        let mut shape = Shape {
+            len: 0,
+            first_brace: false,
+            counts: 0,
+        };
+        for (k, form) in forms.enumerate() {
+            if k == 0 {
+                shape.first_brace = form.contains('{');
+            }
+            if k < 64 && form.contains("{count}") {
+                shape.counts |= 1 << k;
+            }
+            shape.len += 1;
+        }
+        shape
+    }
+
+    /// The index of the form `count` picks (`pluralIndex` / `markedIndex` of `text.ts`).
+    /// `count` is `None` when negative, fractional or not a number: the last form.
+    pub(crate) fn index(
+        &self,
+        marked: bool,
+        count: Option<Whole>,
+        plural: Option<&Plural>,
+    ) -> usize {
+        let last = self.len.saturating_sub(1);
+        let Some(count) = count else {
+            return last;
+        };
+        let by_index = || match count {
+            Whole::Int(n) => usize::try_from(n).map_or(last, |n| n.min(last)),
+            #[cfg(feature = "format")]
+            Whole::Big(_) => last,
+        };
+        let zero = matches!(count, Whole::Int(0));
+        if marked {
+            if zero {
+                return 0;
+            }
+            let Some(p) = plural else {
+                return by_index();
+            };
+            let cats = if last > p.named.len { p.all } else { p.named };
+            return match cats.position(p.category(count)) {
+                None => last,
+                Some(k) => (k + 1).min(last),
+            };
+        }
+        match plural {
+            Some(p) if self.unmarked(p) => {
+                if zero {
+                    return 0;
+                }
+                match p.named.position(p.category(count)) {
+                    None => last,
+                    Some(k) => k + 1,
+                }
+            }
+            _ => by_index(),
+        }
+    }
+
+    /// `unmarkedIndex` applies: a zero form without `{`, then one form per named category,
+    /// each shared one showing `{count}`.
+    fn unmarked(&self, p: &Plural) -> bool {
+        p.named.len >= 3
+            && self.len == p.named.len + 1
+            && !self.first_brace
+            && (0..p.named.len)
+                .all(|k| p.shared & (1 << k) == 0 || self.counts & (1 << (k + 1)) != 0)
+    }
+}

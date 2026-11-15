@@ -13,10 +13,10 @@
 //!   `""`, which `t` answers with `""` and never reports).
 #![allow(dead_code)]
 
-use i18n_next::{Arg, Args, Error, I18n, View};
+use i18n_next::{Arg, Args, Count, Error, I18n, View};
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 macro_rules! fixtures {
     ($($path:literal),* $(,)?) => {
@@ -81,6 +81,27 @@ pub const GOLDENS: &[(&str, &str)] = &[
     (
         "options.md",
         include_str!("../../../../fixtures/compat/__golden__/options.md"),
+    ),
+    (
+        "plural.md",
+        include_str!("../../../../fixtures/compat/__golden__/plural.md"),
+    ),
+];
+
+/// The catalog of `tc_in` lines (`fixtures/compat/plural`, `scripts/compat.mjs`
+/// `PLURAL_DIR`); `tests/compat.rs` checks the list against the directory.
+pub const PLURAL_FILES: &[(&str, &[u8])] = &[
+    (
+        "en.json",
+        include_bytes!("../../../../fixtures/compat/plural/en.json"),
+    ),
+    (
+        "pages/about/en.json",
+        include_bytes!("../../../../fixtures/compat/plural/pages/about/en.json"),
+    ),
+    (
+        "ru.json",
+        include_bytes!("../../../../fixtures/compat/plural/ru.json"),
     ),
 ];
 
@@ -394,6 +415,9 @@ pub fn run() -> Result<usize, String> {
     )
     .unwrap();
 
+    let mut singles: BTreeMap<(bool, String, String), I18n> = BTreeMap::new();
+    let mut counted: BTreeMap<(String, String), (I18n, Log)> = BTreeMap::new();
+
     let mut diff = String::new();
     let mut total = 0;
     for (name, text) in GOLDENS {
@@ -434,6 +458,43 @@ pub fn run() -> Result<usize, String> {
                 ("chain_t", [V::Str(locale), V::Str(page), V::Str(key)]) => {
                     chained.lookup(&chained.i18n.with_locale(locale).page(page), key)
                 }
+                ("tc" | "tc_code", [V::Str(tag), V::Str(template), V::Num(n)]) => {
+                    let iso = fname == "tc";
+                    let i18n = singles
+                        .entry((iso, tag.clone(), template.clone()))
+                        .or_insert_with(|| single(iso, tag, template));
+                    spell(&i18n.tc("k", count(*n)))
+                }
+                (
+                    "tc_in" | "tc_missing",
+                    [
+                        V::Pair(locale, fallback),
+                        V::Str(page),
+                        V::Str(key),
+                        V::Num(n),
+                        params,
+                        default,
+                    ],
+                ) => {
+                    let (i18n, missed) = counted
+                        .entry((locale.clone(), fallback.clone()))
+                        .or_insert_with(|| plural_catalog(locale, fallback));
+                    missed.lock().unwrap().clear();
+                    let view = i18n.page(page);
+                    let mut a = args(params);
+                    if let V::Str(d) = default {
+                        a = Some(a.unwrap_or_default().or(d));
+                    }
+                    let out = match &a {
+                        None => view.tc(key, count(*n)),
+                        Some(a) => view.tc_with(key, count(*n), a),
+                    };
+                    if fname == "tc_in" {
+                        spell(&out)
+                    } else {
+                        spell(&missed.lock().unwrap().join("; "))
+                    }
+                }
                 _ => answer(
                     call,
                     fname,
@@ -463,6 +524,51 @@ pub fn run() -> Result<usize, String> {
     } else {
         Err(diff)
     }
+}
+
+/// A count as the golden spells it: a safe integer through the integer `Count`, anything
+/// else (`1.5`, `-0`, `NaN`, `1e+21`) through `f64`.
+fn count(n: f64) -> Count {
+    let int = n.fract() == 0.0
+        && n.abs() < 9_007_199_254_740_992.0
+        && !(n == 0.0 && n.is_sign_negative());
+    if int {
+        Count::from(n as i64)
+    } else {
+        Count::from(n)
+    }
+}
+
+/// The instance of a `tc` / `tc_code` line: locale `p` with `iso` `tag`, or the code `tag`
+/// itself with no iso, and the template as message `k`.
+fn single(iso: bool, tag: &str, template: &str) -> I18n {
+    let json = format!("{{\"k\": {}}}", spell(template));
+    let b = if iso {
+        I18n::builder()
+            .locale("p")
+            .iso("p", tag)
+            .messages("p", None, &json)
+    } else {
+        I18n::builder().locale(tag).messages(tag, None, &json)
+    };
+    b.build().unwrap()
+}
+
+/// The `missing` calls an instance recorded.
+type Log = Arc<Mutex<Vec<String>>>;
+
+/// The `tc_in` catalog in one context, with the `missing` calls it records.
+fn plural_catalog(locale: &str, fallback: &str) -> (I18n, Log) {
+    let missed = Arc::new(Mutex::new(Vec::new()));
+    let log = missed.clone();
+    let mut b = I18n::builder()
+        .locale(locale)
+        .files(PLURAL_FILES.iter().copied())
+        .missing(move |l, k, p| log.lock().unwrap().push(format!("{l} {k} {p}")));
+    if fallback != locale {
+        b = b.fallback(fallback);
+    }
+    (b.build().unwrap(), missed)
 }
 
 /// What each fixture file becomes when loaded alone (`pages` = `.pages(..)`).

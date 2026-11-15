@@ -8,8 +8,9 @@ mod hash;
 mod i18n;
 mod json;
 mod loader;
+mod plural;
 
-pub use args::{Arg, Args};
+pub use args::{Arg, Args, Count};
 pub use error::Error;
 pub use i18n::{Builder, I18n, LocaleInfo, View};
 

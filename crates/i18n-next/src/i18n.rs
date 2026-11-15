@@ -7,11 +7,12 @@
 //! never sees a change. A locale switch shares the data and chain maps of the previous
 //! snapshot (`Arc` clones): only the active pointer changes.
 
-use crate::args::Args;
-use crate::catalog::{Chunk, Entry, Msg, Tree, interpolate_once};
+use crate::args::{Args, Count};
+use crate::catalog::{Chunk, Entry, Msg, Tree, WithCount, interpolate_once};
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::loader::{self, Config, Kind};
+use crate::plural::{self, Plural};
 use std::cell::RefCell;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -108,6 +109,18 @@ struct Snapshot {
     /// reads (`buildFallbackLocaleChain` of an unconfigured code is `[fallback]`).
     fallback: Chain,
     meta: Arc<Meta>,
+    /// Plural rules of the active locale (its `iso`, else its code); `None`: index rule.
+    plural: Option<&'static Plural>,
+    /// The same for every known locale, resolved once: a view in another locale reads
+    /// them with one hash lookup instead of resolving its tag on every `tc` (~130 ns).
+    plurals: Arc<FastMap<Arc<str>, Option<&'static Plural>>>,
+}
+
+impl Meta {
+    /// Plural rules of `code`: by its `iso` when it has one (`ua` → `uk-UA`), else the code.
+    fn plural(&self, code: &str) -> Option<&'static Plural> {
+        plural::for_tag(self.iso.get(code).map_or(code, |t| &**t))
+    }
 }
 
 impl Snapshot {
@@ -120,9 +133,13 @@ impl Snapshot {
             .chain(data.keys().map(|k| &**k))
             .chain(meta.declared.iter().map(|k| &**k))
             .chain(std::iter::once(&*locale));
+        let mut plurals = FastMap::default();
         for code in names {
             if !chains.contains_key(code) {
-                chains.insert(Arc::from(code), meta.chain(&data, code));
+                let code: Arc<str> = Arc::from(code);
+                let chain = meta.chain(&data, &code);
+                plurals.insert(code.clone(), meta.plural(&code));
+                chains.insert(code, chain);
             }
         }
         let active = chains
@@ -138,12 +155,22 @@ impl Snapshot {
         Snapshot {
             version,
             own: data.get(&*locale).cloned(),
+            plural: meta.plural(&locale),
             locale,
             data: Arc::new(data),
             chains: Arc::new(chains),
+            plurals: Arc::new(plurals),
             active,
             fallback,
             meta,
+        }
+    }
+
+    /// Plural rules of `code` (a view's locale): known ones from the table, others resolved.
+    fn plural_of(&self, code: &str) -> Option<&'static Plural> {
+        match self.plurals.get(code) {
+            Some(p) => *p,
+            None => self.meta.plural(code),
         }
     }
 
@@ -436,6 +463,11 @@ impl I18n {
                 Some(a) => t.interpolate(a),
                 None => String::from(&*t.raw),
             }),
+            // `t` reads the whole string, pipes and all (JS `t`)
+            Some(Entry::Msg(Msg::Plural(p))) => Found::Text(match args {
+                Some(a) => p.text.interpolate(a),
+                None => String::from(&*p.text.raw),
+            }),
             Some(Entry::Value(v)) => Found::Text(String::from(&**v)),
             Some(Entry::Node) => Found::Node,
             None => Found::Miss((report && locale.is_none()).then(|| s.locale.clone())),
@@ -453,6 +485,47 @@ impl I18n {
                     Some((a, d)) => interpolate_once(d, a),
                     None => key.to_owned(),
                 }
+            }
+        }
+    }
+
+    /// `tc` of `core/src/base.ts` with the default plural rule (`defaultPlural`).
+    fn resolve_count(
+        &self,
+        locale: Option<&str>,
+        page: Option<&str>,
+        key: &str,
+        count: Count,
+        args: Option<&Args<'_>>,
+    ) -> String {
+        let report = self.inner.missing.is_some();
+        let params = WithCount { args, count };
+        let found = self.inner.read(|s| {
+            let plural = match locale {
+                None => s.plural,
+                Some(code) => s.plural_of(code),
+            };
+            match s.lookup(locale, page, key) {
+                Some(Entry::Msg(Msg::Text(t))) => Found::Text(t.single_form(&params)),
+                Some(Entry::Msg(Msg::Plural(p))) => Found::Text(p.pick(count, plural, &params)),
+                // A number is its own one form; a boolean or a subtree has no plural.
+                Some(Entry::Value(v)) if !matches!(&**v, "true" | "false") => {
+                    Found::Text(String::from(&**v))
+                }
+                Some(_) => Found::Node,
+                None => Found::Miss((report && locale.is_none()).then(|| s.locale.clone())),
+            }
+        });
+        match found {
+            Found::Text(s) => s,
+            Found::Node => count_fallback(key, &params),
+            Found::Miss(active) => {
+                if let Some(missing) = &self.inner.missing {
+                    let code = locale.or(active.as_deref()).unwrap_or("");
+                    let page = page.filter(|p| !p.is_empty()).unwrap_or("index");
+                    missing(code, key, page);
+                }
+                count_fallback(key, &params)
             }
         }
     }
@@ -496,6 +569,60 @@ impl I18n {
     #[must_use]
     pub fn try_t(&self, key: &str) -> Option<String> {
         self.try_resolve(None, None, key)
+    }
+
+    /// The plural form of `key` for `count`, with `{count}` filled (JS `tc(key, count)`).
+    ///
+    /// A value `a | b | c` is split once at load; the form goes by the plural rules of the
+    /// locale's `iso` (else its code), as `@i18n-micro/core` `pluralForm` picks it:
+    /// - `=0 none | one | many`: the first form for 0, the others by CLDR category;
+    /// - `none | {count} apple | {count} apples`-like templates with a zero form and one
+    ///   form per category the locale's small counts reach (≥ 3 of them, as in `ru`): by
+    ///   category;
+    /// - anything else by index: form `count`, the last one past the end.
+    ///
+    /// A negative, fractional or non-finite count takes the last form; an unknown tag the
+    /// index rule. Forms are trimmed. A string without `|` is its own one form, a number
+    /// is returned as JS prints it. A boolean or a subtree returns the key, a miss calls
+    /// `missing` and returns the key. Exactly one allocation: the result.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .locale("ru")
+    ///     .messages("ru", None, r#"{"apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок",
+    ///                               "cars": "car | cars"}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.tc("apples", 0), "нет яблок");
+    /// assert_eq!(i18n.tc("apples", 21), "21 яблоко");
+    /// assert_eq!(i18n.tc("apples", 3), "3 яблока");
+    /// assert_eq!(i18n.tc("apples", 11), "11 яблок");
+    /// assert_eq!(i18n.tc("cars", 1), "cars"); // index rule: form 1
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn tc(&self, key: &str, count: impl Into<Count>) -> String {
+        self.resolve_count(None, None, key, count.into(), None)
+    }
+
+    /// [`I18n::tc`] with parameters and an optional default (JS `tc(key, { count, ...params },
+    /// default)`). `{count}` is always `count`. On a miss, a boolean or a subtree the default
+    /// is interpolated (an empty one stays empty, unlike `t_with`), else the key comes back.
+    ///
+    /// ```
+    /// use i18n_next::{Args, I18n};
+    ///
+    /// let i18n = I18n::builder()
+    ///     .messages("en", None, r#"{"inbox": "{name}, no mail | {name}, one mail | {name}, {count} mails"}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.tc_with("inbox", 5, &Args::new().str("name", "Ann")), "Ann, 5 mails");
+    /// assert_eq!(i18n.tc_with("nope", 2, &Args::new().or("{count} items")), "2 items");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn tc_with(&self, key: &str, count: impl Into<Count>, args: &Args<'_>) -> String {
+        self.resolve_count(None, None, key, count.into(), Some(args))
     }
 
     /// The raw stored text of `key` (no interpolation), shared: no allocation.
@@ -559,6 +686,8 @@ impl I18n {
                 active: active.clone(),
                 own: s.data.get(code).cloned(),
                 fallback: s.fallback.clone(),
+                plural: s.plural_of(code),
+                plurals: s.plurals.clone(),
                 meta: s.meta.clone(),
             }))
         })
@@ -654,6 +783,16 @@ impl I18n {
     }
 }
 
+/// What `tc` returns without a plural: the default interpolated (an empty one stays, JS
+/// `defaultValue ? interpolate(defaultValue, values) : defaultValue ?? key`), else the key.
+fn count_fallback(key: &str, params: &WithCount<'_, '_>) -> String {
+    match params.args.and_then(Args::default_raw) {
+        Some("") => String::new(),
+        Some(d) => interpolate_once(d, params),
+        None => key.to_owned(),
+    }
+}
+
 /// Merges `tree` into a copy of the root (`None`) or page chunk of `slot`: the old chunk
 /// stays as it is for readers of older snapshots.
 fn merge_into(slot: &mut LocaleData, page: Option<&str>, tree: Tree) {
@@ -730,6 +869,20 @@ impl View {
     pub fn try_t(&self, key: &str) -> Option<String> {
         let (l, p) = self.parts();
         self.i18n.try_resolve(l, p, key)
+    }
+
+    /// [`I18n::tc`] in this view: the plural rules of this view's locale.
+    #[must_use]
+    pub fn tc(&self, key: &str, count: impl Into<Count>) -> String {
+        let (l, p) = self.parts();
+        self.i18n.resolve_count(l, p, key, count.into(), None)
+    }
+
+    /// [`I18n::tc_with`] in this view.
+    #[must_use]
+    pub fn tc_with(&self, key: &str, count: impl Into<Count>, args: &Args<'_>) -> String {
+        let (l, p) = self.parts();
+        self.i18n.resolve_count(l, p, key, count.into(), Some(args))
     }
 
     /// [`I18n::get`] in this view.
@@ -851,8 +1004,10 @@ impl Builder {
         self
     }
 
-    /// The BCP 47 tag of a locale code (`ua` → `uk-UA`) for plurals and formats. The code
-    /// becomes a known locale.
+    /// The BCP 47 tag of a locale code (`ua` → `uk-UA`) for plurals and formats: `tc` goes
+    /// by its rules. Without one, the code itself is the tag; a tag `Intl.PluralRules`
+    /// rejects or does not know (`en_US`, `xx`) gets the index rule. The code becomes a
+    /// known locale.
     #[must_use]
     pub fn iso(mut self, code: &str, tag: &str) -> Self {
         self.iso.push((code.to_owned(), tag.to_owned()));
@@ -924,8 +1079,9 @@ impl Builder {
         self
     }
 
-    /// Called on every miss of `t` / `t_with` with `(locale, key, page)`; the root page is
-    /// `"index"`. Not called for `try_t`, `get`, `has`, a subtree or `t("")`.
+    /// Called on every miss of `t` / `t_with` / `tc` / `tc_with` with `(locale, key, page)`;
+    /// the root page is `"index"`. Not called for `try_t`, `get`, `has`, a subtree, a
+    /// boolean under `tc` or `t("")`.
     #[must_use]
     pub fn missing(mut self, handler: impl Fn(&str, &str, &str) + Send + Sync + 'static) -> Self {
         self.missing = Some(Box::new(handler));

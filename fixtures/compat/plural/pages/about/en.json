@@ -1,0 +1,4 @@
+{
+  "apples": "page: none | page: one | page: {count}",
+  "page_only": "about one | about {count}"
+}

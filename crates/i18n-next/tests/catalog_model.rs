@@ -15,7 +15,8 @@
 //! Actions: `add_messages` (also through an alias and into a new locale), re-adding a chunk
 //! added before, `set_locale`, lookups through every entry point (`t` / `t_with` with
 //! named, duplicate, list, `{01}`, `.or` and overflowing parameters / `try_t` / `has` /
-//! `get`, on `page()` and `with_locale()` views) with keys drawn mostly from the keys
+//! `get` / `tc` / `tc_with` with integer and `f64` counts, on `page()` and `with_locale()`
+//! views) with keys drawn mostly from the keys
 //! already written, a lookup of a key written in both the page and the root of one
 //! locale, and bad names. After every step: the answer, every `missing` call, the
 //! version, the active locale, `pages()` and `locales()`.
@@ -23,12 +24,19 @@
 //! Two counters prove the session space can see what it must: lookups whose answer
 //! changes if the root layer were read before the page layer, and lookups whose answer
 //! changes if merging an object into an object replaced it. The run fails if either stays
-//! 0. At the end of a session: a value and a view handed out before it are unchanged /
+//! 0. A third counts `tc` answers where the category rule (unmarked or `=0 `) picked another
+//! form than the index rule would. The model's `pluralForm` is its own: only the category
+//! of a count comes from the generated rules (checked against `Intl` by `plural_props`).
+//! At the end of a session: a value and a view handed out before it are unchanged /
 //! live, versions only grew, and a fresh catalog built from the model's chunks through
 //! `messages` answers every locale × page × key like the session's catalog.
 #![cfg(not(target_arch = "wasm32"))]
 
-use i18n_next::{Args, Error, I18n};
+#[path = "../src/plural/mod.rs"]
+#[allow(dead_code)]
+mod plural;
+
+use i18n_next::{Args, Count, Error, I18n};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngAlgorithm, TestCaseError, TestRng, TestRunner};
 use serde_json::{Map, Value};
@@ -102,12 +110,46 @@ const TEXTS: &[&str] = &[
     "{ x}",
     "{x\u{200b}}",
     "{a}{b}{c}{d}{x}",
+    // plural templates: index, unmarked by category (ru, uk), `=0 `, trimming, empty forms
+    "car | cars",
+    "z | {count} o | {count} f | {count} m",
+    "z | o | {count} f | {count} m",
+    "=0 none | one {count} | other {count}",
+    "=0 n | a | b | c | d | e",
+    " p {x} |{count}| q ",
+    "|",
+    "=0 lone {count}",
+    "{x} | {count} {x} | {count}",
 ];
+
+/// `tc` counts: the `Count`, its JS spelling, and the whole count `pluralForm` reads.
+fn counts() -> [(Count, &'static str, Option<u64>); 16] {
+    [
+        (Count::from(0), "0", Some(0)),
+        (Count::from(1), "1", Some(1)),
+        (Count::from(2u64), "2", Some(2)),
+        (Count::from(3usize), "3", Some(3)),
+        (Count::from(5i32), "5", Some(5)),
+        (Count::from(11u32), "11", Some(11)),
+        (Count::from(21), "21", Some(21)),
+        (Count::from(22), "22", Some(22)),
+        (Count::from(101), "101", Some(101)),
+        (Count::from(250u64), "250", Some(250)),
+        (Count::from(1000), "1000", Some(1000)),
+        (Count::from(-1), "-1", None),
+        (Count::from(1.5), "1.5", None),
+        (Count::from(2.0), "2", Some(2)),
+        (Count::from(-0.0), "0", Some(0)),
+        (Count::from(f64::NAN), "NaN", None),
+    ]
+}
 
 /// Lookups whose answer depends on the page layer being read before the root layer.
 static LAYER_ORDER_SEEN: AtomicUsize = AtomicUsize::new(0);
 /// Lookups whose answer depends on an object merging into an object (not replacing it).
 static DEEP_MERGE_SEEN: AtomicUsize = AtomicUsize::new(0);
+/// `tc` answers where a category rule picked another form than the index rule.
+static CATEGORY_SEEN: AtomicUsize = AtomicUsize::new(0);
 
 /// `t_with` parameters, each with its JS meaning in [`ArgsKind::param`].
 #[derive(Debug, Clone, Copy)]
@@ -183,6 +225,8 @@ enum Via {
     TryT,
     Has,
     Get,
+    /// `tc` (no args) / `tc_with`, with the count at this index of [`counts`].
+    Tc(u8, Option<ArgsKind>),
 }
 
 /// A locale of the case by index: `codes[i % (n + 1)]`, the last slot is [`UNKNOWN`].
@@ -274,6 +318,16 @@ fn object() -> impl Strategy<Value = Value> {
         .prop_map(|m| Value::Object(m.into_iter().collect()))
 }
 
+fn kind2() -> impl Strategy<Value = ArgsKind> {
+    prop::sample::select(vec![
+        ArgsKind::Named,
+        ArgsKind::List,
+        ArgsKind::NamedOr,
+        ArgsKind::EmptyOr,
+        ArgsKind::Overflow,
+    ])
+}
+
 fn via() -> impl Strategy<Value = Via> {
     let kind = prop::sample::select(vec![
         ArgsKind::Named,
@@ -288,6 +342,7 @@ fn via() -> impl Strategy<Value = Via> {
         1 => Just(Via::TryT),
         2 => Just(Via::Has),
         1 => Just(Via::Get),
+        4 => (0u8..16, prop::option::of(kind2())).prop_map(|(c, k)| Via::Tc(c, k)),
     ]
 }
 
@@ -328,7 +383,7 @@ fn case() -> impl Strategy<Value = Case> {
                 prop::collection::vec((any::<bool>(), prop::option::of(0..n), any::<bool>()), n),
                 prop::collection::vec((0..n, 0..n), 0..3),
                 prop::option::of(0..=n),
-                (any::<bool>(), prop::option::of((0..n, any::<bool>()))),
+                (any::<bool>(), prop::option::of((0..n, 0..4usize))),
                 prop::collection::vec((0..2usize, 0..2usize), 0..3),
                 prop::collection::vec((0..n, 0..5usize, object()), 0..7),
                 prop::collection::vec(
@@ -377,7 +432,8 @@ fn case() -> impl Strategy<Value = Case> {
                     configured,
                     links: links.iter().map(|&(a, b)| (codes[a], codes[b])).collect(),
                     fallback: fallback.map(|f| codes.get(f).copied().unwrap_or("en")),
-                    iso: iso.map(|(i, upper)| (codes[i], if upper { "Ab-CD" } else { "ab" })),
+                    // unsupported tags (index rule) and real ones (`uk-UA` unmarked, `ar` six categories)
+                    iso: iso.map(|(i, t)| (codes[i], ["ab", "Ab-CD", "uk-UA", "ar"][t])),
                     pages,
                     aliases: aliases
                         .iter()
@@ -525,6 +581,11 @@ fn js_space(c: char) -> bool {
 
 /// `text.replace(/\{([^{}\s]+)\}/g, (m, name) => params[name] ?? m)`.
 fn interpolate(text: &str, kind: ArgsKind) -> String {
+    interpolate_by(text, |name| kind.param(name))
+}
+
+/// [`interpolate`] with any parameter lookup.
+fn interpolate_by(text: &str, param: impl Fn(&str) -> Option<String>) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::new();
     let mut i = 0;
@@ -536,7 +597,7 @@ fn interpolate(text: &str, kind: ArgsKind) -> String {
             }
             if j < chars.len() && chars[j] == '}' && j > i + 1 {
                 let name: String = chars[i + 1..j].iter().collect();
-                match kind.param(&name) {
+                match param(&name) {
                     Some(v) => out.push_str(&v),
                     None => out.extend(&chars[i..=j]),
                 }
@@ -800,6 +861,73 @@ impl Model {
         }
     }
 
+    /// A written key whose text in this view has a `|`.
+    fn plural_key(&self, view: Option<&str>, page: Option<&str>, pick: usize) -> Option<String> {
+        let keys: Vec<&String> = self
+            .written
+            .iter()
+            .filter(|k| {
+                matches!(self.lookup_as(view, page, k, false, false), Some(Hit::Msg(s)) if s.contains('|'))
+            })
+            .collect();
+        (!keys.is_empty()).then(|| keys[pick % keys.len()].clone())
+    }
+
+    /// The tag plurals of `code` go by: the builder's `iso`, else `i18n.json`'s, else the code.
+    fn tag(&self, code: &str) -> String {
+        if let Some((c, tag)) = self.case.iso
+            && c == code
+        {
+            return tag.to_owned();
+        }
+        let file = self
+            .case
+            .configured
+            .iter()
+            .find(|c| c.0 == code)
+            .and_then(|c| c.2);
+        file.unwrap_or(code).to_owned()
+    }
+
+    /// `tc` / `tc_with` (JS `tc(key, { count, ...params }, default)` with `defaultPlural`):
+    /// the text, and the `missing` record it causes.
+    fn tc(
+        &self,
+        view: Option<&str>,
+        page: Option<&str>,
+        key: &str,
+        count: (Count, &'static str, Option<u64>),
+        args: Option<ArgsKind>,
+    ) -> (String, Option<String>) {
+        let (_, spelled, whole) = count;
+        let param = |name: &str| {
+            if name == "count" {
+                Some(spelled.to_owned())
+            } else {
+                args.and_then(|k| k.param(name))
+            }
+        };
+        // `defaultValue ? interpolate(defaultValue, values) : defaultValue ?? key`
+        let fallback = || match args {
+            Some(ArgsKind::NamedOr) => interpolate_by("D {x} {01}", param),
+            Some(ArgsKind::EmptyOr) => String::new(),
+            _ => key.to_owned(),
+        };
+        let code = view.unwrap_or(&self.locale);
+        match self.lookup(view, page, key) {
+            Some(Hit::Msg(s)) => {
+                let form = plural_form(&s, whole, &self.tag(code));
+                (interpolate_by(&form, param), None)
+            }
+            Some(Hit::Value(v)) if v != "true" && v != "false" => (v, None),
+            Some(_) => (fallback(), None),
+            None => {
+                let p = page.filter(|p| !p.is_empty()).unwrap_or("index");
+                (fallback(), Some(format!("{code}|{p}|{key}")))
+            }
+        }
+    }
+
     /// `add_messages` / `messages`: deep-merge into the chunk the page name reads.
     fn write(&mut self, locale: &str, page: Option<&str>, tree: &Value) {
         let src = tree.as_object().unwrap();
@@ -880,6 +1008,79 @@ impl Model {
         }
         (!found.is_empty()).then(|| found.swap_remove(pick % found.len()))
     }
+}
+
+/// What `localePlural` of `text.ts` computes for a tag, from the category of each count:
+/// `(small, named, all)`, `None` for a tag with no rules.
+fn facts(tag: &str) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    let (select, mask) = plural::rule(plural::rule_index(tag)?);
+    let small: Vec<u8> = (0..200)
+        .map(|n| select(&plural::Operands::int(n)) as u8)
+        .collect();
+    let named = (1..6u8).filter(|c| small.contains(c)).collect();
+    let all = (0..6u8).filter(|c| mask & (1 << c) != 0).collect();
+    Some((small, named, all))
+}
+
+/// `pluralForm(text, count, tag)`, written out from `text.ts`; `whole` is the count when it
+/// is a whole number ≥ 0 (else the last form).
+fn plural_form(text: &str, whole: Option<u64>, tag: &str) -> String {
+    let marked = text.starts_with("=0 ");
+    let body = if marked { &text[3..] } else { text };
+    let forms: Vec<&str> = body.split('|').collect();
+    let last = forms.len() - 1;
+    let facts = facts(tag);
+    let category = |n: u64| -> u8 {
+        let (small, _, _) = facts.as_ref().unwrap();
+        match small.get(n as usize) {
+            Some(&c) => c,
+            None => {
+                let (select, _) = plural::rule(plural::rule_index(tag).unwrap());
+                select(&plural::Operands::int(n)) as u8
+            }
+        }
+    };
+    let by_index = |n: u64| (n as usize).min(last);
+    let index = match whole {
+        None => last,
+        Some(n) if marked => match &facts {
+            _ if n == 0 => 0,
+            None => by_index(n),
+            Some((_, named, all)) => {
+                let cats = if last > named.len() { all } else { named };
+                match cats.iter().position(|&c| c == category(n)) {
+                    None => last,
+                    Some(i) => (i + 1).min(last),
+                }
+            }
+        },
+        Some(n) => {
+            let unmarked = facts.as_ref().and_then(|(small, named, _)| {
+                let shared = |c: u8| small.iter().filter(|&&x| x == c).count() > 1;
+                let fits = named.len() >= 3
+                    && forms.len() == named.len() + 1
+                    && !forms[0].contains('{')
+                    && named
+                        .iter()
+                        .enumerate()
+                        .all(|(i, &c)| !shared(c) || forms[i + 1].contains("{count}"));
+                fits.then(|| {
+                    if n == 0 {
+                        return 0;
+                    }
+                    named
+                        .iter()
+                        .position(|&c| c == category(n))
+                        .map_or(last, |i| i + 1)
+                })
+            });
+            unmarked.unwrap_or_else(|| by_index(n))
+        }
+    };
+    if whole.is_some_and(|n| index != by_index(n)) {
+        CATEGORY_SEEN.fetch_add(1, Ordering::Relaxed);
+    }
+    forms[index].trim_matches(js_space).to_owned()
 }
 
 /// `(locale, page)` of a file path of [`file_path`].
@@ -1043,8 +1244,13 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
                 page,
                 locale,
             } => {
-                let key = m.key(*key);
                 let vloc = locale.map(|l| m.code(l));
+                // `tc` mostly on a key that holds a plural template in this view
+                let key = match via {
+                    Via::Tc(..) if key % 4 != 0 => m.plural_key(vloc, *page, *key),
+                    _ => None,
+                }
+                .unwrap_or_else(|| m.key(*key));
                 expected_missing.extend(check_lookup(&i18n, &m, *via, vloc, *page, &key, step)?);
             }
             Action::Both { via, pick } => {
@@ -1246,6 +1452,19 @@ fn check_lookup(
             prop_assert_eq!(got, m.has(vloc, page, key), "{}", what);
             Ok(None)
         }
+        Via::Tc(c, kind) => {
+            let count = counts()[usize::from(c) % 16];
+            let args = kind.map(ArgsKind::args);
+            let got = match (&view, &args) {
+                (Some(v), None) => v.tc(key, count.0),
+                (Some(v), Some(a)) => v.tc_with(key, count.0, a),
+                (None, None) => i18n.tc(key, count.0),
+                (None, Some(a)) => i18n.tc_with(key, count.0, a),
+            };
+            let (want, miss) = m.tc(vloc, page, key, count, kind);
+            prop_assert_eq!(got, want, "{} count {}", what, count.1);
+            Ok(miss)
+        }
     }
 }
 
@@ -1263,7 +1482,11 @@ fn catalog_matches_the_model() {
     // The session space reached what the model must distinguish.
     let layer = LAYER_ORDER_SEEN.load(Ordering::Relaxed);
     let deep = DEEP_MERGE_SEEN.load(Ordering::Relaxed);
-    eprintln!("lookups that see the layer order: {layer}, the deep merge: {deep}");
+    let category = CATEGORY_SEEN.load(Ordering::Relaxed);
+    eprintln!(
+        "lookups that see the layer order: {layer}, the deep merge: {deep}, a category rule: {category}"
+    );
+    assert!(category > 0, "no tc answer depended on a category rule");
     assert!(
         layer > 0,
         "no lookup depended on the page layer coming before the root"

@@ -1,0 +1,20 @@
+{
+  "apples": "no apples | one apple | {count} apples",
+  "car": "car | cars",
+  "marked": "=0 nothing | one {count} | many {count}",
+  "greet": "Hi {name}, nothing new | Hi {name}, one new | Hi {name}, {count} new",
+  "plain": "Hello {name}, {count}",
+  "spaced": "   {count} spaced   ",
+  "zero_marker": "=0 only form {count}",
+  "pipe": "|",
+  "empty": "",
+  "num": 5,
+  "neg": -1.5,
+  "big": 1e21,
+  "yes": true,
+  "no": false,
+  "tree": { "a": "b" },
+  "list": ["x", "y"],
+  "nil": null,
+  "en_only": "en one | en {count}"
+}

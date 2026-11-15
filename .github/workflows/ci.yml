@@ -260,7 +260,8 @@ jobs:
 
   compat:
     # The JS oracle (@i18n-micro/core and utils, pinned in scripts/package.json) must still
-    # produce the committed goldens: a diff means the oracle or the fixtures changed.
+    # produce the committed goldens: a diff means the oracle or the fixtures changed. The
+    # same for the generated plural rules (cldr-core + Node's Intl) and their oracle.
     name: compat goldens up to date
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -272,6 +273,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm -C scripts cldr
+      - run: git diff --exit-code crates/i18n-next/src/plural/rules.rs fixtures/compat/__golden__/plural-categories.md
       - run: pnpm -C scripts compat
       - run: git diff --exit-code fixtures/compat
 

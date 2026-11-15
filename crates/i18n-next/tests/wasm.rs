@@ -18,7 +18,8 @@ fn version_in_wasm() {
 }
 
 /// Given the compat fixtures embedded in the binary, when the goldens are replayed in
-/// wasm, then every line matches, as on native.
+/// wasm (the plural ones too: `tc` with the generated CLDR rules), then every line
+/// matches, as on native.
 #[wasm_bindgen_test]
 fn compat_goldens_in_wasm() {
     if let Err(diff) = compat::run() {

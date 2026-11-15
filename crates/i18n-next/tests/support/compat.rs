@@ -2,7 +2,8 @@
 //! Shared by `tests/compat.rs` (native) and `tests/wasm.rs` (wasm-bindgen-test): fixtures
 //! and goldens are compiled in, so the same comparison runs where there is no file system.
 //!
-//! Every call line of `load.md`, `lookup.md` and `interpolate.md` is executed and printed
+//! Every call line of `load.md`, `lookup.md`, `interpolate.md` and `options.md`
+//! (`pages(false)`, `page_alias`, fallback chains from `i18n.json`) is executed and printed
 //! back as `call → result`; the produced file is compared with the golden as a whole.
 //! The Rust contract of `fixtures/compat/README.md` maps the markers on both sides:
 //! - a number or boolean result is the JS spelling as a string (`1e+21` → `"1e+21"`);
@@ -39,12 +40,29 @@ pub const FILES: &[(&str, &[u8])] = fixtures![
     "pages/about/en.json",
     "pages/about/fr.json",
     "pages/en.json",
+    "pages/fold/a/ru.json",
+    "pages/fold/b/ru.json",
     "pages/settings/en.json",
     "pages/user-profile/en.json",
     "pages/user/profile/de.json",
     "pages/user/profile/en.json",
+    "pages/\u{ff61}/en.json",
+    "pages/\u{1f600}/en.json",
     "ru.json",
 ];
+
+/// `routesLocaleLinks` of `options.md` (`scripts/compat.mjs` `LINKS`), as `page_alias`.
+const LINKS: &[(&str, &str)] = &[
+    ("about-us", "about"),
+    ("profile", "user-profile"),
+    ("cfg", "settings"),
+];
+
+/// The chain config of `options.md` (`scripts/compat.mjs` `CHAIN_LOCALES`, global `en`).
+const CHAIN_CONFIG: &str = r#"{"fallbackLocale": "en", "locales": [
+    {"code": "en"}, {"code": "de", "fallbackLocale": "ru"},
+    {"code": "de-at", "fallbackLocale": "de"}, {"code": "ru", "fallbackLocale": "de-at"},
+    {"code": "fr"}]}"#;
 
 pub const GOLDENS: &[(&str, &str)] = &[
     (
@@ -58,6 +76,10 @@ pub const GOLDENS: &[(&str, &str)] = &[
     (
         "interpolate.md",
         include_str!("../../../../fixtures/compat/__golden__/interpolate.md"),
+    ),
+    (
+        "options.md",
+        include_str!("../../../../fixtures/compat/__golden__/options.md"),
     ),
 ];
 
@@ -341,26 +363,9 @@ impl Probe {
 
 /// Runs every golden; `Err` holds the diff (`-` golden, `+` Rust) of every file.
 pub fn run() -> Result<usize, String> {
-    // Each file alone: its fate, as `file()` reports it.
-    let mut fate: BTreeMap<&str, String> = BTreeMap::new();
-    for (path, bytes) in FILES {
-        let status = match I18n::builder().files([(path, bytes)]).build() {
-            Err(Error::Json { .. }) => "skip: invalid JSON".to_owned(),
-            Err(Error::NotObject { .. }) => "skip: not an object".to_owned(),
-            Err(e) => panic!("{path}: {e}"),
-            Ok(i) => {
-                let locales: Vec<_> = i.locales().into_iter().map(|l| l.code).collect();
-                let pages = i.pages();
-                match (locales.as_slice(), pages.as_slice()) {
-                    ([], []) => "ignore".to_owned(),
-                    ([l], []) => format!("root {l}"),
-                    ([l], [p]) => format!("page {p} {l}"),
-                    other => panic!("{path}: {other:?}"),
-                }
-            }
-        };
-        fate.insert(path, status);
-    }
+    // Each file alone: its fate, as `file()` / `file_nopages()` report it.
+    let fate = fates(false);
+    let fate_nopages = fates(true);
     // The catalog: the fixture tree minus the files Rust refuses (JS skips them).
     let valid: Vec<(&str, &[u8])> = FILES
         .iter()
@@ -369,6 +374,24 @@ pub fn run() -> Result<usize, String> {
         .collect();
     let mut contexts: BTreeMap<(String, String), Probe> = BTreeMap::new();
     let mut templates: BTreeMap<String, Probe> = BTreeMap::new();
+    let mut folded: BTreeMap<String, Probe> = BTreeMap::new();
+    let aliased = {
+        let mut b = I18n::builder()
+            .locale("de")
+            .fallback("en")
+            .files(valid.iter().copied());
+        for (from, to) in LINKS {
+            b = b.page_alias(from, to);
+        }
+        Probe::build(b).unwrap()
+    };
+    let chained = Probe::build(
+        I18n::builder()
+            .config_json(CHAIN_CONFIG)
+            .locale("en")
+            .files(valid.iter().copied()),
+    )
+    .unwrap();
 
     let mut diff = String::new();
     let mut total = 0;
@@ -392,79 +415,33 @@ pub fn run() -> Result<usize, String> {
             let (fname, a) = parse_call(call);
             let got = match (fname, a.as_slice()) {
                 ("file", [V::Str(path)]) => spell(&fate[path.as_str()]),
-                ("load", [V::Str(locale), V::Str(page), V::Str(key)]) => {
-                    let mine: Vec<(&str, &[u8])> = valid
-                        .iter()
-                        .copied()
-                        .filter(|(p, _)| {
-                            let f = &fate[p];
-                            if page == "index" {
-                                *f == format!("root {locale}")
-                            } else {
-                                *f == format!("page {page} {locale}")
-                            }
-                        })
-                        .collect();
-                    let probe = Probe::build(I18n::builder().locale(locale).files(mine)).unwrap();
-                    let view = probe.i18n.page(page);
-                    probe.lookup(&view, key)
-                }
-                (
-                    "t" | "has",
-                    [
-                        V::Pair(locale, fallback),
-                        V::Str(page),
-                        V::Str(key),
-                        rest @ ..,
-                    ],
-                ) => {
-                    let probe = contexts
-                        .entry((locale.clone(), fallback.clone()))
-                        .or_insert_with(|| {
-                            let mut b = I18n::builder().locale(locale).files(valid.iter().copied());
-                            if fallback != locale {
-                                b = b.fallback(fallback);
-                            }
-                            Probe::build(b).unwrap()
-                        });
-                    let view = probe.i18n.page(page);
-                    match (fname, rest) {
-                        ("has", []) => view.has(key).to_string(),
-                        ("t", []) => probe.lookup(&view, key),
-                        ("t", [params, default @ ..]) => {
-                            let default = match default {
-                                [V::Str(d)] => Some(d.as_str()),
-                                [] => None,
-                                other => panic!("default {other:?}"),
-                            };
-                            let mut a = args(params).unwrap_or_default();
-                            if let Some(d) = default {
-                                a = a.or(d);
-                            }
-                            probe.answer(&view, key, || {
-                                if args(params).is_none() && default.is_none() {
-                                    view.t(key)
-                                } else {
-                                    view.t_with(key, &a)
-                                }
-                            })
-                        }
-                        _ => panic!("unknown call {call}"),
-                    }
-                }
-                ("interpolate", [V::Str(template), params]) => {
-                    let probe = templates.entry(template.clone()).or_insert_with(|| {
-                        let json = format!("{{\"k\": {}}}", spell(template));
-                        Probe::build(I18n::builder().locale("en").messages("en", None, &json))
-                            .unwrap()
+                ("file_nopages", [V::Str(path)]) => spell(&fate_nopages[path.as_str()]),
+                ("load_nopages", [V::Str(locale), V::Str(key)]) => {
+                    let probe = folded.entry(locale.clone()).or_insert_with(|| {
+                        let b = I18n::builder()
+                            .pages(false)
+                            .locale(locale)
+                            .files(valid.iter().copied());
+                        Probe::build(b).unwrap()
                     });
                     let view = probe.i18n.page("index");
-                    match args(params) {
-                        None => spell(&view.t("k")),
-                        Some(a) => spell(&view.t_with("k", &a)),
-                    }
+                    probe.lookup(&view, key)
                 }
-                _ => panic!("unknown call {call}"),
+                ("alias_t", [V::Str(page), V::Str(key)]) => {
+                    aliased.lookup(&aliased.i18n.page(page), key)
+                }
+                ("chain_t", [V::Str(locale), V::Str(page), V::Str(key)]) => {
+                    chained.lookup(&chained.i18n.with_locale(locale).page(page), key)
+                }
+                _ => answer(
+                    call,
+                    fname,
+                    &a,
+                    &fate,
+                    &valid,
+                    &mut contexts,
+                    &mut templates,
+                ),
             };
             produced.push(format!("{call} → {got}"));
         }
@@ -484,5 +461,129 @@ pub fn run() -> Result<usize, String> {
         Ok(total)
     } else {
         Err(diff)
+    }
+}
+
+/// What each fixture file becomes when loaded alone (`pages` = `.pages(..)`).
+fn fates(no_pages: bool) -> BTreeMap<&'static str, String> {
+    let mut fate: BTreeMap<&str, String> = BTreeMap::new();
+    for (path, bytes) in FILES {
+        // A named start locale, so no default locale joins `locales()`; it is filtered out.
+        let b = I18n::builder()
+            .pages(!no_pages)
+            .locale(PROBE)
+            .files([(path, bytes)]);
+        let status = match b.build() {
+            Err(Error::Json { .. }) => "skip: invalid JSON".to_owned(),
+            Err(Error::NotObject { .. }) => "skip: not an object".to_owned(),
+            Err(e) => panic!("{path}: {e}"),
+            Ok(i) => {
+                let locales: Vec<_> = i
+                    .locales()
+                    .into_iter()
+                    .map(|l| l.code)
+                    .filter(|c| c != PROBE)
+                    .collect();
+                let pages = i.pages();
+                match (locales.as_slice(), pages.as_slice()) {
+                    ([], []) => "ignore".to_owned(),
+                    ([l], []) => format!("root {l}"),
+                    ([l], [p]) => format!("page {p} {l}"),
+                    other => panic!("{path}: {other:?}"),
+                }
+            }
+        };
+        fate.insert(path, status);
+    }
+    fate
+}
+
+/// A start locale that names no fixture, so `locales()` of a single file shows the file's.
+const PROBE: &str = "zz-compat-probe";
+
+/// The calls of `load.md`, `lookup.md` and `interpolate.md`.
+fn answer(
+    call: &str,
+    fname: &str,
+    a: &[V],
+    fate: &BTreeMap<&str, String>,
+    valid: &[(&str, &[u8])],
+    contexts: &mut BTreeMap<(String, String), Probe>,
+    templates: &mut BTreeMap<String, Probe>,
+) -> String {
+    match (fname, a) {
+        ("file", [V::Str(path)]) => spell(&fate[path.as_str()]),
+        ("load", [V::Str(locale), V::Str(page), V::Str(key)]) => {
+            let mine: Vec<(&str, &[u8])> = valid
+                .iter()
+                .copied()
+                .filter(|(p, _)| {
+                    let f = &fate[p];
+                    if page == "index" {
+                        *f == format!("root {locale}")
+                    } else {
+                        *f == format!("page {page} {locale}")
+                    }
+                })
+                .collect();
+            let probe = Probe::build(I18n::builder().locale(locale).files(mine)).unwrap();
+            let view = probe.i18n.page(page);
+            probe.lookup(&view, key)
+        }
+        (
+            "t" | "has",
+            [
+                V::Pair(locale, fallback),
+                V::Str(page),
+                V::Str(key),
+                rest @ ..,
+            ],
+        ) => {
+            let probe = contexts
+                .entry((locale.clone(), fallback.clone()))
+                .or_insert_with(|| {
+                    let mut b = I18n::builder().locale(locale).files(valid.iter().copied());
+                    if fallback != locale {
+                        b = b.fallback(fallback);
+                    }
+                    Probe::build(b).unwrap()
+                });
+            let view = probe.i18n.page(page);
+            match (fname, rest) {
+                ("has", []) => view.has(key).to_string(),
+                ("t", []) => probe.lookup(&view, key),
+                ("t", [params, default @ ..]) => {
+                    let default = match default {
+                        [V::Str(d)] => Some(d.as_str()),
+                        [] => None,
+                        other => panic!("default {other:?}"),
+                    };
+                    let mut a = args(params).unwrap_or_default();
+                    if let Some(d) = default {
+                        a = a.or(d);
+                    }
+                    probe.answer(&view, key, || {
+                        if args(params).is_none() && default.is_none() {
+                            view.t(key)
+                        } else {
+                            view.t_with(key, &a)
+                        }
+                    })
+                }
+                _ => panic!("unknown call {call}"),
+            }
+        }
+        ("interpolate", [V::Str(template), params]) => {
+            let probe = templates.entry(template.clone()).or_insert_with(|| {
+                let json = format!("{{\"k\": {}}}", spell(template));
+                Probe::build(I18n::builder().locale("en").messages("en", None, &json)).unwrap()
+            });
+            let view = probe.i18n.page("index");
+            match args(params) {
+                None => spell(&view.t("k")),
+                Some(a) => spell(&view.t_with("k", &a)),
+            }
+        }
+        _ => panic!("unknown call {call}"),
     }
 }

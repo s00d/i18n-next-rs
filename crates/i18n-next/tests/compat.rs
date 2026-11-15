@@ -1,5 +1,5 @@
 //! Compat goldens (DESIGN 7.2): every call line of `fixtures/compat/__golden__/{load,lookup,
-//! interpolate}.md`, written by the JS oracle, replayed through the public API and
+//! interpolate,options}.md`, written by the JS oracle, replayed through the public API and
 //! compared file by file. The runner lives in `support/compat.rs`, shared with the wasm
 //! test. The goldens are never rewritten from Rust.
 #![cfg(not(target_arch = "wasm32"))]

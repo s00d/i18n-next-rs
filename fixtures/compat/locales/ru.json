@@ -2,5 +2,8 @@
   "nav": { "home": "Главная" },
   "greeting": "Привет, {name}!",
   "nil_override": null,
-  "empty": "не пусто"
+  "empty": "не пусто",
+  "fold": { "y": "R" },
+  "fold_m": { "y": "R" },
+  "fold_s": "root"
 }

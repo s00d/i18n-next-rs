@@ -7,9 +7,13 @@
 //! - `lazy_ev` (`lazy_files`, `evict_pages(2)`, `pin_page("tray")`): answers as `eager`,
 //!   eviction is invisible;
 //! - `rem` (`remote` + `FakeFetch`): answers as an eager build of exactly the files the
-//!   model says are in; every fill counted once; never two requests of one file in flight;
+//!   model says are shown; every fill counted once; never two requests of one file in flight.
+//!   A fetched file is in (not listed by `missing_files`) at once, shown when its
+//!   `ensure_async` call ends (or an `add_file` / later call of its view), with the rest of
+//!   the call's view;
 //! - `rem_ev` (`remote`, `evict_pages(2)`, pinned `tray`): answers as an eager build of the
-//!   files `missing_files` says are in; at most 2 unpinned pages in; `tray` never leaves.
+//!   files `missing_files` says are in, less those waiting to be shown; at most 2 unpinned
+//!   pages in; `tray` never leaves.
 //!
 //! Versions only grow, on every instance. Fixed seed, no shrinking persistence.
 #![cfg(not(target_arch = "wasm32"))]
@@ -19,7 +23,9 @@ mod support;
 use i18n_next::I18n;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngAlgorithm, TestCaseError, TestRng, TestRunner};
+use std::cell::RefCell;
 use std::collections::BTreeSet;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use support::{Executor, FakeFetch, loads};
 
@@ -155,6 +161,63 @@ fn observed(i: &I18n, all: &[File]) -> BTreeSet<usize> {
         .collect()
 }
 
+/// Files in the view of `(locale, page)`: the locale and the global fallback `en`, the page
+/// (if any) and the root.
+fn in_view(f: &File, locale: usize, page: Option<usize>) -> bool {
+    (f.locale == locale || f.locale == 0) && (f.page.is_none() || f.page == page)
+}
+
+/// Where an `ensure_async` call's result lands.
+type Outcome = Rc<RefCell<Option<Result<(), i18n_next::Error>>>>;
+
+/// One instance's remote files in the model: fetched and waiting to be shown, shown.
+#[derive(Default)]
+struct Remote {
+    waiting: BTreeSet<usize>,
+    shown: BTreeSet<usize>,
+    fills: u64,
+    /// `ensure_async` calls not ended yet: their view and their result cell.
+    calls: Vec<(usize, Option<usize>, Outcome)>,
+}
+
+impl Remote {
+    /// `f` arrived (fetched or added) on `i`, which had the files `before` in: a file
+    /// shown already stays as it is (`rem_ev` may have evicted a shown one, so `shown` alone
+    /// cannot tell).
+    fn arrive(&mut self, f: usize, before: &BTreeSet<usize>) {
+        if !before.contains(&f) || self.waiting.contains(&f) {
+            self.waiting.insert(f);
+        }
+    }
+
+    /// Shows the waiting files of a view.
+    fn show(&mut self, all: &[File], locale: usize, page: Option<usize>) {
+        let now: Vec<usize> = self
+            .waiting
+            .iter()
+            .copied()
+            .filter(|&f| in_view(&all[f], locale, page))
+            .collect();
+        for f in now {
+            self.waiting.remove(&f);
+            self.shown.insert(f);
+            self.fills += 1;
+        }
+    }
+
+    /// Calls that ended show their views.
+    fn ended(&mut self, all: &[File]) {
+        let calls = std::mem::take(&mut self.calls);
+        for (locale, page, out) in calls {
+            if out.borrow().is_some() {
+                self.show(all, locale, page);
+            } else {
+                self.calls.push((locale, page, out));
+            }
+        }
+    }
+}
+
 fn run(actions: &[Action]) -> Result<(), TestCaseError> {
     let all = files();
     let paths: Vec<&str> = all.iter().map(|f| f.path.as_str()).collect();
@@ -180,8 +243,8 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
     let mut ex_ev = Executor::new();
 
     let mut active = 0usize;
-    let mut loaded: BTreeSet<usize> = BTreeSet::new();
-    let mut fills = 0u64;
+    let mut model = Remote::default();
+    let mut model_ev = Remote::default();
     let mut seen_lookups: BTreeSet<(Option<usize>, Option<usize>, usize)> = BTreeSet::new();
     let mut lazy_base = 0u64;
     let mut tray_in: BTreeSet<usize> = BTreeSet::new();
@@ -220,16 +283,20 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
                 if loads(&lazy_ev) > ev_before && seen_lookups.contains(&(*locale, *page, *key)) {
                     RELOADED.fetch_add(1, Ordering::Relaxed);
                 }
-                let r = reference(&all, &loaded, LOCALES[active]);
+                let r = reference(&all, &model.shown, LOCALES[active]);
                 prop_assert_eq!(
                     ask(&rem, *locale, *page, *key),
                     ask(&r, *locale, *page, *key),
                     "rem with {:?}, step {}",
-                    loaded,
+                    model.shown,
                     step
                 );
                 let got = ask(&rem_ev, *locale, *page, *key);
-                let r = reference(&all, &observed(&rem_ev, &all), LOCALES[active]);
+                let shown_ev: BTreeSet<usize> = observed(&rem_ev, &all)
+                    .difference(&model_ev.waiting)
+                    .copied()
+                    .collect();
+                let r = reference(&all, &shown_ev, LOCALES[active]);
                 prop_assert_eq!(got, ask(&r, *locale, *page, *key), "rem_ev, step {}", step);
             }
             Action::SetLocale(l) => {
@@ -239,21 +306,25 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
                 }
             }
             Action::Ensure { ev, locale, page } => {
-                let page = page.map(|p| PAGES[p]);
+                let name = page.map(|p| PAGES[p]);
                 if *ev {
-                    let _ =
-                        ex_ev.spawn(rem_ev.ensure_async(LOCALES[*locale], page, net_ev.fetch()));
+                    let out =
+                        ex_ev.spawn(rem_ev.ensure_async(LOCALES[*locale], name, net_ev.fetch()));
+                    model_ev.calls.push((*locale, *page, out));
                     ex_ev.run_until_stalled();
+                    model_ev.ended(&all);
                 } else {
-                    let _ = ex.spawn(rem.ensure_async(LOCALES[*locale], page, net.fetch()));
+                    let out = ex.spawn(rem.ensure_async(LOCALES[*locale], name, net.fetch()));
+                    model.calls.push((*locale, *page, out));
                     ex.run_until_stalled();
+                    model.ended(&all);
                 }
             }
             Action::Answer { ev, index, ok } => {
-                let (fake, exec) = if *ev {
-                    (&net_ev, &mut ex_ev)
+                let (fake, exec, m, i) = if *ev {
+                    (&net_ev, &mut ex_ev, &mut model_ev, &rem_ev)
                 } else {
-                    (&net, &mut ex)
+                    (&net, &mut ex, &mut model, &rem)
                 };
                 let pending = fake.pending();
                 if pending.is_empty() {
@@ -267,28 +338,34 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
                     Err("net down")
                 };
                 ERRORS.fetch_add(usize::from(!*ok), Ordering::Relaxed);
+                let before = observed(i, &all);
                 fake.answer_at(at, answer);
-                exec.run_until_stalled();
-                if *ok && !*ev && loaded.insert(file) {
-                    fills += 1;
+                if *ok {
+                    m.arrive(file, &before);
                 }
+                exec.run_until_stalled();
+                m.ended(&all);
             }
             Action::AddFile { ev, file } => {
                 let f = &all[*file];
-                if *ev {
-                    rem_ev.add_file(&f.path, f.body.as_bytes()).unwrap();
+                let (i, m) = if *ev {
+                    (&rem_ev, &mut model_ev)
                 } else {
-                    rem.add_file(&f.path, f.body.as_bytes()).unwrap();
-                    if loaded.insert(*file) {
-                        fills += 1;
-                    }
-                }
+                    (&rem, &mut model)
+                };
+                let before = observed(i, &all);
+                i.add_file(&f.path, f.body.as_bytes()).unwrap();
+                m.arrive(*file, &before);
+                m.show(&all, f.locale, f.page);
             }
             Action::Reload => {
                 for i in instances {
                     i.reload().unwrap();
                 }
-                loaded.clear();
+                for m in [&mut model, &mut model_ev] {
+                    m.waiting.clear();
+                    m.shown.clear();
+                }
                 seen_lookups.clear();
                 lazy_base = loads(&lazy);
                 tray_in.clear();
@@ -306,10 +383,14 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
             versions[n] = v;
         }
         // every fill of `rem` counted once, errors added nothing
-        prop_assert_eq!(loads(&rem), fills, "rem loads, step {}", step);
+        prop_assert_eq!(loads(&rem), model.fills, "rem loads, step {}", step);
         prop_assert_eq!(
             observed(&rem, &all),
-            loaded.clone(),
+            model
+                .shown
+                .union(&model.waiting)
+                .copied()
+                .collect::<BTreeSet<_>>(),
             "rem files in, step {}",
             step
         );
@@ -322,8 +403,11 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
             "two requests of one file: {:?}",
             pending
         );
-        // rem_ev: at most 2 unpinned pages in, tray never leaves
-        let now = observed(&rem_ev, &all);
+        // rem_ev: at most 2 unpinned pages shown, tray never leaves
+        let now: BTreeSet<usize> = observed(&rem_ev, &all)
+            .difference(&model_ev.waiting)
+            .copied()
+            .collect();
         if !matches!(a, Action::Reload) && !ev_in.is_subset(&now) {
             EVICTED.fetch_add(1, Ordering::Relaxed);
         }

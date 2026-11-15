@@ -11,21 +11,42 @@ use std::future::Future;
 use std::hint::black_box;
 use std::task::{Context, Poll, Waker};
 
-/// A locale file with `keys` leaves.
+/// A locale file with `keys` distinct leaves, ten per section (`s0.k0` … `s0.k9`, `s1.k0` …):
+/// each section is written once, so no key is a duplicate that replaces an earlier one.
 fn doc(keys: usize, word: &str) -> String {
     let mut s = String::from("{");
     for k in 0..keys {
-        if k > 0 {
+        if k % 10 == 0 {
+            if k > 0 {
+                s.push_str("},");
+            }
+            s.push_str(&format!("\"s{}\":{{", k / 10));
+        } else {
             s.push(',');
         }
-        s.push_str(&format!(
-            "\"s{}\":{{\"k{}\":\"{word} {k}\"}}",
-            k / 10,
-            k % 10
-        ));
+        s.push_str(&format!("\"k{}\":\"{word} {k}\"", k % 10));
+    }
+    if keys > 0 {
+        s.push('}');
     }
     s.push('}');
     s
+}
+
+/// `n` distinct leaves, then the same non-empty object `n` times (`"d": {"a": "b"}`): every
+/// repeat replaces a container with children (the M3 audit's adversarial input).
+fn dup_containers(n: usize) -> String {
+    let mut s = String::from("{");
+    for k in 0..n {
+        s.push_str(&format!("\"u{k}\":\"v\","));
+    }
+    for k in 0..n {
+        s.push_str(&format!(
+            "{}\"d\":{{\"a\":\"b\"}}",
+            if k > 0 { "," } else { "" }
+        ));
+    }
+    s + "}"
 }
 
 /// `pages` page files of `en` plus a root, as `(path, body)`.
@@ -181,6 +202,40 @@ fn remote(c: &mut Criterion) {
             remote,
             |i18n| poll_once(i18n.ensure_async("de", Some("cart"), fetch)).unwrap(),
             BatchSize::SmallInput,
+        )
+    });
+    // H1 (M3 audit): 50k unique keys, then the same non-empty object 50k times. Each
+    // duplicate replaces the subtree before it; linear, where it was quadratic (10 s).
+    let dups = dup_containers(50_000);
+    c.bench_function("i18n/add_file/dup_containers_50k", |b| {
+        b.iter_batched(
+            remote,
+            |i18n| i18n.add_file("de.json", dups.as_bytes()).unwrap(),
+            BatchSize::LargeInput,
+        )
+    });
+    // ... and a merge that replaces 50k non-empty objects with strings.
+    let objects = {
+        let mut s = String::from("{");
+        for k in 0..50_000 {
+            s.push_str(&format!(
+                "{}\"o{k}\":{{\"x\":\"y\"}}",
+                if k > 0 { "," } else { "" }
+            ));
+        }
+        s + "}"
+    };
+    let strings = objects.replace("{\"x\":\"y\"}", "\"z\"");
+    c.bench_function("i18n/add_messages/replace_50k_containers", |b| {
+        b.iter_batched(
+            || {
+                I18n::builder()
+                    .messages("en", None, &objects)
+                    .build()
+                    .unwrap()
+            },
+            |i18n| i18n.add_messages("en", None, &strings).unwrap(),
+            BatchSize::LargeInput,
         )
     });
     let fresh = remote();

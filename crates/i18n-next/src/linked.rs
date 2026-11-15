@@ -34,9 +34,14 @@
 //! (`add_messages`) are not resolved, as in Nuxt (`$mergeTranslations`).
 //!
 //! Lazy pairs: a lazy or remote pair is not part of the pass above; it resolves its own
-//! messages when it loads ([`lazy_contexts`]) over the other layers of its view (its locale's root,
-//! read first if needed; eager layers; other locales' lazy layers if loaded already). Other views'
-//! messages are not re-resolved for it, and its broken links are not reported.
+//! messages when it loads ([`lazy_contexts`]) over the other layers of its view, as they are
+//! in the snapshot of that moment. A local lazy layer of the view is read first, so the result
+//! does not depend on what was read before (or evicted since); in a fallback cycle (`a → b →
+//! a`) a pair being loaded is not read again for the other one. A remote layer counts once its
+//! files are in: `ensure_async` shows the pairs of one call together, weakest first. Other
+//! views' messages are not re-resolved for it, and its broken links are not reported. A link of
+//! an eager chunk is resolved at `build`, when no lazy file is read: one that finds nothing
+//! while its view has lazy files is reported as such ([`LinkError::Lazy`]).
 //!
 //! Known difference, not copied: `valueAt` reads JS own properties, so `@:list.length` is the
 //! length of the array `list`; a lookup has no `length` (`fixtures/compat/README.md`).
@@ -50,7 +55,7 @@ use crate::catalog::{AtString, Chunk, Entry, Msg, hole_ranges, is_js_space};
 use crate::check::LinkError;
 use crate::hash::FastMap;
 use crate::i18n::LocaleData;
-use crate::lazy::{Layer, LinkCtx, LinkLayer};
+use crate::lazy::{Layer, LinkCtx};
 use case::Lang;
 use std::sync::Arc;
 
@@ -698,8 +703,9 @@ pub(crate) fn resolve(chunks: &mut Chunks, setup: &Setup<'_>) -> Vec<Broken> {
 
 // ---- lazy and remote pairs (`lazy.rs`) ----
 
-/// Gives every lazy or remote pair of `data` its [`LinkCtx`]: on load it resolves its own
-/// linked messages over the other layers of its view (module docs, "Lazy pairs").
+/// Gives every lazy or remote pair of `data` its [`LinkCtx`]: on load it loads the other
+/// layers of its view and resolves its own linked messages over them (module docs, "Lazy
+/// pairs"). The layers are named by `(locale, page)`, found in the snapshot of that moment.
 pub(crate) fn lazy_contexts(data: &FastMap<Arc<str>, LocaleData>, setup: &Setup<'_>) {
     for (code, d) in data {
         let pairs = std::iter::once((None, d.root.as_ref()))
@@ -710,20 +716,14 @@ pub(crate) fn lazy_contexts(data: &FastMap<Arc<str>, LocaleData>, setup: &Setup<
             };
             let mut layers = Vec::new();
             for c in chain(setup, code) {
-                let Some(other) = data.get(c) else { continue };
-                let wanted = page.map(|p| Some(&**p)).into_iter().chain([None]);
-                for p in wanted {
-                    if c == &**code && p == page.map(|p| &**p) {
+                let c: Arc<str> = data
+                    .get_key_value(c)
+                    .map_or_else(|| Arc::from(c), |(k, _)| k.clone());
+                for p in page.into_iter().map(|p| Some(p.clone())).chain([None]) {
+                    if c == *code && p.as_ref() == page {
                         continue;
                     }
-                    match other.layer(p) {
-                        Some(Layer::Ready(chunk)) => layers.push(LinkLayer::Ready(chunk.clone())),
-                        Some(Layer::Lazy(l)) => {
-                            let may_load = c == &**code && p.is_none();
-                            layers.push(LinkLayer::Lazy(Arc::downgrade(l), may_load));
-                        }
-                        None => {}
-                    }
+                    layers.push((c.clone(), p));
                 }
             }
             let tag = setup
@@ -736,6 +736,30 @@ pub(crate) fn lazy_contexts(data: &FastMap<Arc<str>, LocaleData>, setup: &Setup<
                 tag: tag.clone(),
                 resolve: resolve_tree,
             }));
+        }
+    }
+}
+
+/// A link of a ready chunk that found nothing at `build` while its view has lazy or remote
+/// layers, not read then: its target may be in one of them ([`LinkError::Lazy`]).
+pub(crate) fn mark_lazy(
+    broken: &mut [Broken],
+    data: &FastMap<Arc<str>, LocaleData>,
+    setup: &Setup<'_>,
+) {
+    for b in broken.iter_mut().filter(|b| b.reason == LinkError::Missing) {
+        let lazy = chain(setup, &b.locale).into_iter().any(|c| {
+            data.get(c).is_some_and(|d| {
+                [
+                    b.page.as_deref().and_then(|p| d.layer(Some(p))),
+                    d.layer(None),
+                ]
+                .into_iter()
+                .any(|l| matches!(l, Some(Layer::Lazy(_))))
+            })
+        });
+        if lazy {
+            b.reason = LinkError::Lazy;
         }
     }
 }

@@ -425,6 +425,61 @@ enum Target<'k> {
     Dead,
 }
 
+/// The container a walk path sits in: the path up to its last dot (a key with a dot is never
+/// stored under a parent, so the last dot always ends the parent); `None` at the top level.
+fn parent(path: &str) -> Option<&str> {
+    path.rfind('.').and_then(|i| path.get(..i))
+}
+
+/// Children by container path, for a document that replaces a non-empty container (a
+/// duplicate key): built by one scan of what is stored at the first such replacement, kept
+/// up to date after it, so every replacement removes only its own subtree and the whole
+/// parse stays linear. A document without one never builds it. A list of children is
+/// linked through two maps of the type the builder already uses (`first` child of a
+/// container, `next` sibling of a child): no new map type in the binary (wasm size).
+#[derive(Default)]
+struct Kids(Option<Lists>);
+
+/// `first` child by container path, `next` sibling by child path.
+type Lists = (FastMap<Arc<str>, Arc<str>>, FastMap<Arc<str>, Arc<str>>);
+
+/// Links `child` (stored at its path) first under its parent.
+fn link(walk: &FastMap<Arc<str>, Node>, (first, next): &mut Lists, child: &Arc<str>) {
+    if let Some((p, _)) = parent(child).and_then(|p| walk.get_key_value(p))
+        && let Some(was) = first.insert(p.clone(), child.clone())
+    {
+        next.insert(child.clone(), was);
+    }
+}
+
+impl Kids {
+    /// `path` was just stored for the first time.
+    fn add(&mut self, walk: &FastMap<Arc<str>, Node>, path: &str) {
+        if let Some(lists) = &mut self.0
+            && let Some((k, _)) = walk.get_key_value(path)
+        {
+            link(walk, lists, k);
+        }
+    }
+
+    /// Removes everything stored under `path` (the container there was just replaced).
+    fn drop_under(&mut self, walk: &mut FastMap<Arc<str>, Node>, path: &str) {
+        let (first, next) = self.0.get_or_insert_with(|| {
+            let mut lists = (FastMap::default(), FastMap::default());
+            for k in walk.keys() {
+                link(walk, &mut lists, k);
+            }
+            lists
+        });
+        let mut todo: Vec<Arc<str>> = first.remove(path).into_iter().collect();
+        while let Some(k) = todo.pop() {
+            walk.remove(&k);
+            todo.extend(next.remove(&k));
+            todo.extend(first.remove(&k));
+        }
+    }
+}
+
 struct Frame {
     /// `path` length when this container was opened.
     len: usize,
@@ -461,21 +516,6 @@ impl Tree {
         read(&self.walk, key)
     }
 
-    /// Removes `path` and everything under it from the walk.
-    fn remove_subtree(&mut self, path: &str) {
-        if let Some(Node::Obj { kids: true } | Node::Arr { kids: true }) = self.walk.remove(path) {
-            // ponytail: one O(chunk) scan, only when a container with children is replaced
-            // (a duplicate key, an array patched over); an empty one scans nothing, so a
-            // repeated `"x": {}` stays linear. Many duplicate non-empty containers in one
-            // document still scan once each: keep children lists if that ever matters.
-            self.walk.retain(|k, _| {
-                !(k.len() > path.len()
-                    && k.starts_with(path)
-                    && k.as_bytes().get(path.len()) == Some(&b'.'))
-            });
-        }
-    }
-
     /// Reads a JSON object document. `path` names the source in errors.
     pub(crate) fn parse(bytes: &[u8], path: &str) -> Result<Tree, Error> {
         let error = |offset: usize, kind: &'static str| Error::Json {
@@ -509,6 +549,7 @@ impl Tree {
             kids: false,
         }];
         let mut key = None;
+        let mut kids = Kids::default();
         while let Some(event) = r.next().map_err(json_err)? {
             let (container, node) = match event {
                 Event::Key(k) => {
@@ -586,8 +627,13 @@ impl Tree {
                         }
                     };
                     // A duplicate key replaces, it does not merge (`JSON.parse`).
-                    tree.remove_subtree(&buf);
-                    tree.walk.insert(Arc::from(buf.as_str()), node);
+                    match tree.walk.insert(Arc::from(buf.as_str()), node) {
+                        Some(Node::Obj { kids: true } | Node::Arr { kids: true }) => {
+                            kids.drop_under(&mut tree.walk, &buf);
+                        }
+                        Some(_) => {}
+                        None => kids.add(&tree.walk, &buf),
+                    }
                     true
                 }
                 Target::Own(k) => {
@@ -616,15 +662,29 @@ impl Tree {
             *self = incoming;
             return;
         }
-        // Two passes, so the map's order does not matter: first drop everything an
-        // incoming value replaces (an object over an object replaces nothing), then insert.
+        // Two passes, so the map's order does not matter: first drop everything under a
+        // container an incoming value replaces (an object over an object replaces nothing),
+        // in one scan for all of them, then insert.
         let mut incoming = incoming;
+        // the walk's own map type: no new one in the binary (wasm size)
+        let mut gone: FastMap<Arc<str>, Node> = FastMap::default();
         for (k, node) in &mut incoming.walk {
             match (node, self.walk.get(k)) {
                 // Object over object: the merged one holds the children of both.
                 (Node::Obj { kids }, Some(Node::Obj { kids: had })) => *kids |= *had,
-                _ => self.remove_subtree(k),
+                (_, Some(Node::Obj { kids: true } | Node::Arr { kids: true })) => {
+                    gone.insert(k.clone(), Node::Null);
+                }
+                _ => {}
             }
+        }
+        if !gone.is_empty() {
+            // a key is under a replaced container when one of its dotted prefixes is one
+            self.walk.retain(|k, _| {
+                !k.bytes()
+                    .enumerate()
+                    .any(|(i, b)| b == b'.' && k.get(..i).is_some_and(|p| gone.contains_key(p)))
+            });
         }
         self.walk.extend(incoming.walk);
         for (k, node) in incoming.own {

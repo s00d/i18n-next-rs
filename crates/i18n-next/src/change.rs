@@ -9,9 +9,17 @@ use crate::i18n::{I18n, Inner};
 use crate::lazy::lock;
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
-type Listener = Arc<dyn Fn(&Change) + Send + Sync>;
+/// A listener and whether its subscription is still alive: `send` checks it before each
+/// call, so a listener dropped while others run is not called afterwards.
+struct Entry {
+    live: AtomicBool,
+    f: Box<dyn Fn(&Change) + Send + Sync>,
+}
+
+type Listener = Arc<Entry>;
 
 /// What changed: the active locale after the write and the new snapshot version.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,8 +48,11 @@ impl Listeners {
             }
             list.1.iter().map(|(_, f)| f.clone()).collect()
         };
-        for f in listeners {
-            let _ = catch_unwind(AssertUnwindSafe(|| f(change)));
+        for e in listeners {
+            // Acquire: pairs with the release in `Subscription::drop`.
+            if e.live.load(Ordering::Acquire) {
+                let _ = catch_unwind(AssertUnwindSafe(|| (e.f)(change)));
+            }
         }
     }
 }
@@ -70,6 +81,9 @@ impl Drop for Subscription {
                 .1
                 .extract_if(.., |(id, _)| *id == self.id)
                 .collect();
+            for (_, e) in &gone {
+                e.live.store(false, Ordering::Release);
+            }
             drop(gone);
         }
     }
@@ -84,6 +98,12 @@ impl I18n {
     /// order, over a copy of the list; a listener that panics is skipped, the others
     /// still run. Two writes from two threads may notify out of order: compare
     /// [`Change::version`].
+    ///
+    /// Once its [`Subscription`] is dropped a listener is not called again, also not by a
+    /// notification already running on the same thread (another listener dropped it).
+    /// Dropping does not wait for other threads: a notification running on another thread
+    /// that already passed this listener's check may still call it once, during or right
+    /// after the drop.
     ///
     /// ```
     /// use i18n_next::I18n;
@@ -103,7 +123,13 @@ impl I18n {
         let mut list = lock(&self.inner.listeners.list);
         list.0 += 1;
         let id = list.0;
-        list.1.push((id, Arc::new(f)));
+        list.1.push((
+            id,
+            Arc::new(Entry {
+                live: AtomicBool::new(true),
+                f: Box::new(f),
+            }),
+        ));
         Subscription {
             inner: Arc::downgrade(&self.inner),
             id,

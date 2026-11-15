@@ -29,6 +29,9 @@ pub enum LinkError {
     Broken,
     /// Not `upper`, `lower` or `capitalize`.
     UnknownModifier,
+    /// Nothing at `build`, when lazy and remote files are not read yet: the key may be in
+    /// one of the view's lazy files. An eager message is resolved at `build` only.
+    Lazy,
 }
 
 impl fmt::Display for LinkError {
@@ -38,6 +41,7 @@ impl fmt::Display for LinkError {
             LinkError::Cycle => "is a cycle",
             LinkError::Broken => "links a message left as written",
             LinkError::UnknownModifier => "has an unknown modifier",
+            LinkError::Lazy => "names no message read at build (its view has lazy files)",
         })
     }
 }

@@ -100,7 +100,8 @@ fn remote() -> I18n {
 /// Given a remote manifest and a fake network, when `ensure_async` asks for the cart of
 /// `de`, and the root answers while the cart page fails, then the root is in, the page
 /// stays missing and answers fall back, the call returns `Error::Fetch` with the path,
-/// and the next `ensure_async` fetches only the page again.
+/// and the next `ensure_async` fetches only the page again. What one call fetched is
+/// shown together when it ends.
 #[test]
 fn remote_with_a_fetch_error() {
     let i18n = remote();
@@ -137,8 +138,9 @@ fn remote_with_a_fetch_error() {
         "{err:?}"
     );
 
-    // step 4: what arrived is visible, one Change per file in; the failed page falls back
-    assert_eq!(versions(&seen), [1, 2, 3]);
+    // step 4: what arrived is visible, all at once when the call ended (one Change); the
+    // failed page falls back
+    assert_eq!(versions(&seen), [1]);
     let cart = i18n.page("cart");
     assert_eq!(
         (cart.t("hi"), cart.t("title"), cart.t("total")),
@@ -525,4 +527,181 @@ fn folded_remote_root_waits_for_all_its_files() {
         (i18n.t("k"), i18n.t("r"), i18n.version()),
         ("page".into(), "root".into(), 1)
     );
+}
+
+/// `n` distinct leaves, then the same non-empty object `n` times: every repeat replaces a
+/// container with children (the M3 audit's adversarial input).
+fn dup_containers(n: usize) -> String {
+    let mut s = String::from("{");
+    for k in 0..n {
+        s.push_str(&format!("\"u{k}\":\"v\","));
+    }
+    for k in 0..n {
+        s.push_str(&format!(
+            "{}\"d\":{{\"a{k}\":\"b\"}}",
+            if k > 0 { "," } else { "" }
+        ));
+    }
+    s + "}"
+}
+
+/// Given documents where a key repeats with a non-empty object or array (a duplicate key
+/// replaces what came before, as `JSON.parse` does), when they are parsed and merged, then
+/// only the last value and its own children remain, at every depth; and 100k repeats in a
+/// 2.9 MB file, or a merge replacing 100k non-empty objects, take linear work (a fraction of
+/// a second; quadratic, half as many took 33 s here: the test's time limit catches a return).
+#[test]
+fn repeated_containers_are_replaced_in_linear_work() {
+    // step 1: small duplicates at several depths, arrays and the empty key included
+    let i18n = I18n::builder()
+        .files([(
+            "en.json",
+            br#"{"x": {"y": {"z": "1", "l": [1, [2]]}}, "x": {"y": {"w": "2"}}, "x": {"q": "3", "y": {"v": "4"}},
+                 "l": [1, [2, 3]], "l": [4], "": {"b": "1"}, "": {"c": "2"}, "keep": {"k": "K"}}"#
+                .as_slice(),
+        )])
+        .build()
+        .unwrap();
+    for (key, want) in [
+        ("x.q", "3"),
+        ("x.y.v", "4"),
+        ("l.0", "4"),
+        (".c", "2"),
+        ("keep.k", "K"),
+    ] {
+        assert_eq!(i18n.t(key), want, "{key}");
+    }
+    for gone in ["x.y.z", "x.y.w", "x.y.l", "x.y.l.1.0", "l.1", "l.1.0", ".b"] {
+        assert!(i18n.try_t(gone).is_none() && !i18n.has(gone), "{gone}");
+    }
+
+    // step 2: 100k repeats of a non-empty object after 100k keys, through `add_file`
+    let big = dup_containers(100_000);
+    let remote = I18n::builder().remote(["en.json"]).build().unwrap();
+    remote.add_file("en.json", big.as_bytes()).unwrap();
+    assert_eq!(remote.t("d.a99999"), "b");
+    assert!(!remote.has("d.a99998"));
+    assert_eq!(remote.t("u99999"), "v");
+
+    // step 3: a merge that replaces 100k non-empty objects with strings
+    let mut objects = String::from("{");
+    for k in 0..100_000 {
+        objects.push_str(&format!(
+            "{}\"o{k}\":{{\"x\":\"y\"}}",
+            if k > 0 { "," } else { "" }
+        ));
+    }
+    objects.push('}');
+    let merged = I18n::builder()
+        .messages("en", None, &objects)
+        .build()
+        .unwrap();
+    merged
+        .add_messages("en", None, &objects.replace("{\"x\":\"y\"}", "\"z\""))
+        .unwrap();
+    assert_eq!(merged.t("o99999"), "z");
+    assert!(!merged.has("o99999.x"));
+}
+
+/// Given lazy pages with `evict_pages(2)`, when pages are read a, b, a, c (and b, a, b, c
+/// on another catalog), then the page read longest ago goes (b, then a): a page read again
+/// after the latest load counts as newer than it, so reading the one kept loads nothing.
+#[test]
+fn eviction_drops_the_least_recently_used_page() {
+    let files: Vec<(String, String)> = ["a", "b", "c"]
+        .iter()
+        .map(|p| (format!("pages/{p}/en.json"), format!(r#"{{"t": "{p}"}}"#)))
+        .collect();
+    for (x, y) in [("a", "b"), ("b", "a")] {
+        let i18n = I18n::builder()
+            .lazy_files(files.iter().map(|(p, b)| (p, b)))
+            .evict_pages(2)
+            .build()
+            .unwrap();
+        // step 1: x, y, x again (a hit), then c → three loads, y evicted
+        for p in [x, y, x, "c"] {
+            assert_eq!(i18n.page(p).t("t"), p);
+        }
+        assert_eq!(loads(&i18n), 3);
+        // step 2: x is still in → no load; y comes back → one load
+        assert_eq!(i18n.page(x).t("t"), x);
+        assert_eq!(loads(&i18n), 3, "{x} was evicted instead of {y}");
+        assert_eq!(i18n.page(y).t("t"), y);
+        assert_eq!(loads(&i18n), 4);
+    }
+}
+
+/// Given a `missing` handler that writes to the catalog and a link that stays broken, when
+/// the catalog reloads, then the handler runs after the writer is released: no deadlock,
+/// and its write lands.
+#[test]
+fn a_missing_handler_may_write_during_reload() {
+    let slot: Arc<Mutex<Option<I18n>>> = Arc::default();
+    let handle = slot.clone();
+    let i18n = I18n::builder()
+        .linked_messages(true)
+        .messages("en", None, r#"{"a": "@:nope"}"#)
+        .missing(move |locale, key, _| {
+            let i18n = handle.lock().unwrap().clone();
+            if let Some(i18n) = i18n {
+                i18n.add_messages(locale, None, &format!(r#"{{"seen_{key}": "yes"}}"#))
+                    .unwrap();
+            }
+        })
+        .build()
+        .unwrap();
+    *slot.lock().unwrap() = Some(i18n.clone());
+    // step 1: reload → the broken link is reported, the handler writes
+    i18n.reload().unwrap();
+    assert_eq!(i18n.t("seen_a"), "yes");
+    // the handler held a clone: drop it to free the catalog
+    slot.lock().unwrap().take();
+}
+
+/// Given two listeners, the first of which drops the second's subscription, when the
+/// catalog changes, then the second is not called by that notification nor later.
+#[test]
+fn a_listener_dropped_during_a_notification_is_not_called() {
+    let i18n = I18n::builder()
+        .messages("en", None, "{}")
+        .messages("de", None, "{}")
+        .build()
+        .unwrap();
+    let second: Arc<Mutex<Option<i18n_next::Subscription>>> = Arc::default();
+    let drop_it = second.clone();
+    let _first = i18n.subscribe(move |_| drop(drop_it.lock().unwrap().take()));
+    let calls = Arc::new(Mutex::new(0));
+    let count = calls.clone();
+    *second.lock().unwrap() = Some(i18n.subscribe(move |_| *count.lock().unwrap() += 1));
+    // step 1: a change → the first runs and drops the second before its turn
+    i18n.set_locale("de").unwrap();
+    assert_eq!(*calls.lock().unwrap(), 0);
+    // step 2: later changes → still nothing
+    i18n.set_locale("en").unwrap();
+    assert_eq!(*calls.lock().unwrap(), 0);
+}
+
+/// Given two `ensure_async` calls for the same file, when the one fetch fails, then both
+/// calls get its error: the waiting call reports the leader's failure, not success.
+#[test]
+fn a_waiting_call_gets_the_leaders_error() {
+    let i18n = remote();
+    let net = FakeFetch::new();
+    let mut ex = Executor::new();
+    // step 1: two calls, one request
+    let a = ex.spawn(i18n.ensure_async("en", None, net.fetch()));
+    let b = ex.spawn(i18n.ensure_async("en", None, net.fetch()));
+    ex.run_until_stalled();
+    assert_eq!(net.pending(), ["en.json"]);
+    // step 2: it fails → both calls fail with the path and the message
+    net.answer("en.json", Err("offline"));
+    ex.run_until_stalled();
+    for out in [a, b] {
+        let err = out.borrow_mut().take().unwrap().unwrap_err();
+        assert!(
+            matches!(&err, Error::Fetch { path, message } if path == "en.json" && message == "offline"),
+            "{err:?}"
+        );
+    }
+    assert_eq!(i18n.missing_files("en", None), ["en.json"]);
 }

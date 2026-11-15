@@ -177,3 +177,36 @@ fn disabled_locales_and_the_index_rule() {
     // step 2: check → clean: es is not looked at, xx reads `p` by index
     assert!(i18n.check().is_clean(), "{}", i18n.check());
 }
+
+/// Given a library page whose message links a key only the app's lazy root has, when the
+/// catalog is checked, then the broken link says its target may be in a lazy file (links of
+/// eager chunks resolve at `build`, when lazy files are not read), not "names no message".
+#[test]
+fn a_link_into_a_lazy_file_says_so() {
+    // step 1: an eager library page, a lazy app root
+    let i18n = I18n::builder()
+        .linked_messages(true)
+        .extend([("pages/lib/en.json", br#"{"x": "Lib @:app.t"}"#.as_slice())])
+        .lazy_files([("en.json", br#"{"app": {"t": "T"}}"#.as_slice())])
+        .build()
+        .unwrap();
+    // step 2: check → the reason names the lazy files
+    let report = i18n.check();
+    assert_eq!(
+        report.items,
+        vec![CheckItem::BrokenLink {
+            locale: s("en"),
+            page: s("lib"),
+            key: s("x"),
+            link: s("@:app.t"),
+            reason: LinkError::Lazy,
+        }],
+        "{report}"
+    );
+    assert!(
+        report
+            .to_string()
+            .contains("@:app.t names no message read at build (its view has lazy files)"),
+        "{report}"
+    );
+}

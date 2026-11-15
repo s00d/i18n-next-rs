@@ -262,3 +262,41 @@ fn eviction_under_concurrent_readers_is_invisible() {
     assert!(loads(&i18n) > PAGES as u64);
     assert!(i18n.version() > 0);
 }
+
+/// Given two locales that fall back to each other with lazy pages linking across and links
+/// on, when two threads released by one barrier read the two pages of a fresh catalog at
+/// once (200 times), then no load waits on another that waits for it: both finish, and each
+/// page resolves its link into the other locale's root.
+#[test]
+fn lazy_links_in_a_fallback_cycle_never_deadlock() {
+    let files: [(&str, &[u8]); 4] = [
+        ("en.json", br#"{"brand": "Acme"}"#),
+        ("de.json", br#"{"marke": "Akme"}"#),
+        ("pages/p/en.json", br#"{"a": "A @:marke"}"#),
+        ("pages/p/de.json", br#"{"c": "C @:brand"}"#),
+    ];
+    for _ in 0..200 {
+        let i18n = I18n::builder()
+            .locale("de")
+            .fallback_for("de", "en")
+            .fallback_for("en", "de")
+            .linked_messages(true)
+            .lazy_files(files)
+            .build()
+            .unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+        let threads: Vec<_> = [("en", "a", "A Akme"), ("de", "c", "C Acme")]
+            .into_iter()
+            .map(|(locale, key, want)| {
+                let (i18n, barrier) = (i18n.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    assert_eq!(i18n.with_locale(locale).page("p").t(key), want);
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+    }
+}

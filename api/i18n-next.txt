@@ -104,6 +104,7 @@ pub fn i18n_next::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt:
 #[non_exhaustive] pub enum i18n_next::LinkError
 pub i18n_next::LinkError::Broken
 pub i18n_next::LinkError::Cycle
+pub i18n_next::LinkError::Lazy
 pub i18n_next::LinkError::Missing
 pub i18n_next::LinkError::UnknownModifier
 impl core::clone::Clone for i18n_next::LinkError

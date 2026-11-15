@@ -137,7 +137,9 @@ impl Env for Real {
     }
 }
 
-/// Keeps [`I18n::watch`] polling; dropping it stops the thread and joins it.
+/// Keeps [`I18n::watch`] polling; dropping it stops the thread and joins it (not when it
+/// is dropped on the watch thread itself, by a listener of a reload: the thread then ends
+/// after that reload).
 #[must_use = "dropping the guard stops watching"]
 pub struct WatchGuard {
     stop: Stop,
@@ -159,7 +161,11 @@ impl Drop for WatchGuard {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
         cv.notify_all();
-        if let Some(t) = self.thread.take() {
+        // Dropped on the watch thread itself (a listener of the reload owned the guard): it
+        // stops at its next poll; joining itself would deadlock.
+        if let Some(t) = self.thread.take()
+            && t.thread().id() != std::thread::current().id()
+        {
             let _ = t.join();
         }
     }
@@ -363,6 +369,28 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&lazy);
+    }
+
+    /// Given a guard owned by its own watch thread (a listener of a reload that drops it),
+    /// when the thread drops it, then it does not join itself (which panics or deadlocks):
+    /// the drop returns and the thread goes on to its end.
+    #[test]
+    fn a_guard_dropped_on_its_own_thread_does_not_join_itself() {
+        let (tx, rx) = std::sync::mpsc::channel::<WatchGuard>();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            // step 1: the thread gets the guard that owns its own handle, and drops it
+            let guard = rx.recv().unwrap();
+            drop(guard);
+            done_tx.send(()).unwrap();
+        });
+        tx.send(WatchGuard {
+            stop: Stop::default(),
+            thread: Some(thread),
+        })
+        .unwrap();
+        // step 2: the drop returned on that thread (a self-join panics there: no message)
+        assert!(done_rx.recv().is_ok());
     }
 
     /// Given a watched directory, when the guard is dropped, then the thread stops at once

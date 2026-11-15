@@ -423,6 +423,44 @@ fn hot_path_allocations() {
     });
     assert_eq!(n, 0, "second lazy access: {n} blocks");
 
+    // case: one copy of a file's tree, nothing else. A remote file: `add_file` grows the
+    // heap about as much as an eager build of the same bytes (the arrived tree moves into
+    // the chunk; a copy left behind would double it). An eager `files()` build keeps the
+    // parsed tree for `reload`, shared with the chunk, not the source bytes beside it.
+    let remote_file = {
+        let mut s = String::from("{");
+        for k in 0..5_000 {
+            if k > 0 {
+                s.push(',');
+            }
+            s.push_str(&format!("\"k{k}\":\"value {k}\""));
+        }
+        s.push('}');
+        s
+    };
+    let base = dhat::HeapStats::get().curr_bytes;
+    let eager = I18n::builder()
+        .files([("en.json", remote_file.as_bytes())])
+        .build()
+        .unwrap();
+    let eager_bytes = dhat::HeapStats::get().curr_bytes - base;
+    drop(eager);
+    let remote = I18n::builder().remote(["en.json"]).build().unwrap();
+    let base = dhat::HeapStats::get().curr_bytes;
+    remote.add_file("en.json", remote_file.as_bytes()).unwrap();
+    let added = dhat::HeapStats::get().curr_bytes - base;
+    assert_eq!(remote.t("k4999"), "value 4999");
+    assert!(
+        added < eager_bytes + eager_bytes / 4,
+        "add_file holds {added} bytes, an eager build {eager_bytes}"
+    );
+    assert!(
+        eager_bytes < added + remote_file.len() / 2,
+        "an eager build holds {eager_bytes} bytes, the tree alone {added}, the source {}",
+        remote_file.len()
+    );
+    drop(remote);
+
     // case: a miss down the whole chain with a default → 1 block (the interpolated
     // default). Last on purpose: a failure here leaves every case above checked.
     let args = Args::new().int("n", 2).or("{n} items");

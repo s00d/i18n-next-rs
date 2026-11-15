@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::evict;
 use crate::i18n::{DataMap, I18n, Snapshot};
 use crate::lazy::{Layer, LazyCtl, lock};
-use crate::source::normalize;
+use crate::source::{Pair, normalize};
 use crate::trace;
 use std::fmt;
 use std::future::Future;
@@ -138,8 +138,9 @@ impl I18n {
     /// Paths of the `remote` files that the chain of `locale` still lacks for `page`
     /// (`None` = the root only): for every locale of the chain, its root file, then its
     /// page file; files of pages folded into the root (`pages(false)`) count as root
-    /// files. Files being fetched are listed too, until they are added. Local lazy files
-    /// are not listed: they load on first use.
+    /// files. Files being fetched are listed too, until they arrive (the `ensure_async`
+    /// call that fetched them shows them when its last file is in). Local lazy files are
+    /// not listed: they load on first use.
     ///
     /// ```
     /// use i18n_next::I18n;
@@ -203,7 +204,9 @@ impl I18n {
     /// Adds the bytes of one `remote` manifest file. The pair it belongs to becomes visible
     /// once all of its files are in (one file, as a rule): a new snapshot, version + 1,
     /// subscribers notified. A file that is already in is skipped (`Ok`): each file loads
-    /// once, until `reload` or an eviction asks for it again.
+    /// once, until `reload` or an eviction asks for it again. Pairs of the file's view
+    /// whose files are all in but not shown yet (a dropped `ensure_async`) are shown with
+    /// it, weakest first, so a link resolves over the layers under it.
     ///
     /// # Errors
     /// [`Error::UnknownFile`] for a path the manifest does not list (names only from the
@@ -211,55 +214,88 @@ impl I18n {
     /// Nothing changes then.
     pub fn add_file(&self, path: &str, bytes: &[u8]) -> Result<(), Error> {
         let path = normalize(path);
-        let Some((locale, page)) = self.inner.remote.get(path.as_str()) else {
-            return Err(Error::UnknownFile(path));
+        let (locale, page) = self.arrive(&path, bytes)?;
+        self.fill_view(&locale, page.as_deref());
+        Ok(())
+    }
+
+    /// Parses one manifest file and keeps it in its pair, not shown yet; the file's pair.
+    fn arrive(&self, path: &str, bytes: &[u8]) -> Result<Pair, Error> {
+        let Some((locale, page)) = self.inner.remote.get(path) else {
+            return Err(Error::UnknownFile(path.to_owned()));
         };
         let timer = trace::Timer::start();
-        let tree = Tree::parse(bytes, &path)?;
-        timer.done("add_file", &path, bytes.len());
-        let limit = self.inner.ctl.limit;
-        let change = self.inner.write(|s| {
-            let Some(Layer::Lazy(cell)) = s.data.get(locale).and_then(|d| d.layer(page.as_deref()))
-            else {
-                return Ok(None);
-            };
-            if cell.loaded().is_some() {
-                return Ok(None);
-            }
-            let Some(i) = cell.files.iter().position(|f| *f.path == *path) else {
-                return Ok(None);
-            };
+        let tree = Tree::parse(bytes, path)?;
+        timer.done("add_file", path, bytes.len());
+        // Under the writer: a `reload` or an eviction swapping the cell waits.
+        self.inner.write(|s| {
+            if let Some(Layer::Lazy(cell)) =
+                s.data.get(locale).and_then(|d| d.layer(page.as_deref()))
+                && cell.loaded().is_none()
+                && let Some(i) = cell.files.iter().position(|f| *f.path == *path)
+                && let Some(slot @ None) = lock(&cell.arrived).get_mut(i)
             {
-                let mut arrived = lock(&cell.arrived);
-                match arrived.get_mut(i) {
-                    Some(slot @ None) => *slot = Some(Arc::new(tree)),
-                    _ => return Ok(None),
+                *slot = Some(Arc::new(tree));
+            }
+            Ok(None)
+        })?;
+        Ok((locale.clone(), page.clone()))
+    }
+
+    /// Shows every remote pair of the view of `(locale, page)` whose files are all in,
+    /// weakest layer first (a pair's links resolve over the layers under it, as Nuxt
+    /// resolves a view with all of its files): one new snapshot when any was shown.
+    fn fill_view(&self, locale: &str, page: Option<&str>) {
+        let inner = &*self.inner;
+        let limit = inner.ctl.limit;
+        let change = inner.write(|s| {
+            let page = s.meta.page(page);
+            let mut view: Vec<Arc<crate::lazy::LazyChunk>> = Vec::new();
+            for data in s.layers(Some(locale)) {
+                for layer in [page.and_then(|p| data.layer(Some(p))), data.layer(None)] {
+                    if let Some(Layer::Lazy(cell)) = layer
+                        && cell.remote
+                    {
+                        view.push(cell.clone());
+                    }
                 }
             }
-            // Not complete yet: nothing visible changed.
-            let Some(evictable) = cell.fill() else {
+            let mut filled = false;
+            let mut evict = false;
+            for cell in view.iter().rev() {
+                if let Some(evictable) = cell.fill() {
+                    filled = true;
+                    evict |= evictable;
+                }
+            }
+            if !filled {
                 return Ok(None);
-            };
-            let data = match limit {
-                Some(n) if evictable => evict::plan(&s.data, n),
+            }
+            let mut data = match limit {
+                Some(n) if evict => evict::plan(&s.data, n, &inner.ctl),
                 _ => None,
             }
             .unwrap_or_else(|| DataMap::clone(&s.data));
+            if s.meta.linked() {
+                respawn_partials(&mut data);
+            }
             Ok(Some(Snapshot::new(
                 s.meta.clone(),
                 data,
                 s.locale.clone(),
                 s.version + 1,
             )))
-        })?;
-        if let Some(change) = change {
+        });
+        if let Ok(Some(change)) = change {
             self.inner.listeners.send(&change);
         }
-        Ok(())
     }
 
     /// Fetches the `remote` files the chain of `locale` lacks for `page` (see
     /// [`I18n::missing_files`]) with `fetch(path)` and adds them; returns when all are in.
+    /// The files of one call become visible together when the last one is in: one new
+    /// snapshot, the weakest layer filled first, so linked messages resolve the same in
+    /// whatever order the files arrive.
     ///
     /// Any runtime: `fetch` is a closure returning a future (gloo-net or `fetch` in the
     /// browser, `tokio::fs` in native). Files are fetched at the same time. A file another
@@ -309,16 +345,21 @@ impl I18n {
         E: fmt::Display,
     {
         let paths = self.missing_files(locale, page);
-        if paths.is_empty() {
-            return Ok(());
+        let mut result = Ok(());
+        if !paths.is_empty() {
+            let futures: Vec<_> = paths
+                .into_iter()
+                .map(|p| Some(Box::pin(self.ensure_file(p, &fetch))))
+                .collect();
+            let outputs = (0..futures.len()).map(|_| None).collect();
+            let results = JoinAll { futures, outputs }.await;
+            result = results.into_iter().find(Result::is_err).unwrap_or(Ok(()));
         }
-        let futures: Vec<_> = paths
-            .into_iter()
-            .map(|p| Some(Box::pin(self.ensure_file(p, &fetch))))
-            .collect();
-        let outputs = (0..futures.len()).map(|_| None).collect();
-        let results = JoinAll { futures, outputs }.await;
-        results.into_iter().find(Result::is_err).unwrap_or(Ok(()))
+        // The whole set is in (or failed): show it at once, weakest layer first, so the
+        // answers do not depend on the order the files arrived in. Files a dropped call
+        // left waiting are shown here too.
+        self.fill_view(locale, page);
+        result
     }
 
     async fn ensure_file<F, Fut, E>(&self, path: String, fetch: &F) -> Result<(), Error>
@@ -359,7 +400,8 @@ impl I18n {
                     tracing::debug_span!("i18n_next::ensure", path = %path),
                 );
                 let result = match fetched.await {
-                    Ok(bytes) => self.add_file(&path, &bytes),
+                    // kept in its pair; the call shows its whole set when it is in
+                    Ok(bytes) => self.arrive(&path, &bytes).map(|_| ()),
                     Err(e) => Err(Error::Fetch {
                         path: path.clone(),
                         message: e.to_string(),
@@ -380,6 +422,30 @@ impl I18n {
                 Outcome::Err(e) => return Err(e),
                 Outcome::Cancelled if !self.is_missing(&path) => return Ok(()),
                 Outcome::Cancelled => {}
+            }
+        }
+    }
+}
+
+/// Remote pairs not in yet whose partial view was made: made again on next use, since a
+/// layer their links read may have come in.
+fn respawn_partials(data: &mut DataMap) {
+    let stale = |c: &crate::lazy::LazyChunk| c.remote && c.loaded().is_none() && c.has_partial();
+    for slot in data.values_mut() {
+        let any = slot
+            .root
+            .iter()
+            .chain(slot.pages.values())
+            .any(|l| matches!(l, Layer::Lazy(c) if stale(c)));
+        if !any {
+            continue;
+        }
+        let slot = Arc::make_mut(slot);
+        for layer in slot.root.iter_mut().chain(slot.pages.values_mut()) {
+            if let Layer::Lazy(c) = layer
+                && stale(c)
+            {
+                *layer = Layer::Lazy(Arc::new(c.respawn()));
             }
         }
     }

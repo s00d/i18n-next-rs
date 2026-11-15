@@ -6,7 +6,7 @@
 mod support;
 
 use i18n_next::{Args, CheckItem, I18n, LinkError};
-use support::{Guard, Locales};
+use support::{Executor, FakeFetch, Guard, Locales, loads};
 
 fn shop() -> Locales {
     Locales::new()
@@ -308,4 +308,178 @@ fn lazy_and_remote_pairs_resolve_when_they_load() {
     let _ = i18n.page("big").t("hint");
     assert_eq!(en.page("big").t("cta"), "Buy ACME: Welcome to acme");
     guard.finish();
+}
+
+/// Lazy German and English files where German texts link the brand only the English root
+/// has (`de` falls back to `en`): the files of the M3 audit's order probe.
+fn brand_files() -> Locales {
+    Locales::new()
+        .file("en.json", r#"{"brand": "Acme"}"#)
+        .file("de.json", r#"{"q": "@:brand"}"#)
+        .file("pages/about/en.json", r#"{"o": "Other"}"#)
+        .file(
+            "pages/about/de.json",
+            r#"{"p": "About @:brand", "r": "See @:o"}"#,
+        )
+        .file("pages/x/en.json", r#"{"x": "X"}"#)
+}
+
+/// Given lazy files where German texts link keys of the English root and of the English
+/// page (the fallback), when the app reads them in different orders, with pages evicted
+/// and read again in between, then every order answers what Nuxt answers for the whole
+/// view: a lazy pair reads the other layers of its view before resolving its links, found
+/// in the current snapshot (never a cell an eviction replaced).
+#[test]
+fn a_lazy_link_does_not_depend_on_what_was_read_first() {
+    let files = brand_files();
+    let build = || {
+        I18n::builder()
+            .locale("de")
+            .fallback("en")
+            .linked_messages(true)
+            .lazy_files(files.files())
+            .evict_pages(1)
+            .build()
+            .unwrap()
+    };
+    let want = |i: &I18n| {
+        let about = i.page("about");
+        assert_eq!(i.t("q"), "Acme");
+        assert_eq!(about.t("p"), "About Acme");
+        assert_eq!(about.t("r"), "See Other");
+    };
+
+    // step 1: German first, nothing English read yet → resolved over the English layers
+    let first = build();
+    assert_eq!(loads(&first), 0);
+    want(&first);
+
+    // step 2: English first → the same answers
+    let english = build();
+    let en = english.with_locale("en");
+    assert_eq!(
+        (en.t("brand"), en.page("about").t("o")),
+        ("Acme".into(), "Other".into())
+    );
+    want(&english);
+
+    // step 3: the English page loaded, evicted (by `x`), loaded again in a new cell, and
+    // only then the German page → it reads the current English page, not the evicted one
+    let evicted = build();
+    let en = evicted.with_locale("en");
+    assert_eq!(en.page("about").t("o"), "Other");
+    assert_eq!(en.page("x").t("x"), "X");
+    assert_eq!(en.page("about").t("o"), "Other");
+    want(&evicted);
+
+    // step 4: the German page evicted and read again → resolved again, the same
+    assert_eq!(en.page("x").t("x"), "X");
+    want(&evicted);
+}
+
+/// Given two locales that fall back to each other and lazy pages that link across, when
+/// each page is read first on a fresh catalog, then loading never recurses into the pair
+/// being loaded (no deadlock, no panic) and each page resolves the links into the other
+/// locale's root.
+#[test]
+fn a_fallback_cycle_of_lazy_pairs_loads() {
+    let files = Locales::new()
+        .file("en.json", r#"{"brand": "Acme"}"#)
+        .file("de.json", r#"{"marke": "Akme"}"#)
+        .file("pages/p/en.json", r#"{"a": "A @:marke", "b": "B"}"#)
+        .file("pages/p/de.json", r#"{"c": "C @:brand", "d": "@:b"}"#);
+    let build = || {
+        I18n::builder()
+            .locale("de")
+            .fallback_for("de", "en")
+            .fallback_for("en", "de")
+            .linked_messages(true)
+            .lazy_files(files.files())
+            .build()
+            .unwrap()
+    };
+    // step 1: German page first
+    let i = build();
+    assert_eq!(i.page("p").t("c"), "C Acme");
+    assert_eq!(i.page("p").t("d"), "B");
+    assert_eq!(i.with_locale("en").page("p").t("a"), "A Akme");
+    // step 2: English page first
+    let i = build();
+    assert_eq!(i.with_locale("en").page("p").t("a"), "A Akme");
+    assert_eq!(i.page("p").t("c"), "C Acme");
+}
+
+/// The remote twin of [`brand_files`].
+fn brand_remote() -> I18n {
+    I18n::builder()
+        .locale("de")
+        .fallback("en")
+        .linked_messages(true)
+        .remote(["en.json", "de.json", "pages/about/de.json"])
+        .build()
+        .unwrap()
+}
+
+/// Given remote German and English files where German texts link the English brand, when
+/// one `ensure_async` fetches them and the network answers in every order, then the answers
+/// are the same as Nuxt's ("Acme", "About Acme"): the call shows its files together, the
+/// weakest layer first, so a German pair never resolves before the English root is in.
+#[test]
+fn remote_links_resolve_the_same_in_any_arrival_order() {
+    let files = brand_files();
+    let body = |path: &str| {
+        files
+            .files()
+            .find(|(p, _)| *p == path)
+            .map(|(_, b)| b.to_vec())
+            .unwrap()
+    };
+    let paths = ["en.json", "de.json", "pages/about/de.json"];
+    let orders = [[1, 2, 0], [0, 1, 2], [2, 0, 1], [1, 0, 2]];
+    for order in orders {
+        let i18n = brand_remote();
+        let net = FakeFetch::new();
+        let mut ex = Executor::new();
+        // step 1: one call for the German about page → three requests
+        let done = ex.spawn(i18n.ensure_async("de", Some("about"), net.fetch()));
+        ex.run_until_stalled();
+        assert_eq!(net.pending().len(), 3);
+        // step 2: answers in this order → nothing shown before the last one
+        for (n, &at) in order.iter().enumerate() {
+            net.answer(paths[at], Ok(&body(paths[at])));
+            ex.run_until_stalled();
+            assert_eq!(i18n.version(), u64::from(n == 2), "order {order:?}");
+        }
+        done.borrow_mut().take().unwrap().unwrap();
+        // step 3: the answers of the whole view
+        assert_eq!(i18n.t("q"), "Acme", "order {order:?}");
+        assert_eq!(i18n.page("about").t("p"), "About Acme", "order {order:?}");
+    }
+}
+
+/// Given a remote root with a library layer (`extend`) whose text links a builder message,
+/// when the app reads it before the file arrives, then the link is resolved there too
+/// (base and messages are a view of their own until the file comes); messages added at run
+/// time over the waiting pair are not resolved when the file arrives, as in Nuxt.
+#[test]
+fn a_remote_pair_resolves_its_partial_view_but_not_runtime_messages() {
+    let i18n = I18n::builder()
+        .linked_messages(true)
+        .extend([("en.json", br#"{"lib": "@:own"}"#.as_slice())])
+        .messages("en", None, r#"{"own": "O"}"#)
+        .remote(["en.json"])
+        .build()
+        .unwrap();
+    // step 1: before the file → the library link resolves over the messages
+    assert_eq!((i18n.t("lib"), i18n.t("own")), ("O".into(), "O".into()));
+    // step 2: a runtime message with a link waits over the pair
+    i18n.add_messages("en", None, r#"{"x": "@:t"}"#).unwrap();
+    assert_eq!(i18n.t("x"), "@:t");
+    // step 3: the file arrives → its own links resolve, the runtime message stays as written
+    i18n.add_file("en.json", br#"{"t": "T", "y": "@:t"}"#)
+        .unwrap();
+    assert_eq!(
+        [i18n.t("t"), i18n.t("y"), i18n.t("x"), i18n.t("lib")],
+        ["T", "T", "@:t", "O"]
+    );
 }

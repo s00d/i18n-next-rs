@@ -88,6 +88,11 @@ pub(crate) struct Meta {
 }
 
 impl Meta {
+    /// `linked_messages(true)`.
+    pub(crate) fn linked(&self) -> bool {
+        self.linked.is_some()
+    }
+
     fn disabled(&self, code: &str) -> bool {
         self.configured.iter().any(|l| l.disabled && l.code == code)
     }
@@ -285,6 +290,11 @@ impl Drop for Inner {
 }
 
 impl Inner {
+    /// The current snapshot (one read lock).
+    pub(crate) fn current(&self) -> Arc<Snapshot> {
+        self.load()
+    }
+
     fn load(&self) -> Arc<Snapshot> {
         match self.state.read() {
             Ok(g) => g.clone(),
@@ -411,7 +421,7 @@ impl Inner {
             Err(std::sync::TryLockError::WouldBlock) => return,
         };
         let current = self.load();
-        if let Some(data) = crate::evict::plan(&current.data, limit) {
+        if let Some(data) = crate::evict::plan(&current.data, limit, &self.ctl) {
             let next = Snapshot::new(
                 current.meta.clone(),
                 data,
@@ -880,12 +890,13 @@ impl I18n {
     pub fn reload(&self) -> Result<(), Error> {
         let timer = crate::trace::Timer::start();
         let inner = &*self.inner;
+        let mut broken = Vec::new();
         let change = inner.write(|s| {
             let mut data = source::load(&inner.sources, &s.meta, &inner.ctl)?;
             // linked messages again, over what was read again (M3, linked.rs)
             if let Some(resolve) = s.meta.linked {
-                let broken = resolve(&mut data, &s.meta, inner.missing.as_ref());
-                *check::lock(&s.meta.check.broken) = broken;
+                broken = resolve(&mut data, &s.meta);
+                check::lock(&s.meta.check.broken).clone_from(&broken);
             }
             let data = data.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
             Ok(Some(Snapshot::new(
@@ -896,6 +907,8 @@ impl I18n {
             )))
         })?;
         timer.done("reload", "", 0);
+        // after the writer is released: a handler may write to the catalog
+        report_broken(inner.missing.as_ref(), &broken);
         if let Some(change) = change {
             self.inner.listeners.send(&change);
         }
@@ -1321,7 +1334,12 @@ impl Builder {
 
     /// Called on every miss of `t` / `t_with` / `tc` / `tc_with` with `(locale, key, page)`;
     /// the root page is `"index"`. Not called for `try_t`, `get`, `has`, a subtree, a
-    /// boolean under `tc` or `t("")`.
+    /// boolean under `tc` or `t("")`. It runs with no lock held, so it may call the
+    /// catalog, writes included (`add_messages`).
+    ///
+    /// The instance owns the handler: a handler that captures a clone of the same [`I18n`]
+    /// makes a reference cycle and the catalog is never freed. Keep the instance in an
+    /// `Arc<I18n>` and capture `Arc::downgrade` of it instead.
     #[must_use]
     pub fn missing(mut self, handler: impl Fn(&str, &str, &str) + Send + Sync + 'static) -> Self {
         self.missing = Some(Box::new(handler));
@@ -1379,7 +1397,7 @@ impl Builder {
     /// [`Error::DisabledLocale`] when the start locale is disabled, [`Error::UnknownPage`]
     /// for an alias to a page nothing defines, [`Error::UnknownLocale`] for an empty or
     /// `__proto__` locale in `messages`.
-    pub fn build(self) -> Result<I18n, Error> {
+    pub fn build(mut self) -> Result<I18n, Error> {
         let config = self.read_config()?;
         let mut meta = Meta {
             fallback: self
@@ -1440,6 +1458,7 @@ impl Builder {
             meta.aliases.insert(Arc::from(&**from), Arc::from(&**to));
         }
         let ctl = Arc::new(LazyCtl::new(self.sources.evict));
+        self.sources.parse_files()?;
         let mut data = source::load(&self.sources, &meta, &ctl)?;
         // Folded pages: an alias resolves to a page with no chunk, which reads the root.
         if !self.sources.no_pages {
@@ -1460,7 +1479,8 @@ impl Builder {
         );
         meta.linked = self.linked;
         if let Some(resolve) = self.linked {
-            let broken = resolve(&mut data, &meta, self.missing.as_ref());
+            let broken = resolve(&mut data, &meta);
+            report_broken(self.missing.as_ref(), &broken);
             *check::lock(&meta.check.broken) = broken;
         }
 
@@ -1486,17 +1506,28 @@ impl Builder {
 // ---- linked messages and check() (M3, linked.rs / check.rs) ----
 
 /// [`resolve_linked`] as the builder keeps it.
-type ResolveLinked =
-    fn(&mut FastMap<Arc<str>, LocaleData>, &Meta, Option<&Missing>) -> Vec<crate::linked::Broken>;
+type ResolveLinked = fn(&mut FastMap<Arc<str>, LocaleData>, &Meta) -> Vec<crate::linked::Broken>;
+
+/// Reports each message `broken` left as written once through `missing`. Called with no
+/// lock held: the handler may write to the catalog.
+fn report_broken(missing: Option<&Missing>, broken: &[crate::linked::Broken]) {
+    let Some(missing) = missing else { return };
+    let mut last = None;
+    for b in broken {
+        let at = (&b.locale, &b.page, &b.key);
+        if last != Some(at) {
+            missing(&b.locale, &b.key, b.page.as_deref().unwrap_or("index"));
+            last = Some(at);
+        }
+    }
+}
 
 /// Resolves the linked messages of `data` (`linked.rs`): the ready chunks go into one ordered
 /// map and back; each lazy or remote pair gets what it needs to resolve its own messages when
-/// it loads ([`crate::lazy::LinkCtx`]). Reports each message left as written once through
-/// `missing`.
+/// it loads ([`crate::lazy::LinkCtx`]). Returns the links that left a message as written.
 fn resolve_linked(
     data: &mut FastMap<Arc<str>, LocaleData>,
     meta: &Meta,
-    missing: Option<&Missing>,
 ) -> Vec<crate::linked::Broken> {
     let mut chunks = crate::linked::Chunks::new();
     for (code, d) in data.iter_mut() {
@@ -1521,7 +1552,7 @@ fn resolve_linked(
         fallback: meta.fallback.as_deref(),
         iso: &meta.iso,
     };
-    let broken = crate::linked::resolve(&mut chunks, &setup);
+    let mut broken = crate::linked::resolve(&mut chunks, &setup);
     // a lazy pair keeps its cell: what was stored for its view is dropped, it resolves its
     // own messages when it loads
     for ((code, page), chunk) in chunks {
@@ -1536,16 +1567,7 @@ fn resolve_linked(
         }
     }
     crate::linked::lazy_contexts(data, &setup);
-    if let Some(missing) = missing {
-        let mut last = None;
-        for b in &broken {
-            let at = (&b.locale, &b.page, &b.key);
-            if last != Some(at) {
-                missing(&b.locale, &b.key, b.page.as_deref().unwrap_or("index"));
-                last = Some(at);
-            }
-        }
-    }
+    crate::linked::mark_lazy(&mut broken, data, &setup);
     broken
 }
 

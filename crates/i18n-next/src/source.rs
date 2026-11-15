@@ -12,7 +12,7 @@ use crate::catalog::Tree;
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::i18n::{LocaleData, Meta, chunk_names, messages_path};
-use crate::lazy::{Layer, LazyChunk, LazyCtl, LazyFile, Origin, apply};
+use crate::lazy::{Layer, LazyChunk, LazyCtl, LazyFile, Origin};
 use crate::loader::{self, Kind};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -30,7 +30,11 @@ pub(crate) struct Sources {
     pub(crate) dirs: Vec<std::path::PathBuf>,
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) lazy_dirs: Vec<std::path::PathBuf>,
+    /// `files()` as the builder got them; [`Sources::parse_files`] turns them into `parsed`.
     pub(crate) files: Vec<(String, Bytes)>,
+    /// `files()` parsed once at `build`: `reload` reads them again without parsing, and a
+    /// pair made of one such file shares its tree with the chunk (no second copy).
+    pub(crate) parsed: Vec<(String, Arc<Tree>)>,
     pub(crate) lazy_files: Vec<(String, Bytes)>,
     pub(crate) remote: Vec<String>,
     pub(crate) extend: Vec<Vec<(String, Bytes)>>,
@@ -49,7 +53,7 @@ pub(crate) type Pending = (Vec<LazyFile>, Vec<Arc<Tree>>);
 /// that never calls them links none of the lazy listing, loading and eviction code (wasm
 /// size: ~10 KB of the micro build).
 /// Builds the layer of one lazy pair: its files and messages, base, evictable.
-type MakeCell = fn(Pending, Option<Arc<Tree>>, bool, &Arc<LazyCtl>) -> Layer;
+type MakeCell = fn(Pair, Pending, Option<Arc<Tree>>, bool, &Arc<LazyCtl>) -> Layer;
 
 #[derive(Clone, Copy)]
 pub(crate) struct LazyHooks {
@@ -59,8 +63,15 @@ pub(crate) struct LazyHooks {
 
 pub(crate) const LAZY: LazyHooks = LazyHooks {
     list: list_lazy,
-    cell: |(files, over), base, evictable, ctl| {
-        let cell = LazyChunk::new(files.into(), base, over.into(), evictable, ctl.clone());
+    cell: |pair, (files, over), base, evictable, ctl| {
+        let cell = LazyChunk::new(
+            pair,
+            files.into(),
+            base,
+            over.into(),
+            evictable,
+            ctl.clone(),
+        );
         Layer::Lazy(Arc::new(cell))
     },
 };
@@ -80,26 +91,81 @@ fn place(rel: &str, no_pages: bool) -> Option<(Pair, bool)> {
     }
 }
 
-/// Eager files `(relative path, bytes, path for errors)` merged per pair in path order
+/// An eager file: bytes to parse, or a tree parsed at `build` (`files()`).
+pub(crate) enum Src<'a> {
+    Bytes(Cow<'a, [u8]>),
+    Tree(Arc<Tree>),
+}
+
+/// Merges `incoming` into the tree of a pair (`under`: below it). A pair's first tree is
+/// shared as it is; the copy happens only when a second one merges into a shared tree.
+fn layer(acc: &mut FastMap<Pair, Arc<Tree>>, pair: Pair, incoming: Arc<Tree>, under: bool) {
+    match acc.entry(pair) {
+        std::collections::hash_map::Entry::Vacant(v) => {
+            v.insert(incoming);
+        }
+        std::collections::hash_map::Entry::Occupied(mut o) => {
+            let tree = o.get_mut();
+            if under {
+                let above = std::mem::replace(tree, incoming);
+                Arc::make_mut(tree).merge(Arc::unwrap_or_clone(above));
+            } else {
+                Arc::make_mut(tree).merge(Arc::unwrap_or_clone(incoming));
+            }
+        }
+    }
+}
+
+/// Parses `bytes` of the file shown as `shown`.
+fn parse(bytes: &[u8], shown: &str) -> Result<Tree, Error> {
+    let timer = crate::trace::Timer::start();
+    let tree = Tree::parse(bytes, shown)?;
+    timer.done("load", shown, bytes.len());
+    Ok(tree)
+}
+
+/// Eager files `(relative path, source, path for errors)` merged per pair in path order
 /// (JS `<`, as the JS loader reads them); the index makes the order total.
 fn eager(
-    files: &[(String, Cow<'_, [u8]>, String)],
+    files: Vec<(String, Src<'_>, String)>,
     no_pages: bool,
-) -> Result<FastMap<Pair, Tree>, Error> {
+) -> Result<FastMap<Pair, Arc<Tree>>, Error> {
+    let mut files: Vec<Option<(String, Src<'_>, String)>> = files.into_iter().map(Some).collect();
     let mut order: Vec<usize> = (0..files.len()).collect();
-    order.sort_unstable_by(|&a, &b| loader::js_order(&files[a].0, &files[b].0).then(a.cmp(&b)));
-    let mut out: FastMap<Pair, Tree> = FastMap::default();
+    order.sort_unstable_by(|&a, &b| {
+        let path = |i: usize| files[i].as_ref().map_or("", |f| f.0.as_str());
+        loader::js_order(path(a), path(b)).then(a.cmp(&b))
+    });
+    let mut out: FastMap<Pair, Arc<Tree>> = FastMap::default();
     for i in order {
-        let (rel, bytes, shown) = &files[i];
-        let Some((pair, under)) = place(rel, no_pages) else {
+        let Some((rel, src, shown)) = files[i].take() else {
             continue;
         };
-        let timer = crate::trace::Timer::start();
-        let tree = Tree::parse(bytes, shown)?;
-        timer.done("load", shown, bytes.len());
-        apply(out.entry(pair).or_default(), tree, under);
+        let Some((pair, under)) = place(&rel, no_pages) else {
+            continue;
+        };
+        let tree = match src {
+            Src::Bytes(bytes) => Arc::new(parse(&bytes, &shown)?),
+            Src::Tree(t) => t,
+        };
+        layer(&mut out, pair, tree, under);
     }
     Ok(out)
+}
+
+impl Sources {
+    /// Parses the `files()` sources once (`build`), in the order they were given (the first
+    /// broken one is the error), and drops their bytes. No sort here: its code costs ~4 KB
+    /// of wasm; `eager` orders the trees.
+    pub(crate) fn parse_files(&mut self) -> Result<(), Error> {
+        for (rel, bytes) in std::mem::take(&mut self.files) {
+            if loader::classify(&rel) != Kind::Ignore {
+                let tree = Arc::new(parse(&bytes, &rel)?);
+                self.parsed.push((rel, tree));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Manifest path → pair, for `add_file` (paths outside the layout are not listed).
@@ -118,22 +184,22 @@ pub(crate) fn load(
     ctl: &Arc<LazyCtl>,
 ) -> Result<FastMap<Arc<str>, LocaleData>, Error> {
     let no_pages = src.no_pages;
-    let mut acc: FastMap<Pair, Tree> = FastMap::default();
-    let add = |acc: &mut FastMap<Pair, Tree>, layer: FastMap<Pair, Tree>| {
-        for (pair, tree) in layer {
-            acc.entry(pair).or_default().merge(tree);
+    let mut acc: FastMap<Pair, Arc<Tree>> = FastMap::default();
+    let add = |acc: &mut FastMap<Pair, Arc<Tree>>, next: FastMap<Pair, Arc<Tree>>| {
+        for (pair, tree) in next {
+            layer(acc, pair, tree, false);
         }
     };
     // 1. Libraries, call by call.
     for call in &src.extend {
         let files: Vec<_> = call
             .iter()
-            .map(|(rel, b)| (rel.clone(), Cow::Borrowed(&b[..]), rel.clone()))
+            .map(|(rel, b)| (rel.clone(), Src::Bytes(Cow::Borrowed(&b[..])), rel.clone()))
             .collect();
-        add(&mut acc, eager(&files, no_pages)?);
+        add(&mut acc, eager(files, no_pages)?);
     }
     // 2. The app's eager files.
-    let mut files: Vec<(String, Cow<'_, [u8]>, String)> = Vec::new();
+    let mut files: Vec<(String, Src<'_>, String)> = Vec::new();
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     for dir in &src.dirs {
         for (rel, full) in loader::list_dir(dir)? {
@@ -145,14 +211,13 @@ pub(crate) fn load(
                 path: shown.clone(),
                 source,
             })?;
-            files.push((rel, Cow::Owned(bytes), shown));
+            files.push((rel, Src::Bytes(Cow::Owned(bytes)), shown));
         }
     }
-    for (rel, b) in &src.files {
-        files.push((rel.clone(), Cow::Borrowed(&b[..]), rel.clone()));
+    for (rel, t) in &src.parsed {
+        files.push((rel.clone(), Src::Tree(t.clone()), rel.clone()));
     }
-    add(&mut acc, eager(&files, no_pages)?);
-    drop(files);
+    add(&mut acc, eager(files, no_pages)?);
 
     // 3. Lazy files: listed, not read.
     let mut lazy = match src.lazy {
@@ -169,7 +234,7 @@ pub(crate) fn load(
         if let Some((_, over)) = lazy.get_mut(&pair) {
             over.push(Arc::new(tree));
         } else {
-            acc.entry(pair).or_default().merge(tree);
+            layer(&mut acc, pair, Arc::new(tree), false);
         }
     }
 
@@ -190,12 +255,15 @@ pub(crate) fn load(
             let evictable = src.evict.is_some()
                 && pending.1.is_empty()
                 && pair.1.as_deref().is_some_and(|p| !pinned(p));
-            let base = acc.remove(&pair).map(Arc::new);
-            put(pair, (hooks.cell)(pending, base, evictable, ctl));
+            let base = acc.remove(&pair);
+            put(
+                pair.clone(),
+                (hooks.cell)(pair, pending, base, evictable, ctl),
+            );
         }
     }
     for (pair, tree) in acc {
-        put(pair, Layer::Ready(Arc::new(tree)));
+        put(pair, Layer::Ready(tree));
     }
     Ok(data)
 }

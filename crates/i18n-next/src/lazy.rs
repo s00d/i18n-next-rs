@@ -4,8 +4,12 @@
 //! `(locale, page)` pair, read on first use. The parsed chunk lives in a `OnceLock` inside
 //! the cell, shared by every snapshot that holds the cell, so a lazy load publishes no new
 //! snapshot and two threads racing on one pair parse it once (the second waits). A remote
-//! file is never read here: `add_file` hands its tree in and fills the cell when the last
-//! file of the pair has arrived.
+//! file is never read here: `add_file` / `ensure_async` hand its tree in, and the cell is
+//! filled when its view is shown (`remote.rs`), the weakest pair of the view first.
+//!
+//! With linked messages, a pair resolves its links when it loads, over the other layers of
+//! its view found in the current snapshot ([`LinkCtx`]); those are loaded first, before
+//! this cell is initialized, so a load never waits on a cell whose loader waits for it.
 //!
 //! Eviction swaps a loaded cell for a fresh empty one in a new snapshot; readers of the
 //! old snapshot keep the loaded cell. The LRU stamp is the global [`TICK`] at the last
@@ -76,8 +80,16 @@ pub(crate) fn apply(acc: &mut Tree, tree: Tree, under: bool) {
     }
 }
 
-/// Bumped by every lazy load: the LRU clock (global, so no pointer chase on access).
+/// Bumped by every lazy load: the LRU clock (global, so no pointer chase on access). A load
+/// takes two ticks and stamps the first: a hit after it stamps the second, so a page read
+/// again after the latest load is newer than that load (an LRU tie would evict it).
 static TICK: AtomicU64 = AtomicU64::new(1);
+
+/// `(locale, page)` of a lazy pair; `None` is the root.
+pub(crate) type Pair = (Arc<str>, Option<Arc<str>>);
+
+/// `(locale, page)` of a page (only pages are evicted).
+pub(crate) type PagePair = (Arc<str>, Arc<str>);
 
 /// Per instance: the eviction limit, the load counter and the way back to the instance.
 pub(crate) struct LazyCtl {
@@ -85,10 +97,15 @@ pub(crate) struct LazyCtl {
     pub(crate) limit: Option<usize>,
     /// Successful lazy and remote loads (`Debug` of `I18n` shows it).
     pub(crate) loads: AtomicU64,
-    /// Set right after the instance is built: a load past the limit evicts through it.
+    /// Set right after the instance is built: a load past the limit evicts through it, and a
+    /// pair resolving its links reads the other layers of its view in the current snapshot.
     pub(crate) owner: OnceLock<Weak<crate::i18n::Inner>>,
     /// Remote fetches in flight, by manifest path (`ensure_async` dedupe).
     pub(crate) flights: Mutex<FastMap<Box<str>, Arc<crate::remote::Flight>>>,
+    /// Evictable pages loaded since they were last checked (`evict.rs`): eviction looks at
+    /// these instead of every page of the catalog. Entries whose current cell is not loaded
+    /// any more (evicted, reloaded) are dropped there.
+    pub(crate) loaded: Mutex<FastMap<PagePair, ()>>,
 }
 
 impl LazyCtl {
@@ -98,6 +115,7 @@ impl LazyCtl {
             loads: AtomicU64::new(0),
             owner: OnceLock::new(),
             flights: Mutex::new(FastMap::default()),
+            loaded: Mutex::new(FastMap::default()),
         }
     }
 }
@@ -109,17 +127,21 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// The files of one `(locale, page)` pair, parsed on first use.
 pub(crate) struct LazyChunk {
+    pub(crate) pair: Pair,
     pub(crate) files: Arc<[LazyFile]>,
     /// `extend` layers and eager files of the pair: under the lazy files.
     pub(crate) base: Option<Arc<Tree>>,
-    /// `messages` / `add_messages` while the pair was not loaded: over the files, in order.
+    /// The builder's `messages` for the pair: over the files, in order, resolved with them.
     pub(crate) over: Arc<[Arc<Tree>]>,
+    /// `add_messages` while a remote pair was not in: over everything, in order, never
+    /// resolved (as in Nuxt).
+    pub(crate) added: Arc<[Arc<Tree>]>,
     /// Trees of remote files that arrived, by index in `files`.
     pub(crate) arrived: Mutex<Vec<Option<Arc<Tree>>>>,
     pub(crate) remote: bool,
-    /// What a remote pair answers before its files are in: base ⊕ over (library strings
-    /// and messages are there at once). `None` for a local pair.
-    partial: Option<Arc<Tree>>,
+    /// What a remote pair answers before its files are in: base ⊕ over, links resolved, ⊕
+    /// added (library strings and messages are there at once); made on first use.
+    partial: OnceLock<Option<Arc<Tree>>>,
     cell: OnceLock<Tree>,
     stamp: AtomicU64,
     pub(crate) evictable: bool,
@@ -132,43 +154,80 @@ pub(crate) struct LazyChunk {
     pub(crate) linked: OnceLock<Arc<LinkCtx>>,
 }
 
-/// One layer of a lazy pair's view, for its linked messages (M3, `linked.rs`).
-pub(crate) enum LinkLayer {
-    Ready(Arc<Chunk>),
-    /// Weak: views of two locales that fall back to each other would hold each other. `true`:
-    /// the same locale's root under a page, which the load may read first (no cycle: a root's
-    /// view holds no page); another locale's pair is read only when it is loaded already.
-    Lazy(Weak<LazyChunk>, bool),
-}
-
 /// What a lazy pair needs to resolve its own linked messages when it loads: the other layers
-/// of its view, strongest first, and the tag of its locale. Set at `build` / `reload`.
+/// of its view by `(locale, page)`, strongest first, read in the snapshot current at load
+/// time (a cell an eviction or `add_messages` replaced is never read), and the tag of its
+/// locale. Set at `build` / `reload`.
 pub(crate) struct LinkCtx {
-    pub(crate) layers: Vec<LinkLayer>,
+    pub(crate) layers: Vec<Pair>,
     pub(crate) tag: Arc<str>,
     pub(crate) resolve: fn(&mut Tree, &[&Chunk], &str),
 }
 
+thread_local! {
+    /// Lazy pairs this thread is loading the view of (by address): a pair of a view that
+    /// leads back to one of them (two locales falling back to each other) is not loaded
+    /// for it again.
+    static LOADING: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Marks a pair as loading its view on this thread until dropped.
+struct Loading(usize);
+
+impl Loading {
+    fn has(cell: &LazyChunk) -> bool {
+        let at = std::ptr::from_ref(cell) as usize;
+        LOADING
+            .try_with(|l| l.try_borrow().is_ok_and(|l| l.contains(&at)))
+            .unwrap_or(false)
+    }
+
+    fn push(cell: &LazyChunk) -> Loading {
+        let at = std::ptr::from_ref(cell) as usize;
+        let _ = LOADING.try_with(|l| {
+            if let Ok(mut l) = l.try_borrow_mut() {
+                l.push(at);
+            }
+        });
+        Loading(at)
+    }
+}
+
+impl Drop for Loading {
+    fn drop(&mut self) {
+        let _ = LOADING.try_with(|l| {
+            if let Ok(mut l) = l.try_borrow_mut()
+                && let Some(i) = l.iter().rposition(|x| *x == self.0)
+            {
+                l.remove(i);
+            }
+        });
+    }
+}
+
 impl LinkCtx {
-    fn apply(&self, tree: &mut Tree) {
-        // the upgraded cells live as long as the borrowed chunks
-        let cells: Vec<Option<Arc<LazyChunk>>> = self
-            .layers
+    /// The other layers of the view in the current snapshot, strongest first.
+    fn deps(&self, ctl: &LazyCtl) -> Vec<Layer> {
+        let Some(inner) = ctl.owner.get().and_then(Weak::upgrade) else {
+            return Vec::new();
+        };
+        let snap = inner.current();
+        self.layers
             .iter()
-            .map(|l| match l {
-                LinkLayer::Ready(_) => None,
-                LinkLayer::Lazy(w, _) => w.upgrade(),
-            })
-            .collect();
-        let layers: Vec<&Chunk> = self
-            .layers
+            .filter_map(|(l, p)| snap.data.get(l)?.layer(p.as_deref()).cloned())
+            .collect()
+    }
+
+    /// Resolves `tree`'s own links over `deps` as they answer now (a lazy layer that is
+    /// not in counts as nothing, a remote one that is not in as its partial view).
+    fn apply(&self, tree: &mut Tree, deps: &[Layer]) {
+        let layers: Vec<&Chunk> = deps
             .iter()
-            .zip(&cells)
-            .filter_map(|(l, cell)| match (l, cell) {
-                (LinkLayer::Ready(c), _) => Some(&**c),
-                (LinkLayer::Lazy(_, true), Some(cell)) => cell.get(),
-                (LinkLayer::Lazy(_, false), Some(cell)) => cell.loaded(),
-                (LinkLayer::Lazy(..), None) => None,
+            .filter_map(|l| match l {
+                Layer::Ready(c) => Some(&**c),
+                Layer::Lazy(c) => c
+                    .loaded()
+                    .or_else(|| c.partial.get().and_then(|p| p.as_deref())),
             })
             .collect();
         (self.resolve)(tree, &layers, &self.tag);
@@ -186,42 +245,45 @@ impl std::fmt::Debug for LazyChunk {
 
 impl LazyChunk {
     pub(crate) fn new(
+        pair: Pair,
         files: Arc<[LazyFile]>,
         base: Option<Arc<Tree>>,
         over: Arc<[Arc<Tree>]>,
         evictable: bool,
         ctl: Arc<LazyCtl>,
     ) -> LazyChunk {
-        LazyChunk::parts(files, base, over, evictable, ctl, LazyChunk::load)
+        LazyChunk::parts(
+            pair,
+            files,
+            base,
+            over,
+            Arc::new([]),
+            evictable,
+            ctl,
+            LazyChunk::load,
+        )
     }
 
+    #[allow(clippy::too_many_arguments, reason = "the fields of one cell")]
     fn parts(
+        pair: Pair,
         files: Arc<[LazyFile]>,
         base: Option<Arc<Tree>>,
         over: Arc<[Arc<Tree>]>,
+        added: Arc<[Arc<Tree>]>,
         evictable: bool,
         ctl: Arc<LazyCtl>,
         miss: fn(&LazyChunk) -> Option<&Tree>,
     ) -> LazyChunk {
-        let remote = files.iter().any(LazyFile::is_remote);
-        let partial = match (remote, over.is_empty()) {
-            (false, _) => None,
-            (true, true) => base.clone(),
-            (true, false) => {
-                let mut t = base.as_deref().cloned().unwrap_or_default();
-                for o in over.iter() {
-                    t.merge(Tree::clone(o));
-                }
-                Some(Arc::new(t))
-            }
-        };
         LazyChunk {
-            partial,
+            pair,
+            remote: files.iter().any(LazyFile::is_remote),
+            partial: OnceLock::new(),
             arrived: Mutex::new(files.iter().map(|_| None).collect()),
             files,
             base,
             over,
-            remote,
+            added,
             cell: OnceLock::new(),
             stamp: AtomicU64::new(0),
             evictable,
@@ -231,8 +293,19 @@ impl LazyChunk {
         }
     }
 
-    /// The same link context in a new cell of this pair.
-    fn keep_links(&self, next: LazyChunk) -> LazyChunk {
+    /// The same pair, not loaded, with `added` and the link context: arrived remote files
+    /// are not carried over.
+    fn again(&self, added: Arc<[Arc<Tree>]>, evictable: bool) -> LazyChunk {
+        let next = LazyChunk::parts(
+            self.pair.clone(),
+            self.files.clone(),
+            self.base.clone(),
+            self.over.clone(),
+            added,
+            evictable,
+            self.ctl.clone(),
+            self.miss,
+        );
         if let Some(ctx) = self.linked.get() {
             let _ = next.linked.set(ctx.clone());
         }
@@ -241,35 +314,35 @@ impl LazyChunk {
 
     /// The same pair, not loaded: what eviction puts in its place.
     pub(crate) fn fresh(&self) -> LazyChunk {
-        self.keep_links(LazyChunk::parts(
-            self.files.clone(),
-            self.base.clone(),
-            self.over.clone(),
-            self.evictable,
-            self.ctl.clone(),
-            self.miss,
-        ))
+        self.again(self.added.clone(), self.evictable)
     }
 
-    /// The same pair with one more tree over its files (not loaded yet, so the tree waits
-    /// for them): arrived remote files carry over. Never evicted: nothing restores it.
+    /// The same remote pair, not in yet, with its arrived files: its partial view is made
+    /// again on next use (a layer it links into came in).
+    pub(crate) fn respawn(&self) -> LazyChunk {
+        let next = self.again(self.added.clone(), self.evictable);
+        *lock(&next.arrived) = lock(&self.arrived).clone();
+        next
+    }
+
+    /// Whether its partial view was made (and may link a layer that came in since).
+    pub(crate) fn has_partial(&self) -> bool {
+        self.partial.get().is_some()
+    }
+
+    /// The same pair with one more `add_messages` tree over everything (not loaded yet, so
+    /// the tree waits for its files): arrived remote files carry over. Never evicted:
+    /// nothing restores it.
     pub(crate) fn with_over(&self, tree: Tree) -> LazyChunk {
-        let over: Arc<[Arc<Tree>]> = self
-            .over
+        let added: Arc<[Arc<Tree>]> = self
+            .added
             .iter()
             .cloned()
             .chain(std::iter::once(Arc::new(tree)))
             .collect();
-        let next = LazyChunk::parts(
-            self.files.clone(),
-            self.base.clone(),
-            over,
-            false,
-            self.ctl.clone(),
-            self.miss,
-        );
+        let next = self.again(added, false);
         *lock(&next.arrived) = lock(&self.arrived).clone();
-        self.keep_links(next)
+        next
     }
 
     pub(crate) fn loaded(&self) -> Option<&Tree> {
@@ -298,16 +371,37 @@ impl LazyChunk {
         }
     }
 
+    /// The other layers of the view, each loaded first (unless this thread is already
+    /// loading its view: a fallback cycle), so the links of this pair resolve over the
+    /// whole view whatever was read before. No cell is being initialized here, so loading
+    /// another pair never waits on one that waits for this one.
+    fn prepare(&self) -> Vec<Layer> {
+        let Some(ctx) = self.linked.get() else {
+            return Vec::new();
+        };
+        let deps = ctx.deps(&self.ctl);
+        let _me = Loading::push(self);
+        for d in &deps {
+            if let Layer::Lazy(c) = d
+                && !Loading::has(c)
+            {
+                let _ = c.get();
+            }
+        }
+        deps
+    }
+
     #[cold]
     #[inline(never)]
     fn load(&self) -> Option<&Tree> {
-        // A remote pair is filled by `add_file` only.
+        // A remote pair is filled by `add_file` / `ensure_async` only.
         if self.remote {
-            return self.partial.as_deref();
+            return self.partial();
         }
+        let deps = self.prepare();
         let mut fresh = None;
         let tree = self.cell.get_or_init(|| {
-            let (tree, ok) = self.build(Vec::new());
+            let (tree, ok) = self.build(Vec::new(), &deps);
             fresh = Some(ok);
             tree
         });
@@ -323,46 +417,81 @@ impl LazyChunk {
         Some(tree)
     }
 
-    /// Counts a load (`ok`: every file read) and stamps the cell; whether eviction may be
-    /// due.
+    /// A remote pair's answer before its files are in.
+    fn partial(&self) -> Option<&Tree> {
+        if let Some(p) = self.partial.get() {
+            return p.as_deref();
+        }
+        let deps = self.prepare();
+        self.partial
+            .get_or_init(|| {
+                let ctx = self.linked.get();
+                if ctx.is_none() && self.over.is_empty() && self.added.is_empty() {
+                    return self.base.clone();
+                }
+                let mut t = self.base.as_deref().cloned().unwrap_or_default();
+                for o in self.over.iter() {
+                    t.merge(Tree::clone(o));
+                }
+                if let Some(ctx) = ctx {
+                    ctx.apply(&mut t, &deps);
+                }
+                for a in self.added.iter() {
+                    t.merge(Tree::clone(a));
+                }
+                Some(Arc::new(t))
+            })
+            .as_deref()
+    }
+
+    /// Counts a load (`ok`: every file read), stamps the cell and lists an evictable page
+    /// for eviction; whether eviction may be due.
     fn mark_loaded(&self, ok: bool) -> bool {
         if ok {
             self.ctl.loads.fetch_add(1, Ordering::Relaxed);
         }
-        let now = TICK.fetch_add(1, Ordering::Relaxed) + 1;
+        let now = TICK.fetch_add(2, Ordering::Relaxed) + 1;
         self.stamp.store(now, Ordering::Relaxed);
+        if self.evictable
+            && let (l, Some(p)) = &self.pair
+        {
+            lock(&self.ctl.loaded).insert((l.clone(), p.clone()), ());
+        }
         self.evictable
     }
 
-    /// Fills a remote pair once its last file arrived (`add_file`, under the writer);
-    /// `Some(evictable)` when it was filled now.
-    pub(crate) fn fill(&self) -> Option<bool> {
-        let arrived = {
-            let mut arrived = lock(&self.arrived);
-            let complete = self
+    /// Whether every remote file arrived and the pair is not filled yet.
+    pub(crate) fn complete(&self) -> bool {
+        self.cell.get().is_none()
+            && self
                 .files
                 .iter()
-                .zip(arrived.iter())
-                .all(|(f, t)| !f.is_remote() || t.is_some());
-            if !complete || self.cell.get().is_some() {
-                return None;
-            }
-            // The trees move into the chunk: no second copy stays behind.
-            std::mem::take(&mut *arrived)
-        };
+                .zip(lock(&self.arrived).iter())
+                .all(|(f, t)| !f.is_remote() || t.is_some())
+    }
+
+    /// Fills a remote pair once its last file arrived (under the writer); `Some(evictable)`
+    /// when it was filled now.
+    pub(crate) fn fill(&self) -> Option<bool> {
+        if !self.complete() {
+            return None;
+        }
+        // The trees move into the chunk: no second copy stays behind.
+        let arrived = std::mem::take(&mut *lock(&self.arrived));
+        let deps = self.prepare();
         let mut fresh = None;
         self.cell.get_or_init(|| {
-            let (tree, ok) = self.build(arrived);
+            let (tree, ok) = self.build(arrived, &deps);
             fresh = Some(ok);
             tree
         });
         fresh.map(|ok| self.mark_loaded(ok))
     }
 
-    /// base ⊕ files (in order, roots under) ⊕ over. A local file that fails is reported
-    /// and left out: a lookup has no caller to return the error to. Whether every file
-    /// was read.
-    fn build(&self, mut arrived: Vec<Option<Arc<Tree>>>) -> (Tree, bool) {
+    /// base ⊕ files (in order, roots under) ⊕ over, links resolved over `deps`, ⊕ added. A
+    /// local file that fails is reported and left out: a lookup has no caller to return the
+    /// error to. Whether every file was read.
+    fn build(&self, mut arrived: Vec<Option<Arc<Tree>>>, deps: &[Layer]) -> (Tree, bool) {
         let mut ok = true;
         let mut files = Tree::default();
         for (i, f) in self.files.iter().enumerate() {
@@ -390,7 +519,10 @@ impl LazyChunk {
             tree.merge(Tree::clone(o));
         }
         if let Some(ctx) = self.linked.get() {
-            ctx.apply(&mut tree);
+            ctx.apply(&mut tree, deps);
+        }
+        for a in self.added.iter() {
+            tree.merge(Tree::clone(a));
         }
         (tree, ok)
     }

@@ -23,6 +23,7 @@ What the JS library does, recorded so the Rust crate can be checked against it l
 | `__golden__/load.md` | what the loader produced: each file's fate and every leaf of every `(locale, page)` chunk |
 | `__golden__/lookup.md` | `t` (raw lookup) and `has` over keys × locale configs × pages |
 | `__golden__/interpolate.md` | `interpolate(template, params)` and `t(key, params[, default])` through the instance |
+| `__golden__/options.md` | `disablePageLocales` loading, `routesLocaleLinks` page aliases, per-locale fallback chains |
 
 ## File format
 
@@ -119,6 +120,40 @@ equal).
 - `t(ctx, "<key>", <params>[, <default>]) → <result>`: `BaseI18n.t`. A string value is interpolated; a number,
   boolean or subtree is returned as is, uninterpolated; on a miss the default is interpolated when there are params,
   else returned raw; with no default the **key** is returned, never interpolated.
+- The `\s` set is pinned code point by code point: for each of U+0009–U+000D, U+0020, U+00A0, U+1680,
+  U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF (whitespace) and U+180E, U+0085, U+200B (not
+  whitespace) there is one `interpolate("{a<cp>b}", …)` and one `interpolate("{<cp>}", …)` line.
+- `interpolate("{01} {1}", ["a","b"])`: `{01}` is no array index (`params["01"]` is `undefined` on an array), so it
+  stays; with an object `{"1":…,"01":…}` both are own keys and both are replaced.
+
+### `options.md`
+
+Options of `@i18n-micro/utils` and the Nuxt module that core alone does not show.
+
+- `file_nopages("<relative path>") → "<status>"`: `classifyTranslationRelativePath(path, true)`: with
+  `disablePageLocales` a page file is `"root <locale>"`.
+- `load_nopages("<locale>", "<path>") → <result>`: the root chunks of `loadTranslationDir(dir, true)`, leaf by leaf
+  as in `load.md`. Page files are folded into the root bucket by `storeLoadedTranslationFile`: files arrive in
+  relative-path order (JS `<`, UTF-16 code units), a folded page file is merged **over** what is there, the root
+  file is merged **under** what is there. So a page file wins over the root file in either order, and for a locale
+  that sorts after `pages/` (`ru`) the root file's own keys survive under the page files' objects (`fold.y`). Two
+  page folders of one locale fold in UTF-16 order: `pages/😀/` (U+D83D…) comes before `pages/｡/` (U+FF61), the
+  opposite of UTF-8 byte order, so `u16` is the `｡` file's value. Rust: `.pages(false)`.
+- `alias_t("<page>", "<key>") → <result>`: `routesLocaleLinks` `{"about-us": "about", "profile": "user-profile",
+  "cfg": "settings"}`. The page a route reads is `resolveTranslationPayloadPage(route, links)`
+  (`@i18n-micro/utils/payload-url`, one hop, own keys only), then the usual lookup in context `"de"|"en"`. Rust:
+  `.page_alias(from, to)` for each link, `i18n.page("<page>")`.
+- `chain_t("<locale>", "<page>", "<key>") → <result>`: a per-locale fallback chain. Core has one fallback locale;
+  the chain is the Nuxt module's (`buildFallbackLocaleChain` of `@i18n-micro/utils/merge-source`: the locale, then
+  its `fallbackLocale` while that names a configured locale not yet in the chain, then the global fallback as the
+  weakest step). Locales: `en`, `de → ru`, `de-at → de`, `ru → de-at`, `fr`; global fallback `en`. That is a cycle:
+  `ru` reads `ru, de-at, de, en`, `de` reads `de, ru, de-at, en`; `xx` (not configured) reads `en` only.
+  **Method:** the Nuxt module premerges a page from the chain's files; to keep core's layer semantics (`null` and a
+  scalar never hide a weaker layer's subtree), the oracle instead walks the chain on core layers: each step is
+  `BaseI18n.resolveLookup` with that locale as both locale and fallback (its page, then its root), and the first
+  non-null step wins. Rust: `config_json` with the same `locales[]` and `fallbackLocale`, `with_locale(locale)
+  .page(page)`. The global fallback has no `fallbackLocale` of its own here: Rust follows links from the global
+  fallback too, `buildFallbackLocaleChain` does not, and this golden does not decide that case.
 
 ## Contract for Rust
 

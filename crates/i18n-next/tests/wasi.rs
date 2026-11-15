@@ -1,38 +1,69 @@
-//! wasm32-wasip1 tests (DESIGN 7.6): plain `#[test]` run by wasmtime
-//! (`CARGO_TARGET_WASM32_WASIP1_RUNNER`). Other targets compile nothing here.
-#![cfg(target_os = "wasi")]
+//! Platform stories on native and `wasm32-wasip1` (DESIGN 7.6): plain `#[test]`, run by
+//! wasmtime on wasip1 (`CARGO_TARGET_WASM32_WASIP1_RUNNER = "wasmtime run --dir=."`). The
+//! bodies live in `support/platform.rs`, shared with `tests/wasm.rs`; the `dir` story runs
+//! here only (there is no file system in `wasm32-unknown-unknown`). Native runs them too,
+//! so a local `cargo test` checks what CI checks under wasmtime.
+#![cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 
-use i18n_next::{Args, Error, I18n};
+#[path = "support/platform.rs"]
+mod platform;
+mod support;
+
+use support::Guard;
 
 #[test]
-fn version_in_wasi() {
+fn version_on_the_platform() {
     assert_eq!(i18n_next::version(), env!("CARGO_PKG_VERSION"));
 }
 
-/// Given embedded files and `messages`, when the app builds and reads in WASI, then pages,
-/// fallbacks, interpolation and the broken-file error work as on native.
 #[test]
-fn files_and_messages_in_wasi() {
-    let i18n = I18n::builder()
-        .locale("de")
-        .fallback("en")
-        .files([
-            ("en.json", br#"{"a": "A", "hi": "Hi {name}"}"#.as_slice()),
-            ("pages/settings/de.json", br#"{"title": "Einstellungen"}"#),
-        ])
-        .messages("de", None, r#"{"hi": "Hallo {name}"}"#)
+fn files_and_switching() {
+    platform::files_and_switching();
+}
+
+#[test]
+fn files_and_messages() {
+    platform::files_and_messages();
+}
+
+#[test]
+fn chains_aliases_and_folding() {
+    platform::chains_aliases_and_folding();
+}
+
+#[test]
+fn dir_story() {
+    platform::dir_story();
+}
+
+/// Given a guard that allowed `x` once, when `x` is recorded twice, then the second one
+/// is unexpected: an allowance pays for one occurrence.
+#[test]
+fn guard_allowance_is_per_occurrence() {
+    let guard = Guard::new();
+    guard.allow("x");
+    guard.record("x");
+    assert_eq!(guard.unexpected(), Vec::<String>::new());
+    guard.record("x");
+    assert_eq!(guard.unexpected(), ["x"]);
+    // the test owns the failure it provoked: allow it, then the check passes
+    guard.allow("x");
+    guard.finish();
+}
+
+/// Given a guard held by a catalog's `missing` hook, when the guard is dropped before the
+/// catalog, then `finish` has already checked: an allowed miss passes and nothing is
+/// checked twice.
+#[test]
+fn guard_finish_checks_in_any_order() {
+    let guard = Guard::new();
+    let i18n = i18n_next::I18n::builder()
+        .missing(guard.missing())
         .build()
         .unwrap();
-    assert_eq!(i18n.t("a"), "A");
-    assert_eq!(
-        i18n.t_with("hi", &Args::new().str("name", "Ann")),
-        "Hallo Ann"
-    );
-    assert_eq!(i18n.page("settings").t("title"), "Einstellungen");
-
-    let err = I18n::builder()
-        .files([("de.json", b"{")])
-        .build()
-        .unwrap_err();
-    assert!(matches!(err, Error::Json { path, .. } if path == "de.json"));
+    guard.allow("en|index|nope");
+    assert_eq!(i18n.t("nope"), "nope");
+    guard.finish();
+    drop(guard);
+    drop(i18n);
 }

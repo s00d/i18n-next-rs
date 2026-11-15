@@ -97,4 +97,59 @@ fn hot_path_allocations() {
     });
     dhat::assert_eq!(n, 1);
     assert_eq!(i18n.t_with("greet", &args), "Hallo, Ann! 3 neu, 1.5true");
+
+    // case: values much longer than their placeholders (a 40-char name, the longest
+    // integer) → still 1 block: the result is sized for the values up front, so an
+    // undersized buffer would show up as a reallocation (dhat counts it as a block).
+    let long = "Maximiliane-Theodora von Hohenzollern-Si";
+    assert_eq!(long.len(), 40);
+    let args = Args::new()
+        .str("name", long)
+        .int("n", i64::MIN)
+        .str("a", long)
+        .str("b", long);
+    let n = blocks(|| {
+        std::hint::black_box(i18n.t_with("greet", &args));
+    });
+    dhat::assert_eq!(n, 1);
+    assert_eq!(
+        i18n.t_with("greet", &args),
+        format!("Hallo, {long}! {} neu, {long}{long}", i64::MIN)
+    );
+
+    // case: building Args with 5 parameters → 1 block (the overflow `Vec`), and t_with
+    // with them → 1 block (the result), the fifth value read from the overflow.
+    let n = blocks(|| {
+        let args = Args::new()
+            .str("x", "x")
+            .str("name", "Ann")
+            .int("n", 3)
+            .str("a", "A")
+            .str("b", long);
+        std::hint::black_box(&args);
+    });
+    dhat::assert_eq!(n, 1);
+    let args = Args::new()
+        .str("x", "x")
+        .str("name", "Ann")
+        .int("n", 3)
+        .str("a", "A")
+        .str("b", long);
+    let n = blocks(|| {
+        std::hint::black_box(i18n.t_with("greet", &args));
+    });
+    dhat::assert_eq!(n, 1);
+    assert_eq!(
+        i18n.t_with("greet", &args),
+        format!("Hallo, Ann! 3 neu, A{long}")
+    );
+
+    // case: a miss down the whole chain with a default → 1 block (the interpolated
+    // default). Last on purpose: a failure here leaves every case above checked.
+    let args = Args::new().int("n", 2).or("{n} items");
+    let n = blocks(|| {
+        std::hint::black_box(i18n.t_with("nope", &args));
+    });
+    assert_eq!(i18n.t_with("nope", &args), "2 items");
+    dhat::assert_eq!(n, 1);
 }

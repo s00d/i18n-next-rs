@@ -1,8 +1,11 @@
-//! criterion benches of the M1 API. Every public function has a bench named
-//! `group/function/case` (`tests/bench_inventory.rs` checks it). Cases follow DESIGN 7.7:
+//! criterion benches of the M1 API. Every public function has a bench; ids follow the
+//! convention of `tests/support/inventory.rs` (checked by `tests/bench_inventory.rs`): a
+//! method is `<owner in snake case>/<method>/<case>` (`i18n/t/root_hit`, `view/has/page_hit`,
+//! `builder/files/keys_1000x3`, `args/str/one`), a free function `<group>/<fn>/<case>`
+//! with a group that names no type (`crate/version/static`). Cases follow DESIGN 7.7:
 //! lookup root hit, page hit, page miss → root, a miss down a 3-locale chain, a 6-deep
-//! key; `t_with` with 0 / 1 / 4 / 8 parameters; build from 1k / 10k keys (files and dir);
-//! readers on 1 / 4 / 16 threads while one thread writes.
+//! key; `t_with` with 0 / 1 / 5 / 10 parameters; build from 1k / 10k keys (files, dir,
+//! messages) and 100k (files, messages); readers on 1 / 4 / 16 threads while one writes.
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use i18n_next::{Args, I18n};
@@ -40,68 +43,73 @@ fn doc(keys: usize, word: &str) -> String {
 
 fn catalog() -> I18n {
     I18n::builder()
-        .config_json(r#"{"locales": [{"code": "en", "iso": "en-US"}, {"code": "de"}, {"code": "de-at"}]}"#)
+        .config_json(
+            r#"{"locales": [{"code": "en", "iso": "en-US"}, {"code": "de"}, {"code": "de-at"}]}"#,
+        )
         .locale("de-at")
         .fallback("en")
         .fallback_for("de-at", "de")
         .messages("en", None, &doc(1000, "en"))
-        .messages("en", None, r#"{"a": {"b": {"c": {"d": {"e": {"f": "deep"}}}}}, "only_en": "x"}"#)
+        .messages(
+            "en",
+            None,
+            r#"{"a": {"b": {"c": {"d": {"e": {"f": "deep"}}}}}, "only_en": "x"}"#,
+        )
         .messages("de", None, &doc(1000, "de"))
         .messages("de-at", None, &doc(1000, "at"))
-        .messages("de-at", Some("settings"), r#"{"title": "Einstellungen"}"#)
+        .messages(
+            "de-at",
+            Some("settings"),
+            r#"{"title": "Einstellungen", "hi": "Hallo {a}!"}"#,
+        )
         .messages(
             "de-at",
             None,
-            r#"{"g0": "{a}", "g1": "Hi {a}!", "g4": "{a} {b} {c} {d}", "g8": "{a} {b} {c} {d} {e} {f} {g} {h}"}"#,
+            r#"{"g0": "{a}", "g1": "Hi {a}!", "g5": "{a} {b} {c} {d} {e}",
+                "g10": "{a} {b} {c} {d} {e} {f} {g} {h} {i} {j}"}"#,
         )
         .build()
         .unwrap()
 }
 
-fn lookup(c: &mut Criterion) {
+fn i18n_lookup(c: &mut Criterion) {
     let i18n = catalog();
-    let settings = i18n.page("settings");
-    c.bench_function("lookup/t/root_hit", |b| {
+    c.bench_function("i18n/t/root_hit", |b| {
         b.iter(|| i18n.t(black_box("s3.g4.k5")))
     });
-    c.bench_function("lookup/t/page_hit", |b| {
-        b.iter(|| settings.t(black_box("title")))
-    });
-    c.bench_function("lookup/t/page_miss_root", |b| {
-        b.iter(|| settings.t(black_box("s3.g4.k5")))
-    });
-    c.bench_function("lookup/t/chain_3_to_en", |b| {
+    c.bench_function("i18n/t/chain_3_to_en", |b| {
         b.iter(|| i18n.t(black_box("only_en")))
     });
-    c.bench_function("lookup/t/chain_3_miss", |b| {
+    c.bench_function("i18n/t/chain_3_miss", |b| {
         b.iter(|| i18n.t(black_box("s3.g4.nope")))
     });
-    c.bench_function("lookup/t/deep_6", |b| {
+    c.bench_function("i18n/t/deep_6", |b| {
         b.iter(|| i18n.t(black_box("a.b.c.d.e.f")))
     });
-    c.bench_function("lookup/try_t/root_hit", |b| {
+    c.bench_function("i18n/try_t/root_hit", |b| {
         b.iter(|| i18n.try_t(black_box("s3.g4.k5")))
     });
-    c.bench_function("lookup/get/root_hit", |b| {
+    c.bench_function("i18n/try_t/chain_3_miss", |b| {
+        b.iter(|| i18n.try_t(black_box("s3.g4.nope")))
+    });
+    c.bench_function("i18n/get/root_hit", |b| {
         b.iter(|| i18n.get(black_box("s3.g4.k5")))
     });
-    c.bench_function("lookup/get/page_hit", |b| {
-        b.iter(|| settings.get(black_box("title")))
-    });
-    c.bench_function("lookup/has/root_hit", |b| {
+    c.bench_function("i18n/has/root_hit", |b| {
         b.iter(|| i18n.has(black_box("s3.g4.k5")))
     });
-    c.bench_function("lookup/has/miss", |b| {
+    c.bench_function("i18n/has/miss", |b| {
         b.iter(|| i18n.has(black_box("only_en")))
     });
 
     let a1 = Args::new().str("a", "Ann");
-    let a4 = Args::new()
+    let a5 = Args::new()
         .str("a", "A")
         .str("b", "B")
         .int("c", 3)
-        .bool("d", true);
-    let a8 = Args::new()
+        .bool("d", true)
+        .str("e", "E");
+    let a10 = Args::new()
         .str("a", "A")
         .str("b", "B")
         .int("c", 3)
@@ -109,46 +117,94 @@ fn lookup(c: &mut Criterion) {
         .str("e", "E")
         .float("f", 1.5)
         .null("g")
-        .str("h", "H");
-    c.bench_function("lookup/t_with/args_0", |b| {
+        .str("h", "H")
+        .int("i", -7)
+        .str("j", "J");
+    c.bench_function("i18n/t_with/args_0", |b| {
         b.iter(|| i18n.t_with(black_box("g0"), &Args::new()))
     });
-    c.bench_function("lookup/t_with/args_1", |b| {
+    c.bench_function("i18n/t_with/args_1", |b| {
         b.iter(|| i18n.t_with(black_box("g1"), &a1))
     });
-    c.bench_function("lookup/t_with/args_4", |b| {
-        b.iter(|| i18n.t_with(black_box("g4"), &a4))
+    c.bench_function("i18n/t_with/args_5", |b| {
+        b.iter(|| i18n.t_with(black_box("g5"), &a5))
     });
-    c.bench_function("lookup/t_with/args_8", |b| {
-        b.iter(|| i18n.t_with(black_box("g8"), &a8))
+    c.bench_function("i18n/t_with/args_10", |b| {
+        b.iter(|| i18n.t_with(black_box("g10"), &a10))
     });
-    c.bench_function("lookup/t_with/miss_default", |b| {
+    c.bench_function("i18n/t_with/miss_default", |b| {
         b.iter(|| i18n.t_with(black_box("nope"), &Args::new().int("n", 2).or("{n} items")))
     });
 
-    c.bench_function("lookup/page/view", |b| {
+    c.bench_function("i18n/page/view", |b| {
         b.iter(|| i18n.page(black_box("settings")))
     });
-    c.bench_function("lookup/with_locale/view", |b| {
+    c.bench_function("i18n/with_locale/view", |b| {
         b.iter(|| i18n.with_locale(black_box("en")))
     });
-    c.bench_function("lookup/with_locale/t_hit", |b| {
-        let en = i18n.with_locale("en");
-        b.iter(|| en.t(black_box("s3.g4.k5")))
-    });
-    c.bench_function("lookup/version/static", |b| {
+    c.bench_function("crate/version/static", |b| {
         b.iter(|| black_box(i18n_next::version()))
     });
-    c.bench_function("lookup/version/instance", |b| {
+    c.bench_function("i18n/version/instance", |b| {
         b.iter(|| black_box(&i18n).version())
     });
-    c.bench_function("lookup/locale/active", |b| {
+    c.bench_function("i18n/locale/active", |b| {
         b.iter(|| black_box(&i18n).locale())
     });
-    c.bench_function("lookup/locales/three", |b| {
+    c.bench_function("i18n/locales/three", |b| {
         b.iter(|| black_box(&i18n).locales())
     });
-    c.bench_function("lookup/pages/one", |b| b.iter(|| black_box(&i18n).pages()));
+    c.bench_function("i18n/pages/one", |b| b.iter(|| black_box(&i18n).pages()));
+}
+
+fn view_lookup(c: &mut Criterion) {
+    let i18n = catalog();
+    let settings = i18n.page("settings");
+    let en = i18n.with_locale("en");
+    c.bench_function("view/t/page_hit", |b| {
+        b.iter(|| settings.t(black_box("title")))
+    });
+    c.bench_function("view/t/page_miss_root", |b| {
+        b.iter(|| settings.t(black_box("s3.g4.k5")))
+    });
+    c.bench_function("view/t/other_locale_hit", |b| {
+        b.iter(|| en.t(black_box("s3.g4.k5")))
+    });
+    c.bench_function("view/try_t/page_hit", |b| {
+        b.iter(|| settings.try_t(black_box("title")))
+    });
+    c.bench_function("view/try_t/page_miss_root", |b| {
+        b.iter(|| settings.try_t(black_box("s3.g4.k5")))
+    });
+    c.bench_function("view/get/page_hit", |b| {
+        b.iter(|| settings.get(black_box("title")))
+    });
+    c.bench_function("view/has/page_hit", |b| {
+        b.iter(|| settings.has(black_box("title")))
+    });
+    c.bench_function("view/has/root_hit", |b| {
+        b.iter(|| settings.has(black_box("s3.g4.k5")))
+    });
+    c.bench_function("view/has/other_locale_miss", |b| {
+        b.iter(|| en.has(black_box("title")))
+    });
+    let a1 = Args::new().str("a", "Ann");
+    c.bench_function("view/t_with/page_args_1", |b| {
+        b.iter(|| settings.t_with(black_box("hi"), &a1))
+    });
+    c.bench_function("view/t_with/miss_default", |b| {
+        b.iter(|| settings.t_with(black_box("nope"), &Args::new().int("n", 2).or("{n} items")))
+    });
+    c.bench_function("view/locale/own", |b| b.iter(|| black_box(&en).locale()));
+    c.bench_function("view/locale/active", |b| {
+        b.iter(|| black_box(&settings).locale())
+    });
+    c.bench_function("view/page/view", |b| {
+        b.iter(|| en.page(black_box("settings")))
+    });
+    c.bench_function("view/with_locale/view", |b| {
+        b.iter(|| settings.with_locale(black_box("en")))
+    });
 }
 
 fn args(c: &mut Criterion) {
@@ -194,13 +250,13 @@ fn args(c: &mut Criterion) {
 fn write(c: &mut Criterion) {
     let i18n = catalog();
     let mut flip = false;
-    c.bench_function("write/set_locale/switch", |b| {
+    c.bench_function("i18n/set_locale/switch", |b| {
         b.iter(|| {
             flip = !flip;
             i18n.set_locale(if flip { "de" } else { "de-at" }).unwrap()
         })
     });
-    c.bench_function("write/add_messages/one_key_into_1k", |b| {
+    c.bench_function("i18n/add_messages/one_key_into_1k", |b| {
         b.iter(|| {
             i18n.add_messages(
                 "en",
@@ -230,7 +286,7 @@ fn build(c: &mut Criterion) {
             std::fs::write(full, body).unwrap();
         }
         let case = format!("keys_{keys}x3");
-        let mut g = c.benchmark_group("build/files");
+        let mut g = c.benchmark_group("builder/files");
         g.bench_function(&case, |b| {
             b.iter(|| {
                 I18n::builder()
@@ -240,22 +296,39 @@ fn build(c: &mut Criterion) {
             })
         });
         g.finish();
-        let mut g = c.benchmark_group("build/dir");
+        let mut g = c.benchmark_group("builder/dir");
         g.bench_function(&case, |b| {
             b.iter(|| I18n::builder().dir(&dir).build().unwrap())
         });
         g.finish();
         let text = doc(keys, "en");
-        let mut g = c.benchmark_group("build/messages");
+        let mut g = c.benchmark_group("builder/messages");
         g.bench_function(&case, |b| {
             b.iter(|| I18n::builder().messages("en", None, &text).build().unwrap())
         });
         g.finish();
     }
+    // 100k keys in one locale, through the public API (DESIGN 7.7 load sizes).
+    let big = doc(100_000, "en");
+    let mut g = c.benchmark_group("builder/build");
+    g.sample_size(10);
+    g.bench_function("files_100k", |b| {
+        b.iter(|| {
+            I18n::builder()
+                .files([("en.json", big.as_bytes())])
+                .build()
+                .unwrap()
+        })
+    });
+    g.bench_function("messages_100k", |b| {
+        b.iter(|| I18n::builder().messages("en", None, &big).build().unwrap())
+    });
+    g.finish();
+
     let config = r#"{"defaultLocale": "en", "fallbackLocale": "en", "locales": [{"code": "en", "iso": "en-US"}, {"code": "de-at", "fallbackLocale": "de"}, {"code": "es", "disabled": true}]}"#;
     let config_path = tmp.join("i18n.json");
     std::fs::write(&config_path, config).unwrap();
-    c.bench_function("build/config_json/three_locales", |b| {
+    c.bench_function("builder/config_json/three_locales", |b| {
         b.iter(|| {
             I18n::builder()
                 .config_json(black_box(config))
@@ -263,13 +336,13 @@ fn build(c: &mut Criterion) {
                 .unwrap()
         })
     });
-    c.bench_function("build/config/three_locales", |b| {
+    c.bench_function("builder/config/three_locales", |b| {
         b.iter(|| I18n::builder().config(&config_path).build().unwrap())
     });
-    c.bench_function("build/build/empty", |b| {
+    c.bench_function("builder/build/empty", |b| {
         b.iter(|| I18n::builder().build().unwrap())
     });
-    c.bench_function("build/builder/new", |b| {
+    c.bench_function("i18n/builder/new", |b| {
         b.iter(|| black_box(I18n::builder()))
     });
     // The setters alone: each consumes and returns the builder.
@@ -280,17 +353,19 @@ fn build(c: &mut Criterion) {
             BatchSize::SmallInput,
         );
     }
-    c.bench_function("build/locale/set", |b| set(b, |b| b.locale("de")));
-    c.bench_function("build/fallback/set", |b| set(b, |b| b.fallback("en")));
-    c.bench_function("build/fallback_for/set", |b| {
+    c.bench_function("builder/locale/set", |b| set(b, |b| b.locale("de")));
+    c.bench_function("builder/fallback/set", |b| set(b, |b| b.fallback("en")));
+    c.bench_function("builder/fallback_for/set", |b| {
         set(b, |b| b.fallback_for("de-at", "de"))
     });
-    c.bench_function("build/iso/set", |b| set(b, |b| b.iso("ua", "uk-UA")));
-    c.bench_function("build/pages/set", |b| set(b, |b| b.pages(false)));
-    c.bench_function("build/page_alias/set", |b| {
+    c.bench_function("builder/iso/set", |b| set(b, |b| b.iso("ua", "uk-UA")));
+    c.bench_function("builder/pages/set", |b| set(b, |b| b.pages(false)));
+    c.bench_function("builder/page_alias/set", |b| {
         set(b, |b| b.page_alias("about-us", "about"))
     });
-    c.bench_function("build/missing/set", |b| set(b, |b| b.missing(|_, _, _| {})));
+    c.bench_function("builder/missing/set", |b| {
+        set(b, |b| b.missing(|_, _, _| {}))
+    });
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -329,7 +404,7 @@ fn concurrency(c: &mut Criterion) {
         .messages("en", None, &doc(1000, "en"))
         .build()
         .unwrap();
-    let mut g = c.benchmark_group("concurrency/get");
+    let mut g = c.benchmark_group("i18n/get");
     for threads in [1, 4, 16] {
         g.bench_function(format!("readers_{threads}_one_writer"), |b| {
             b.iter_custom(|iters| readers(&i18n, threads, iters))
@@ -338,5 +413,13 @@ fn concurrency(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, lookup, args, write, build, concurrency);
+criterion_group!(
+    benches,
+    i18n_lookup,
+    view_lookup,
+    args,
+    write,
+    build,
+    concurrency
+);
 criterion_main!(benches);

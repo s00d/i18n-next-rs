@@ -7,24 +7,35 @@
 //! A `pub fn` line counts when it is a free function (its parent path is a `pub mod`) or a
 //! method of an inherent impl or of a trait the crate declares. Methods under an
 //! `impl Trait for Type` header (`Clone::clone`, `Display::fmt`, `Serialize::serialize`)
-//! implement someone else's API and do not count.
+//! implement someone else's API and do not count. A free function is keyed by its name
+//! (`version`), a method by its owner and name (`I18n::t`, `View::t`): two methods of the
+//! same name on different types are two entries, each needs its own bench.
 //!
 //! Bench ids follow `group/function/case`, in one of two forms:
-//! - `c.bench_function("group/NAME/case", ..)`: three segments, the middle one counts,
-//!   also when the call sits inside a `benchmark_group` (the group then only groups);
+//! - `c.bench_function("group/NAME/case", ..)`: three segments, the middle one names the
+//!   function, also when the call sits inside a `benchmark_group` (which then only groups);
 //! - `let mut g = c.benchmark_group("group/NAME"); g.bench_function("case", ..)`: the group
-//!   id has two segments and its last one counts; a one-segment `bench_function` id is a
-//!   case inside such a group and covers nothing by itself.
+//!   id has two segments and its last one names the function; a one-segment
+//!   `bench_function` id is a case inside such a group and covers nothing by itself.
 //!
-//! Only the function segment counts, so a group or case that happens to equal a function
-//! name does not cover it. Any other id shape fails the check, so the naming stays uniform.
-//! Comments (`//`, `/* */`) are stripped from `benches/` first, so a commented-out bench
+//! The id convention (the contract of this check):
+//! - a **method** `Type::name` is covered only by an id whose group is the owner in
+//!   snake case: `i18n/t/root_hit` covers `I18n::t`, `view/t/page_hit` covers `View::t`,
+//!   `builder/files/keys_1000x3` covers `Builder::files`, `locale_info/..` would cover
+//!   `LocaleInfo::..`;
+//! - a **free function** `name` is covered by `group/name/case` with any group that is not
+//!   an owner's snake name (`crate/version/static` covers `version`, `i18n/version/..`
+//!   does not: that is `I18n::version`).
+//!
+//! Only the function segment names the function, so a group or case that happens to equal
+//! a function name does not cover it. Any other id shape fails the check, so the naming
+//! stays uniform. Comments (`//`, `/* */`) are stripped from `benches/` first, so a commented-out bench
 //! does not count; string, raw string and char literals are kept as is. Whitespace and
 //! newlines between `bench_function(` and the id literal are allowed (rustfmt wraps long
 //! calls). The check fails with the list of public functions no bench names, like
 //! `command-inventory` in tauri-plugin-serialplugin.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -206,16 +217,44 @@ fn public_fns(api: &str) -> BTreeSet<String> {
         }
     }
     fns.into_iter()
-        .filter(|(path, trait_impl)| {
-            let free = modules.contains(&path[..path.len() - 1]);
-            free || !trait_impl
+        .filter_map(|(path, trait_impl)| {
+            let n = path.len();
+            if modules.contains(&path[..n - 1]) {
+                Some(path[n - 1].clone())
+            } else if !trait_impl && n >= 2 {
+                Some(format!("{}::{}", path[n - 2], path[n - 1]))
+            } else {
+                None
+            }
         })
-        .filter_map(|(mut path, _)| path.pop())
         .collect()
 }
 
-/// The function segment of every quoted bench id / group id.
-fn benched_fns(sources: &[String]) -> BTreeSet<String> {
+/// `LocaleInfo` → `locale_info`, `I18n` → `i18n`: the bench group of a type's methods.
+fn snake(ty: &str) -> String {
+    let mut out = String::new();
+    let mut prev_lower = false;
+    for c in ty.chars() {
+        if c.is_uppercase() && prev_lower {
+            out.push('_');
+        }
+        prev_lower = c.is_lowercase() || c.is_ascii_digit();
+        out.extend(c.to_lowercase());
+    }
+    out
+}
+
+/// Bench group → owner type, for every type with a public method in `fns`.
+fn owners(fns: &BTreeSet<String>) -> BTreeMap<String, String> {
+    fns.iter()
+        .filter_map(|f| f.split_once("::"))
+        .map(|(ty, _)| (snake(ty), ty.to_owned()))
+        .collect()
+}
+
+/// The function every quoted bench id / group id names: `Type::name` when its group is an
+/// owner's snake name, else the free function `name`.
+fn benched_fns(sources: &[String], owners: &BTreeMap<String, String>) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for src in sources {
         for call in ["bench_function(", "benchmark_group("] {
@@ -228,10 +267,14 @@ fn benched_fns(sources: &[String]) -> BTreeSet<String> {
                 let parts: Vec<&str> = id.split('/').collect();
                 let well_formed = parts.iter().all(|p| !p.is_empty());
                 let function = match (call, parts.len()) {
-                    ("bench_function(", 3) => Some(Some(parts[1])),
+                    ("bench_function(", 3) | ("benchmark_group(", 2) => {
+                        Some(Some(match owners.get(parts[0]) {
+                            Some(ty) => format!("{ty}::{}", parts[1]),
+                            None => parts[1].to_owned(),
+                        }))
+                    }
                     // a case inside a `benchmark_group("group/NAME")`
                     ("bench_function(", 1) => Some(None),
-                    ("benchmark_group(", 2) => Some(Some(parts[1])),
                     _ => None,
                 };
                 let Some(function) = function.filter(|_| well_formed) else {
@@ -242,7 +285,7 @@ fn benched_fns(sources: &[String]) -> BTreeSet<String> {
                          (DESIGN 7.7)"
                     );
                 };
-                names.extend(function.map(str::to_owned));
+                names.extend(function);
             }
         }
     }
@@ -257,7 +300,7 @@ pub fn check(root: &Path, name: &str) {
     assert!(!fns.is_empty(), "no public fns in {}", api.display());
     let mut benches = Vec::new();
     rust_files(&root.join("benches"), &mut benches);
-    let benched = benched_fns(&benches);
+    let benched = benched_fns(&benches, &owners(&fns));
     let missing: Vec<_> = fns.difference(&benched).collect();
     assert!(
         missing.is_empty(),
@@ -272,7 +315,7 @@ mod tests {
     fn covered(api: &str, bench: &str) -> Result<Vec<String>, String> {
         let fns = public_fns(api);
         let bench = strip_comments(bench);
-        std::panic::catch_unwind(|| benched_fns(&[bench]))
+        std::panic::catch_unwind(|| benched_fns(&[bench], &owners(&fns)))
             .map(|b| fns.difference(&b).cloned().collect())
             .map_err(|e| e.downcast_ref::<String>().cloned().unwrap_or_default())
     }
@@ -398,20 +441,64 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
         assert_eq!(
             public_fns(api),
             set(&[
+                "Catalog::ensure_async",
+                "Catalog::get",
+                "Source::read",
                 "after_impls",
                 "apply",
                 "cc",
-                "ensure_async",
-                "get",
                 "init",
                 "load",
                 "raw",
-                "read",
                 "sys",
                 "type",
                 "version"
             ])
         );
+    }
+
+    const OWNED: &str = "pub mod c\npub fn c::version() -> &'static str\n\
+                         pub struct c::LocaleInfo\nimpl c::LocaleInfo\n\
+                         pub fn c::LocaleInfo::version(&self) -> u64\n\
+                         pub fn c::LocaleInfo::get(&self)\n\
+                         pub struct c::View\nimpl c::View\npub fn c::View::get(&self)\n";
+
+    #[test]
+    fn methods_are_covered_only_by_their_owners_group() {
+        // a bare name covers no method; another owner's group covers only its own method
+        let bench = r#"
+            c.bench_function("lookup/get/a", |b| ());
+            c.bench_function("view/get/a", |b| ());
+        "#;
+        assert_eq!(
+            covered(OWNED, bench),
+            Ok(vec![
+                "LocaleInfo::get".to_owned(),
+                "LocaleInfo::version".to_owned(),
+                "version".to_owned()
+            ])
+        );
+        // the owner's snake name as group covers the method, never the free function
+        let bench = r#"
+            c.bench_function("locale_info/get/a", |b| ());
+            let mut g = c.benchmark_group("locale_info/version"); g.bench_function("x", |b| ());
+        "#;
+        assert_eq!(
+            covered(OWNED, bench),
+            Ok(vec!["View::get".to_owned(), "version".to_owned()])
+        );
+        // a free function needs a group that is no owner
+        let bench = r#"c.bench_function("crate/version/static", |b| ());"#;
+        assert_eq!(
+            covered(OWNED, bench),
+            Ok(vec![
+                "LocaleInfo::get".to_owned(),
+                "LocaleInfo::version".to_owned(),
+                "View::get".to_owned()
+            ])
+        );
+        assert_eq!(snake("I18n"), "i18n");
+        assert_eq!(snake("LocaleInfo"), "locale_info");
     }
 
     #[test]
@@ -420,45 +507,67 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
             let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../api/{c}.txt"));
             public_fns(&fs::read_to_string(path).unwrap())
         };
-        assert_eq!(
-            api("i18n-next"),
-            set(&[
-                "add_messages",
-                "arg",
-                "bool",
+        let methods = |ty: &str, names: &[&str]| -> Vec<String> {
+            names.iter().map(|n| format!("{ty}::{n}")).collect()
+        };
+        let mut want: Vec<String> = vec!["version".to_owned()];
+        want.extend(methods(
+            "Args",
+            &[
+                "arg", "bool", "float", "int", "list", "new", "null", "or", "str",
+            ],
+        ));
+        want.extend(methods(
+            "Builder",
+            &[
                 "build",
-                "builder",
                 "config",
                 "config_json",
                 "dir",
                 "fallback",
                 "fallback_for",
                 "files",
-                "float",
-                "get",
-                "has",
-                "int",
                 "iso",
-                "list",
                 "locale",
-                "locales",
                 "messages",
                 "missing",
-                "new",
-                "null",
-                "or",
-                "page",
                 "page_alias",
                 "pages",
+            ],
+        ));
+        want.extend(methods(
+            "I18n",
+            &[
+                "add_messages",
+                "builder",
+                "get",
+                "has",
+                "locale",
+                "locales",
+                "page",
+                "pages",
                 "set_locale",
-                "str",
                 "t",
                 "t_with",
                 "try_t",
                 "version",
                 "with_locale",
-            ])
-        );
+            ],
+        ));
+        want.extend(methods(
+            "View",
+            &[
+                "get",
+                "has",
+                "locale",
+                "page",
+                "t",
+                "t_with",
+                "try_t",
+                "with_locale",
+            ],
+        ));
+        assert_eq!(api("i18n-next"), want.into_iter().collect::<BTreeSet<_>>());
         assert_eq!(api("tauri-plugin-i18n-next"), set(&["init", "ping"]));
     }
 }

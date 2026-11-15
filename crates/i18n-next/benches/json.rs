@@ -1,8 +1,11 @@
 //! criterion benches of the own `json` reader and `hash` hasher against the dependencies
 //! they replace (DESIGN 2.3, 7.7, spikes S2 and S6). Ids are `group/function/case`.
 //!
-//! - `json/reader/<n>`: the own reader straight into a flat map of dotted keys;
-//! - `json/serde_value/<n>`: `serde_json::Value`, then flattened into the same map;
+//! - `json/reader/<n>`: the crate's own load path, through the public API
+//!   (`Builder::files(..).build()`): the reader, the chunk's flat map with templates
+//!   tokenized, and the snapshot. More work than the two serde paths, which only fill a
+//!   map of strings: an upper bound for the own path, not a flattering number;
+//! - `json/serde_value/<n>`: `serde_json::Value`, then flattened into a map of dotted keys;
 //! - `json/serde_visitor/<n>`: a serde visitor straight into the same map (spike S6);
 //! - `json/write_str/locale_text`: the string writer of the payload;
 //! - `hash/<hasher>/short_key`: one `hash_one` of a locale key;
@@ -20,7 +23,7 @@ mod json;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use hash::{FastHasher, FastMap};
-use json::{Event, Reader};
+use i18n_next::I18n;
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use std::fmt;
 use std::hash::{BuildHasher, BuildHasherDefault};
@@ -60,37 +63,13 @@ fn locale_doc(leaves: usize) -> Vec<u8> {
     s.into_bytes()
 }
 
-/// The own reader into a flat map: the path is one buffer, truncated on the way out.
-fn reader_flat(input: &[u8]) -> Flat {
-    let mut map = Flat::default();
-    let mut path = String::new();
-    let mut lens: Vec<usize> = Vec::new();
-    let mut r = Reader::new(input);
-    while let Some(ev) = r.next().unwrap() {
-        match ev {
-            Event::Key(k) => {
-                lens.push(path.len());
-                if !path.is_empty() {
-                    path.push('.');
-                }
-                path.push_str(&k);
-            }
-            Event::Str(s) => {
-                map.insert(path.clone(), s.into_owned());
-                pop(&mut path, &mut lens);
-            }
-            Event::ObjectEnd => pop(&mut path, &mut lens),
-            Event::ObjectStart => {}
-            _ => unreachable!("locale documents hold objects and strings"),
-        }
-    }
-    map
-}
-
-fn pop(path: &mut String, lens: &mut Vec<usize>) {
-    if let Some(l) = lens.pop() {
-        path.truncate(l);
-    }
+/// The crate's own load path: a locale file through `files()` into a built catalog.
+fn reader_load(input: &[u8]) -> I18n {
+    I18n::builder()
+        .locale("en")
+        .files([("en.json", input)])
+        .build()
+        .unwrap()
 }
 
 fn flatten(v: &serde_json::Value, path: &mut String, map: &mut Flat) {
@@ -186,14 +165,24 @@ fn json(c: &mut Criterion) {
         ("10k", locale_doc(10_000)),
         ("100k", locale_doc(100_000)),
     ];
-    // The three paths build the same map.
+    // The three paths read the same strings at the same dotted keys.
     for (_, d) in &docs {
-        let a = reader_flat(d);
-        assert_eq!(a, serde_value_flat(d));
+        let a = serde_value_flat(d);
         assert_eq!(a, serde_visitor_flat(d));
+        let own = reader_load(d);
+        for (k, v) in &a {
+            assert_eq!(own.get(k).as_deref(), Some(v.as_str()), "{k}");
+        }
     }
-    let runs: [(&str, ToFlat); 3] = [
-        ("json/reader", reader_flat),
+    let mut g = c.benchmark_group("json/reader");
+    for (size, d) in &docs {
+        g.throughput(Throughput::Bytes(d.len() as u64));
+        g.bench_with_input(BenchmarkId::from_parameter(size), d, |b, d| {
+            b.iter(|| reader_load(black_box(d)))
+        });
+    }
+    g.finish();
+    let runs: [(&str, ToFlat); 2] = [
         ("json/serde_value", serde_value_flat),
         ("json/serde_visitor", serde_visitor_flat),
     ];

@@ -79,11 +79,34 @@ impl Clock {
 struct Log {
     seen: Vec<String>,
     allowed: Vec<String>,
+    checked: bool,
 }
 
-/// Records every `missing` call (as `locale|page|key`) and warning; on drop of the last
-/// clone, fails the test on any entry that was not allowed with [`Guard::allow`], even
-/// when all asserts passed. Clones share one log, so one goes into the `missing` hook.
+impl Log {
+    /// Every seen entry no `allow` paid for: each `allow` covers one occurrence.
+    fn unexpected(&self) -> Vec<String> {
+        let mut budget = self.allowed.clone();
+        let mut out = Vec::new();
+        for s in &self.seen {
+            match budget.iter().position(|a| a == s) {
+                Some(i) => {
+                    budget.swap_remove(i);
+                }
+                None => out.push(s.clone()),
+            }
+        }
+        out
+    }
+}
+
+/// Records every `missing` call (as `locale|page|key`) and warning, and fails the test on
+/// any entry that was not allowed with [`Guard::allow`], even when all asserts passed.
+///
+/// - `allow` is count-based: one `allow("x")` permits one `x`; a second `x` is unexpected.
+/// - The check runs at [`Guard::finish`]; without it, on drop of the last clone. Clones
+///   share one log and one of them lives in the catalog's `missing` hook, so the last
+///   clone is whichever of guard and catalog goes last: the check runs in any
+///   declaration order. Call `finish` to check at a point of the test's choosing.
 #[derive(Debug, Default, Clone)]
 pub struct Guard {
     log: Arc<Mutex<Log>>,
@@ -94,7 +117,7 @@ impl Guard {
         Self::default()
     }
 
-    /// Marks `what` (`locale|page|key`, or a bare event) as expected.
+    /// Permits one occurrence of `what` (`locale|page|key`, or a bare event).
     pub fn allow(&self, what: &str) {
         self.log.lock().unwrap().allowed.push(what.to_owned());
     }
@@ -114,6 +137,21 @@ impl Guard {
         let guard = self.clone();
         move |locale, key, page| guard.record(&format!("{locale}|{page}|{key}"))
     }
+
+    /// What the check would report now: entries no allowance covers.
+    pub fn unexpected(&self) -> Vec<String> {
+        self.log.lock().unwrap().unexpected()
+    }
+
+    /// Checks now, whoever else still holds a clone; the drop check is then skipped.
+    pub fn finish(&self) {
+        let unexpected = {
+            let mut log = self.log.lock().unwrap();
+            log.checked = true;
+            log.unexpected()
+        };
+        assert!(unexpected.is_empty(), "unexpected events: {unexpected:#?}");
+    }
 }
 
 impl Drop for Guard {
@@ -121,13 +159,13 @@ impl Drop for Guard {
         if std::thread::panicking() || Arc::strong_count(&self.log) > 1 {
             return;
         }
-        let log = self.log.lock().unwrap();
-        let unexpected: Vec<_> = log
-            .seen
-            .iter()
-            .filter(|s| !log.allowed.contains(s))
-            .cloned()
-            .collect();
+        let unexpected = {
+            let log = self.log.lock().unwrap();
+            if log.checked {
+                return;
+            }
+            log.unexpected()
+        };
         assert!(unexpected.is_empty(), "unexpected events: {unexpected:#?}");
     }
 }

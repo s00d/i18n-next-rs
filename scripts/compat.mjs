@@ -6,7 +6,9 @@ import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BaseI18n, getByPath, interpolate } from '@i18n-micro/core'
 import { listTranslationFiles, loadTranslationDir } from '@i18n-micro/utils/load-dir'
+import { buildFallbackLocaleChain } from '@i18n-micro/utils/merge-source'
 import { classifyTranslationRelativePath } from '@i18n-micro/utils/parse-path'
+import { resolveTranslationPayloadPage } from '@i18n-micro/utils/payload-url'
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
 const LOCALES = here('../fixtures/compat/locales')
@@ -247,7 +249,19 @@ const INTERP = [
   ['{toString}', { toString: 'own' }],
   ['{name} {missing} {name}', { name: 'Ann' }],
   ['line1\n{a}\tend', { a: 'A' }],
+  // `{01}` is no array index (params["01"] is undefined on an array), `{1}` is
+  ['{01} {1}', ['a', 'b']],
+  ['{01} {1}', { '01': 'named', 1: 'one' }],
 ]
+// JS `\s` code point by code point: inside a name and as the whole name. The positives
+// are ECMAScript WhiteSpace + LineTerminator; U+180E, U+0085 and U+200B are not `\s`.
+const JS_SPACE = [0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff]
+for (let cp = 0x2000; cp <= 0x200a; cp++) JS_SPACE.push(cp)
+for (const cp of [...JS_SPACE, 0x180e, 0x0085, 0x200b]) {
+  const c = String.fromCodePoint(cp)
+  INTERP.push([`{a${c}b}`, { [`a${c}b`]: 'X' }])
+  INTERP.push([`{${c}}`, { [c]: 'X' }])
+}
 const interpLines = INTERP.map(([tpl, params]) => [`interpolate(${s(tpl)}, ${lit(params)})`, enc(interpolate(tpl, params))])
 
 // t(key, params[, default]) through the instance: lookup, then interpolation of string values only
@@ -277,3 +291,65 @@ for (const [locale, fallback, page, key, params, def] of T_CASES) {
   interpLines.push([`t(${ctx(locale, fallback, page)}, ${s(key)}, ${lit(params)}${extra})`, enc(r)])
 }
 write('interpolate', 'interpolate', interpLines)
+
+// ---- options: disablePageLocales, routesLocaleLinks, per-locale fallback chains ----
+const optionLines = []
+
+// disablePageLocales: the same directory loaded with page files folded into the root
+// bucket (`storeLoadedTranslationFile`: a page file wins over the root file in either read
+// order, files merge in relative-path order, JS `<` on UTF-16 code units).
+for (const { relativePath } of files) {
+  const c = classifyTranslationRelativePath(relativePath, true)
+  const status = skipped.get(relativePath) ?? (c.type === 'root' ? `root ${c.locale}` : 'ignore')
+  optionLines.push([`file_nopages(${s(relativePath)})`, s(status)])
+}
+console.error = console.warn = () => {}
+const folded = loadTranslationDir(LOCALES, true)
+console.error = origError
+console.warn = origWarn
+if (Object.keys(folded.routes).length) throw new Error('disablePageLocales left page buckets')
+for (const locale of Object.keys(folded.root)) {
+  const tree = folded.root[locale]
+  for (const p of leafPaths(tree, null, [])) {
+    optionLines.push([`load_nopages(${s(locale)}, ${s(p)})`, enc(getByPath(tree, p))])
+  }
+}
+
+// routesLocaleLinks: a route reads the payload page `resolveTranslationPayloadPage` names
+// (`@i18n-micro/utils/payload-url`), then the usual layers. Rust: `.page_alias(from, to)`.
+const LINKS = { 'about-us': 'about', profile: 'user-profile', cfg: 'settings' }
+for (const page of ['about-us', 'profile', 'cfg', 'about', 'index', 'nope']) {
+  const target = resolveTranslationPayloadPage(page, LINKS)
+  for (const key of KEYS) {
+    const raw = i18n.at('de', 'en', target).resolveLookup(key, target)
+    optionLines.push([`alias_t(${s(page)}, ${s(key)})`, enc(raw === null ? undefined : raw)])
+  }
+}
+
+// Fallback chains: core has one fallback locale, the Nuxt module a chain
+// (`buildFallbackLocaleChain` of `@i18n-micro/utils/merge-source`: the locale, its
+// `fallbackLocale` links while they name a configured locale and do not repeat, then the
+// global fallback as the weakest step). The chain is reproduced on core layers: each step
+// is `resolveLookup` with that locale as both locale and fallback (its page, then its
+// root), and the first non-null step wins. The config has a cycle ru → de-at → de → ru.
+const CHAIN_LOCALES = [
+  { code: 'en' },
+  { code: 'de', fallbackLocale: 'ru' },
+  { code: 'de-at', fallbackLocale: 'de' },
+  { code: 'ru', fallbackLocale: 'de-at' },
+  { code: 'fr' },
+]
+for (const locale of ['en', 'de', 'de-at', 'ru', 'fr', 'xx']) {
+  const chain = buildFallbackLocaleChain(locale, CHAIN_LOCALES, 'en').reverse()
+  for (const page of PAGES) {
+    for (const key of KEYS) {
+      let raw = null
+      for (const step of chain) {
+        raw = i18n.at(step, step, page).resolveLookup(key, page)
+        if (raw !== null) break
+      }
+      optionLines.push([`chain_t(${s(locale)}, ${s(page)}, ${s(key)})`, enc(raw === null ? undefined : raw)])
+    }
+  }
+}
+write('options', 'options', optionLines)

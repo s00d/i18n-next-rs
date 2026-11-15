@@ -27,6 +27,54 @@ impl<'a> core::fmt::Debug for i18n_next::Arg<'a>
 pub fn i18n_next::Arg<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Copy for i18n_next::Arg<'a>
 impl<'a> core::marker::StructuralPartialEq for i18n_next::Arg<'a>
+#[non_exhaustive] pub enum i18n_next::CheckItem
+pub i18n_next::CheckItem::BrokenLink
+pub i18n_next::CheckItem::BrokenLink::key: alloc::string::String
+pub i18n_next::CheckItem::BrokenLink::link: alloc::string::String
+pub i18n_next::CheckItem::BrokenLink::locale: alloc::string::String
+pub i18n_next::CheckItem::BrokenLink::page: alloc::string::String
+pub i18n_next::CheckItem::BrokenLink::reason: i18n_next::LinkError
+pub i18n_next::CheckItem::MissingKey
+pub i18n_next::CheckItem::MissingKey::key: alloc::string::String
+pub i18n_next::CheckItem::MissingKey::locale: alloc::string::String
+pub i18n_next::CheckItem::MissingKey::page: alloc::string::String
+pub i18n_next::CheckItem::MissingPage
+pub i18n_next::CheckItem::MissingPage::locale: alloc::string::String
+pub i18n_next::CheckItem::MissingPage::page: alloc::string::String
+pub i18n_next::CheckItem::Placeholders
+pub i18n_next::CheckItem::Placeholders::expected: alloc::vec::Vec<alloc::string::String>
+pub i18n_next::CheckItem::Placeholders::found: alloc::vec::Vec<alloc::string::String>
+pub i18n_next::CheckItem::Placeholders::key: alloc::string::String
+pub i18n_next::CheckItem::Placeholders::locale: alloc::string::String
+pub i18n_next::CheckItem::Placeholders::page: alloc::string::String
+pub i18n_next::CheckItem::PluralForms
+pub i18n_next::CheckItem::PluralForms::categories: alloc::vec::Vec<alloc::string::String>
+pub i18n_next::CheckItem::PluralForms::expected: alloc::vec::Vec<usize>
+pub i18n_next::CheckItem::PluralForms::forms: usize
+pub i18n_next::CheckItem::PluralForms::key: alloc::string::String
+pub i18n_next::CheckItem::PluralForms::locale: alloc::string::String
+pub i18n_next::CheckItem::PluralForms::page: alloc::string::String
+pub i18n_next::CheckItem::PluralShape
+pub i18n_next::CheckItem::PluralShape::categories: alloc::vec::Vec<alloc::string::String>
+pub i18n_next::CheckItem::PluralShape::key: alloc::string::String
+pub i18n_next::CheckItem::PluralShape::locale: alloc::string::String
+pub i18n_next::CheckItem::PluralShape::page: alloc::string::String
+impl core::clone::Clone for i18n_next::CheckItem
+pub fn i18n_next::CheckItem::clone(&self) -> i18n_next::CheckItem
+impl core::cmp::Eq for i18n_next::CheckItem
+impl core::cmp::Ord for i18n_next::CheckItem
+pub fn i18n_next::CheckItem::cmp(&self, &i18n_next::CheckItem) -> core::cmp::Ordering
+impl core::cmp::PartialEq for i18n_next::CheckItem
+pub fn i18n_next::CheckItem::eq(&self, &i18n_next::CheckItem) -> bool
+impl core::cmp::PartialOrd for i18n_next::CheckItem
+pub fn i18n_next::CheckItem::partial_cmp(&self, &i18n_next::CheckItem) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for i18n_next::CheckItem
+pub fn i18n_next::CheckItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for i18n_next::CheckItem
+pub fn i18n_next::CheckItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for i18n_next::CheckItem
+pub fn i18n_next::CheckItem::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for i18n_next::CheckItem
 #[non_exhaustive] pub enum i18n_next::Error
 pub i18n_next::Error::Config
 pub i18n_next::Error::Config::path: alloc::string::String
@@ -49,6 +97,28 @@ impl core::fmt::Debug for i18n_next::Error
 pub fn i18n_next::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for i18n_next::Error
 pub fn i18n_next::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum i18n_next::LinkError
+pub i18n_next::LinkError::Broken
+pub i18n_next::LinkError::Cycle
+pub i18n_next::LinkError::Missing
+pub i18n_next::LinkError::UnknownModifier
+impl core::clone::Clone for i18n_next::LinkError
+pub fn i18n_next::LinkError::clone(&self) -> i18n_next::LinkError
+impl core::cmp::Eq for i18n_next::LinkError
+impl core::cmp::Ord for i18n_next::LinkError
+pub fn i18n_next::LinkError::cmp(&self, &i18n_next::LinkError) -> core::cmp::Ordering
+impl core::cmp::PartialEq for i18n_next::LinkError
+pub fn i18n_next::LinkError::eq(&self, &i18n_next::LinkError) -> bool
+impl core::cmp::PartialOrd for i18n_next::LinkError
+pub fn i18n_next::LinkError::partial_cmp(&self, &i18n_next::LinkError) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for i18n_next::LinkError
+pub fn i18n_next::LinkError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for i18n_next::LinkError
+pub fn i18n_next::LinkError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for i18n_next::LinkError
+pub fn i18n_next::LinkError::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for i18n_next::LinkError
+impl core::marker::StructuralPartialEq for i18n_next::LinkError
 pub struct i18n_next::Args<'a>
 impl<'a> i18n_next::Args<'a>
 pub fn i18n_next::Args<'a>::arg(self, &'a str, impl core::convert::Into<i18n_next::Arg<'a>>) -> Self
@@ -76,6 +146,7 @@ pub fn i18n_next::Builder::fallback(self, &str) -> Self
 pub fn i18n_next::Builder::fallback_for(self, &str, &str) -> Self
 pub fn i18n_next::Builder::files<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
 pub fn i18n_next::Builder::iso(self, &str, &str) -> Self
+pub fn i18n_next::Builder::linked_messages(self, bool) -> Self
 pub fn i18n_next::Builder::locale(self, &str) -> Self
 pub fn i18n_next::Builder::messages(self, &str, core::option::Option<&str>, &str) -> Self
 pub fn i18n_next::Builder::missing(self, impl core::ops::function::Fn(&str, &str, &str) + core::marker::Send + core::marker::Sync + 'static) -> Self
@@ -85,6 +156,22 @@ impl core::default::Default for i18n_next::Builder
 pub fn i18n_next::Builder::default() -> i18n_next::Builder
 impl core::fmt::Debug for i18n_next::Builder
 pub fn i18n_next::Builder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct i18n_next::CheckReport
+pub i18n_next::CheckReport::items: alloc::vec::Vec<i18n_next::CheckItem>
+impl i18n_next::CheckReport
+pub fn i18n_next::CheckReport::is_clean(&self) -> bool
+impl core::clone::Clone for i18n_next::CheckReport
+pub fn i18n_next::CheckReport::clone(&self) -> i18n_next::CheckReport
+impl core::cmp::Eq for i18n_next::CheckReport
+impl core::cmp::PartialEq for i18n_next::CheckReport
+pub fn i18n_next::CheckReport::eq(&self, &i18n_next::CheckReport) -> bool
+impl core::default::Default for i18n_next::CheckReport
+pub fn i18n_next::CheckReport::default() -> i18n_next::CheckReport
+impl core::fmt::Debug for i18n_next::CheckReport
+pub fn i18n_next::CheckReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for i18n_next::CheckReport
+pub fn i18n_next::CheckReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for i18n_next::CheckReport
 pub struct i18n_next::Count(_)
 impl core::clone::Clone for i18n_next::Count
 pub fn i18n_next::Count::clone(&self) -> i18n_next::Count
@@ -124,6 +211,8 @@ pub fn i18n_next::I18n::tc_with(&self, &str, impl core::convert::Into<i18n_next:
 pub fn i18n_next::I18n::try_t(&self, &str) -> core::option::Option<alloc::string::String>
 pub fn i18n_next::I18n::version(&self) -> u64
 pub fn i18n_next::I18n::with_locale(&self, &str) -> i18n_next::View
+impl i18n_next::I18n
+pub fn i18n_next::I18n::check(&self) -> i18n_next::CheckReport
 impl core::clone::Clone for i18n_next::I18n
 pub fn i18n_next::I18n::clone(&self) -> i18n_next::I18n
 impl core::fmt::Debug for i18n_next::I18n

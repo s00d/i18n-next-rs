@@ -26,6 +26,8 @@ What the JS library does, recorded so the Rust crate can be checked against it l
 | `__golden__/options.md` | `disablePageLocales` loading, `routesLocaleLinks` page aliases, per-locale fallback chains |
 | `plural/` | the catalog of the `tc_in` lines of `plural.md` |
 | `__golden__/plural.md` | `tc` through the instance (`defaultPlural` → `pluralForm` + `interpolate`) |
+| `linked/` | the catalog of `linked.md` (root files, pages, a fallback chain, Turkish / Greek / Lithuanian) |
+| `__golden__/linked.md` | linked messages through the Nuxt module's own merge, and the case modifiers by tag |
 | `__golden__/plural-categories.md` | `Intl.PluralRules` itself, written by `scripts/cldr.mjs` (`pnpm -C scripts cldr`): the oracle of `tests/plural_props.rs` |
 
 ## File format
@@ -190,6 +192,29 @@ Known difference, pinned in `tests/plural_props.rs` (`KNOWN_DIFFERENCES`): after
 checking the extension, so `tag("ru-u-rg-rg-a1") → "ru-u-rg"` although `a1` is no valid key (a key is
 alphanumeric + letter). Rust follows the BCP 47 grammar and rejects the tag (the index rule). Not copied: it is an
 ICU parser shortcut, not a rule, and a tag like that is a typo.
+
+### `linked.md`
+
+The oracle is `mergeSourceTranslations` of `@i18n-micro/utils/merge-source` with `linkedMessages: true`:
+what the Nuxt module serves for a page (the fallback chain's root and page files deep-merged, weakest first,
+then `resolveLinkedMessages` over the whole chunk, the case modifiers by the locale's `iso`, else its code).
+Locales: `en` (global fallback), `de`, `de-at → de`, `de-ch → de`, `tr`, `el`, `lt`, `xx` (iso `en_US`: no
+tag). Results are spelled as Rust `t` returns them: numbers and booleans as strings, a subtree `<node>`.
+
+- `linked_t("<locale>", "<page>", "<key>") → <result>`: every leaf of the premerged view (`index`, `about`,
+  `contact`, `nopage`). Rust: `with_locale(locale).page(page).try_t(key)` with `linked_messages(true)`.
+- `plain_t(...)`: the same view without `linkedMessages` (off by default: every `@:` as written).
+- `linked_tp(..., <params>)`: core `interpolate` on the resolved message: placeholders of a linked text fill
+  at read. Rust: `t_with`.
+- `case("<tag>", "<modifier>", "<text>") → "<result>"`: one locale `p` with `iso: tag` (`""`: none) and the
+  messages `t: text`, `m: "@.<modifier>:t"`, through the same merge. It pins `toLocaleUpperCase` /
+  `toLocaleLowerCase` of V8 for `tr` / `az` / `lt` / `el` (aliases `tur`, `gre`, ...), the default mapping
+  and invalid tags; every Greek letter, every combining mark of the common blocks after the letters the dot
+  rules read, the soft-dotted letters. Rust: `.iso("p", tag)`, `t("m")`.
+
+Not recorded: the warnings (`warn`). JS warns once per root cause in object-key order; Rust reports each
+message left as written once through `missing` and lists every failing link in `check()`. Known difference,
+not copied: `@:list.length` reads the JS `length` of an array.
 
 ## Contract for Rust
 

@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "compat": "node compat.mjs",
-    "cldr": "node cldr.mjs"
+    "cldr": "node cldr.mjs",
+    "casing": "node casing.mjs"
   },
   "devDependencies": {
     "@i18n-micro/core": "2.1.0",

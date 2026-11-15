@@ -9,6 +9,7 @@
 
 use crate::args::{Args, Count};
 use crate::catalog::{Chunk, Entry, Msg, Tree, WithCount, interpolate_once};
+use crate::check::{self, CheckReport};
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::loader::{self, Config, Kind};
@@ -37,6 +38,13 @@ impl LocaleData {
         }
         self.root.as_ref().and_then(|c| c.get(key))
     }
+
+    /// What `has` reads: page then root, own keys only (no texts `linked.rs` stored).
+    fn has(&self, page: Option<&str>, key: &str) -> bool {
+        page.and_then(|p| self.pages.get(p))
+            .is_some_and(|c| c.has(key))
+            || self.root.as_ref().is_some_and(|c| c.has(key))
+    }
 }
 
 type Chain = Arc<[Arc<LocaleData>]>;
@@ -56,6 +64,8 @@ struct Meta {
     /// Raw `numberFormats` / `datetimeFormats` of `i18n.json`, for M5 / M6.
     #[allow(dead_code, reason = "read by the formats of M5 / M6")]
     formats: (Option<Box<str>>, Option<Box<str>>),
+    /// What `check()` reads besides the chunks (M3).
+    check: check::Facts,
 }
 
 impl Meta {
@@ -197,7 +207,7 @@ impl Snapshot {
             Some(code) if self.chains.contains_key(code) => self.data.get(code).map(|d| &**d),
             Some(_) => None,
         };
-        own.is_some_and(|d| d.get(self.meta.page(page), key).is_some())
+        own.is_some_and(|d| d.has(self.meta.page(page), key))
     }
 }
 
@@ -965,6 +975,9 @@ pub struct Builder {
     aliases: Vec<(String, String)>,
     config: Option<ConfigSource>,
     missing: Option<Missing>,
+    /// `linked_messages(true)`: the resolver, as a pointer so an app that never turns links
+    /// on links none of their code (no case tables in its `.wasm`).
+    linked: Option<ResolveLinked>,
 }
 
 impl fmt::Debug for Builder {
@@ -1085,6 +1098,33 @@ impl Builder {
     #[must_use]
     pub fn missing(mut self, handler: impl Fn(&str, &str, &str) + Send + Sync + 'static) -> Self {
         self.missing = Some(Box::new(handler));
+        self
+    }
+
+    /// Resolves linked messages at `build` (`@:key`, `@.upper:key`, `@.lower:key`,
+    /// `@.capitalize:key`, `@:{'key'}`), as the Nuxt module's `linkedMessages: true`: each
+    /// `(locale, page)` view is resolved over everything it reads (its page, root and fallback
+    /// locales), the case modifiers by the locale's `iso`. Lookups then read plain text: no
+    /// cost at `t`. A link to a missing key, a subtree or a cycle leaves the whole message as
+    /// written and calls `missing(locale, key, page)` once; [`I18n::check`] lists it. Off by
+    /// default: `@:` may be plain text. Text added later with `add_messages` is not resolved.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .linked_messages(true)
+    ///     .messages("en", None, r#"{"brand": "acme", "title": "Welcome to @:brand",
+    ///                              "shout": "@.upper:brand", "intro": "@.capitalize:{'brand'}."}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.t("title"), "Welcome to acme");
+    /// assert_eq!(i18n.t("shout"), "ACME");
+    /// assert_eq!(i18n.t("intro"), "Acme.");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn linked_messages(mut self, enabled: bool) -> Self {
+        self.linked = enabled.then_some(resolve_linked as ResolveLinked);
         self
     }
 
@@ -1256,6 +1296,17 @@ impl Builder {
             }
         }
 
+        // ---- linked messages and check() (M3, linked.rs / check.rs) ----
+        meta.check.reference = Some(
+            config
+                .default_locale
+                .as_deref()
+                .map_or_else(|| locale.clone(), Arc::from),
+        );
+        if let Some(resolve) = self.linked {
+            meta.check.broken = resolve(&mut data, &meta, self.missing.as_ref());
+        }
+
         let data = data.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
         let snapshot = Snapshot::new(Arc::new(meta), data, locale, 0);
         Ok(I18n {
@@ -1267,6 +1318,80 @@ impl Builder {
                 missing: self.missing,
                 alive: Arc::new(AtomicBool::new(true)),
             }),
+        })
+    }
+}
+
+// ---- linked messages and check() (M3, linked.rs / check.rs) ----
+
+/// [`resolve_linked`] as the builder keeps it.
+type ResolveLinked =
+    fn(&mut FastMap<Arc<str>, LocaleData>, &Meta, Option<&Missing>) -> Vec<crate::linked::Broken>;
+
+/// Resolves the linked messages of `data` (`linked.rs`): the chunks go into one ordered map
+/// and back. Reports each message left as written once through `missing`.
+fn resolve_linked(
+    data: &mut FastMap<Arc<str>, LocaleData>,
+    meta: &Meta,
+    missing: Option<&Missing>,
+) -> Vec<crate::linked::Broken> {
+    let mut chunks = crate::linked::Chunks::new();
+    for (code, d) in data.iter_mut() {
+        if let Some(root) = d.root.take() {
+            chunks.push(((code.clone(), None), root));
+        }
+        for (page, chunk) in d.pages.drain() {
+            chunks.push(((code.clone(), Some(page)), chunk));
+        }
+    }
+    chunks.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    let setup = crate::linked::Setup {
+        links: &meta.links,
+        fallback: meta.fallback.as_deref(),
+        iso: &meta.iso,
+    };
+    let broken = crate::linked::resolve(&mut chunks, &setup);
+    for ((code, page), chunk) in chunks {
+        let d = data.entry(code).or_default();
+        match page {
+            None => d.root = Some(chunk),
+            Some(p) => {
+                d.pages.insert(p, chunk);
+            }
+        }
+    }
+    if let Some(missing) = missing {
+        let mut last = None;
+        for b in &broken {
+            let at = (&b.locale, &b.page, &b.key);
+            if last != Some(at) {
+                missing(&b.locale, &b.key, b.page.as_deref().unwrap_or("index"));
+                last = Some(at);
+            }
+        }
+    }
+    broken
+}
+
+impl I18n {
+    /// Checks the catalog (DESIGN 8b.8): pages with a file in only some locales, keys of
+    /// the default locale missing elsewhere, `{placeholders}` that differ from the default
+    /// locale's, plural form counts that do not fit the locale's CLDR categories, links that
+    /// left a linked message as written. Disabled locales are skipped. Meant for tests:
+    /// `assert!(i18n.check().is_clean(), "{}", i18n.check())`.
+    #[must_use]
+    pub fn check(&self) -> CheckReport {
+        self.inner.read(|s| {
+            let meta = &s.meta;
+            let chunks = s
+                .data
+                .iter()
+                .filter(|(code, _)| !meta.disabled(code))
+                .flat_map(|(code, d)| {
+                    let root = d.root.iter().map(move |c| (code, None, &**c));
+                    root.chain(d.pages.iter().map(move |(p, c)| (code, Some(p), &**c)))
+                });
+            check::run(chunks, &meta.check, |code| s.plural_of(code))
         })
     }
 }

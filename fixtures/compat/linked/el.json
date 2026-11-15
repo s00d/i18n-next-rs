@@ -1,0 +1,8 @@
+{
+  "word": "άυλος μαΐου ή νεράιδα",
+  "upWord": "@.upper:word",
+  "capEta": "@.capitalize:{'eta'}",
+  "eta": "ή",
+  "sigma": "ΟΔΟΣ ΣΟΦΟΣ",
+  "lowSigma": "@.lower:sigma"
+}

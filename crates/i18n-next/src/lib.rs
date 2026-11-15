@@ -3,14 +3,17 @@
 
 mod args;
 mod catalog;
+mod check;
 mod error;
 mod hash;
 mod i18n;
 mod json;
+mod linked;
 mod loader;
 mod plural;
 
 pub use args::{Arg, Args, Count};
+pub use check::{CheckItem, CheckReport, LinkError};
 pub use error::Error;
 pub use i18n::{Builder, I18n, LocaleInfo, View};
 

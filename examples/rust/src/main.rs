@@ -3,7 +3,7 @@
 //! `cargo run -p playground-rust` prints the tour; `-- --check` also verifies every
 //! line and exits non-zero on any problem, including any key the catalog misses (CI runs it).
 
-use i18n_next::{Args, Error, I18n};
+use i18n_next::{Args, CheckItem, Error, I18n};
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
@@ -24,9 +24,11 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
     let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let log = misses.clone();
     // M1: i18n.json (locales, fallback) + the shared locales folder with pages.
+    // M3: linked messages, resolved once at build.
     let i18n = I18n::builder()
         .config(examples.join("i18n.json"))
         .dir(examples.join("locales"))
+        .linked_messages(true)
         .missing(move |locale, key, page| {
             log.lock().unwrap().push(format!("{locale}/{page}/{key}"))
         })
@@ -105,6 +107,13 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
             expect(i18n.tc_with("cart", 1, &Args::new()), "1 item"),
         ),
     ]);
+    // M3: linked messages (`@:brand`, `@.upper:{'nav.home'}`): a locale that lacks the message
+    // reads the fallback's with its own words; check() lists what translators left out.
+    stops.extend([
+        ("linked", expect(i18n.t("footer"), "Made with i18n-next")),
+        ("linked ru", expect(i18n.with_locale("ru").t("shout"), "ГЛАВНАЯ!")),
+        ("check", expect(gaps(&i18n), "ar: page settings; ar/index/cart; ar/index/footer; ar/index/shout; ru/index/footer; ru/index/shout")),
+    ]);
     i18n.set_locale("ru")?;
     stops.extend([
         ("set_locale", expect(settings.t("language"), "Язык")),
@@ -135,6 +144,22 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
         expect(refused, "unknown locale \"../../etc/passwd\""),
     ));
     Ok(stops)
+}
+
+/// `check()` in one line: the known gaps of the example catalog (the fallback stops rely on
+/// them); anything else it finds shows in full and fails the stop.
+fn gaps(i18n: &I18n) -> String {
+    let items: Vec<String> = i18n
+        .check()
+        .items
+        .iter()
+        .map(|item| match item {
+            CheckItem::MissingPage { locale, page } => format!("{locale}: page {page}"),
+            CheckItem::MissingKey { locale, page, key } => format!("{locale}/{page}/{key}"),
+            other => other.to_string(),
+        })
+        .collect();
+    items.join("; ")
 }
 
 fn main() -> ExitCode {

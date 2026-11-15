@@ -528,6 +528,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "fallback_for",
                 "files",
                 "iso",
+                "linked_messages",
                 "locale",
                 "messages",
                 "missing",
@@ -535,11 +536,13 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "pages",
             ],
         ));
+        want.extend(methods("CheckReport", &["is_clean"]));
         want.extend(methods(
             "I18n",
             &[
                 "add_messages",
                 "builder",
+                "check",
                 "get",
                 "has",
                 "locale",

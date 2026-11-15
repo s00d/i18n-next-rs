@@ -45,16 +45,23 @@
       }
     }
   },
+  "typesVersions": {
+    "*": {
+      "vue": [
+        "./dist-js/vue.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist-js",
     "README.md"
   ],
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json && node -e \"for (const n of ['index','vue']) require('fs').copyFileSync('dist-js/'+n+'.d.ts','dist-js/'+n+'.d.cts')\" && pnpm check:dist",
+    "build": "vite build && tsc -p tsconfig.build.json && node scripts/emit-cts-types.mjs && pnpm check:dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "prepublishOnly": "pnpm build",
-    "check:dist": "publint --strict && attw --pack . --profile node16 && node scripts/check-dist.mjs"
+    "check:dist": "publint --strict && attw --pack . && node scripts/check-dist.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": ">=2.0.0"

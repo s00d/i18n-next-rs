@@ -228,6 +228,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Runtime deps only (DESIGN 8b.10). high: a moderate/low advisory in a transitive dep must not
+      # block every PR with no fix to take; renovate picks those up. High/critical fail the job.
+      - run: pnpm audit --prod --audit-level high
       - run: pnpm -C crates/tauri-plugin-i18n-next typecheck
       - name: Build guest-js and check dist
         run: pnpm -C crates/tauri-plugin-i18n-next build

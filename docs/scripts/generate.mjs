@@ -5,6 +5,7 @@
 // A source that does not exist yet (or is still empty) gives a short empty-state page, never a failure.
 // Edit the sources, never the generated pages.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { parse as parseToml } from 'smol-toml'
@@ -55,65 +56,171 @@ function fnSig(name, fn, sf) {
 
 const hasModifier = (node, kind) => node.modifiers?.some((m) => m.kind === kind) ?? false
 const isFn = (node) => node && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
+const warn = (message) => console.warn(`generate.mjs: ${message}`)
 
-// Public surface = every `export` of each guest-js entry point.
+// Public surface = every `export` of each guest-js entry point, re-exports followed into other guest-js files.
+const guestDir = `${plugin}guest-js/`
 const entryPoints = [
-  { file: `${plugin}guest-js/index.ts`, specifier: 'tauri-plugin-i18n-next-api' },
-  { file: `${plugin}guest-js/vue.ts`, specifier: 'tauri-plugin-i18n-next-api/vue' },
+  { file: `${guestDir}index.ts`, specifier: 'tauri-plugin-i18n-next-api' },
+  { file: `${guestDir}vue.ts`, specifier: 'tauri-plugin-i18n-next-api/vue' },
 ]
-const apis = entryPoints.filter((e) => exists(e.file)).map(({ file, specifier }) => {
-  const sf = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true)
-  const api = { file, specifier, sf, functions: [], events: [], objects: [], interfaces: [], aliases: [] }
+const sources = new Map()
+function sourceOf(file) {
+  if (!sources.has(file)) sources.set(file, ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true))
+  return sources.get(file)
+}
+// `./types.js` from guest-js/index.ts -> guest-js/types.ts. Only files inside guest-js are followed.
+function resolveModule(from, spec) {
+  if (!spec.startsWith('.')) return null
+  const base = posix.join(posix.dirname(from), spec).replace(/\.js$/, '')
+  return [`${base}.ts`, `${base}/index.ts`].find((f) => f.startsWith(guestDir) && exists(f)) ?? null
+}
+const declKinds = [ts.isFunctionDeclaration, ts.isClassDeclaration, ts.isInterfaceDeclaration, ts.isTypeAliasDeclaration, ts.isEnumDeclaration, ts.isModuleDeclaration]
+const isDecl = (st) => declKinds.some((is) => is(st))
+
+// Declarations behind `name` in `file`: local ones (several for overloads), else followed through re-exports.
+function lookup(file, name, seen = new Set()) {
+  if (seen.has(`${file}#${name}`)) return []
+  seen.add(`${file}#${name}`)
+  const sf = sourceOf(file)
+  const found = []
   for (const st of sf.statements) {
-    if (!hasModifier(st, ts.SyntaxKind.ExportKeyword)) continue
-    const doc = jsdoc(st)
-    if ('internal' in doc.tags) continue
-    if (ts.isFunctionDeclaration(st)) {
-      const e = { name: st.name.text, sig: fnSig(st.name.text, st, sf), doc: docBlock(doc) }
-      ;(e.name.startsWith('on') ? api.events : api.functions).push(e)
-    } else if (ts.isVariableStatement(st)) {
-      for (const d of st.declarationList.declarations) {
-        const name = d.name.getText(sf)
-        if (isFn(d.initializer)) {
-          const e = { name, sig: fnSig(name, d.initializer, sf), doc: docBlock(jsdoc(d)) }
-          ;(name.startsWith('on') ? api.events : api.functions).push(e)
-        } else if (d.initializer && ts.isObjectLiteralExpression(d.initializer)) {
-          const members = d.initializer.properties
-            .filter((m) => ts.isPropertyAssignment(m) && isFn(m.initializer))
-            .map((m) => {
-              const full = `${name}.${m.name.getText(sf)}`
-              return { name: full, sig: fnSig(full, m.initializer, sf), doc: docBlock(jsdoc(m)) }
-            })
-          api.objects.push({ name, members })
-        }
-      }
-    } else if (ts.isInterfaceDeclaration(st)) api.interfaces.push(st)
-    else if (ts.isTypeAliasDeclaration(st)) api.aliases.push(st)
+    if (isDecl(st) && st.name?.text === name) found.push({ st, sf })
+    else if (ts.isVariableStatement(st)) {
+      for (const d of st.declarationList.declarations) if (d.name.getText(sf) === name) found.push({ st, sf, d })
+    }
   }
+  if (found.length) return found
+  for (const st of sf.statements) {
+    if (!ts.isExportDeclaration(st)) continue
+    const target = st.moduleSpecifier ? resolveModule(file, st.moduleSpecifier.text) : file
+    if (!target) continue
+    if (!st.exportClause && target !== file) {
+      const r = lookup(target, name, seen)
+      if (r.length) return r
+    } else if (st.exportClause && ts.isNamedExports(st.exportClause)) {
+      const el = st.exportClause.elements.find((e) => e.name.text === name)
+      if (el && (target !== file || el.propertyName)) return lookup(target, (el.propertyName ?? el.name).text, seen)
+    }
+  }
+  return []
+}
+
+// A callable documented once under one anchor: overload signatures, never the implementation behind them.
+function addCallable(list, name, fn, sf, doc) {
+  let e = list.find((x) => x.name === name)
+  if (!e) list.push((e = { name, sigs: [], doc: '', overloaded: false }))
+  if (!fn.body) e.overloaded = true
+  else if (e.overloaded) return
+  e.sigs.push(fnSig(name, fn, sf))
+  if (doc && !e.doc.split('\n\n').includes(doc)) e.doc = e.doc ? `${e.doc}\n\n${doc}` : doc
+}
+
+const documented = new Map() // declaration node -> { api, anchor } of the entry point that documents it
+const anchor = (name) => name.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-')
+
+function addExport(api, name, { st, sf, d }) {
+  if ('internal' in jsdoc(st).tags) return
+  const node = d ?? st
+  const owner = documented.get(node)
+  if (owner) {
+    if (owner.api !== api && !api.reexports.some((r) => r.name === name)) api.reexports.push({ name, ...owner })
+    return
+  }
+  const mark = (n) => documented.set(node, { api, anchor: anchor(n), callable: true })
+  const fnList = (n) => (n.startsWith('on') ? api.events : api.functions)
+  if (ts.isFunctionDeclaration(st)) {
+    addCallable(fnList(name), name, st, sf, docBlock(jsdoc(st)))
+    mark(name)
+  } else if (d) {
+    if (isFn(d.initializer)) {
+      addCallable(fnList(name), name, d.initializer, sf, docBlock(jsdoc(d)))
+      mark(name)
+    } else if (d.initializer && ts.isObjectLiteralExpression(d.initializer)) {
+      const members = []
+      for (const m of d.initializer.properties) {
+        if (ts.isPropertyAssignment(m) && isFn(m.initializer)) addCallable(members, `${name}.${m.name.getText(sf)}`, m.initializer, sf, docBlock(jsdoc(m)))
+        else warn(`${sf.fileName}: ${name}.${m.name?.getText(sf) ?? '?'} is not a function property, not documented`)
+      }
+      api.objects.push({ name, label: `\`${name}\``, doc: '', members })
+      documented.set(node, { api, anchor: anchor(members[0]?.name ?? name), callable: true })
+    } else warn(`${sf.fileName}: exported const ${name} is not a function or an object of functions, not documented`)
+  } else if (ts.isClassDeclaration(st)) {
+    const members = []
+    for (const m of st.members) {
+      if (hasModifier(m, ts.SyntaxKind.PrivateKeyword) || hasModifier(m, ts.SyntaxKind.ProtectedKeyword) || (m.name && ts.isPrivateIdentifier(m.name))) continue
+      if (ts.isConstructorDeclaration(m)) addCallable(members, `new ${name}`, m, sf, docBlock(jsdoc(m)))
+      else if (ts.isMethodDeclaration(m)) addCallable(members, `${name}.${m.name.getText(sf)}`, m, sf, docBlock(jsdoc(m)))
+      else if (!ts.isClassStaticBlockDeclaration(m)) warn(`${sf.fileName}: ${name}.${m.name?.getText(sf) ?? '?'} (${ts.SyntaxKind[m.kind]}) is not documented`)
+    }
+    api.objects.push({ name, label: `class \`${name}\``, doc: docBlock(jsdoc(st)), members })
+    documented.set(node, { api, anchor: anchor(members[0]?.name ?? name), callable: true })
+  } else if (ts.isInterfaceDeclaration(st) || ts.isTypeAliasDeclaration(st)) {
+    api.types.push({ name, st, sf })
+    const title = name + (st.typeParameters ? `<${st.typeParameters.map((t) => t.getText(sf)).join(', ')}>` : '')
+    documented.set(node, { api, anchor: anchor(title), callable: false })
+  } else warn(`${sf.fileName}: unhandled export kind ${ts.SyntaxKind[st.kind]} (${name}), not documented`)
+}
+
+function collect(api, file, files = new Set()) {
+  if (files.has(file)) return
+  files.add(file)
+  const sf = sourceOf(file)
+  for (const st of sf.statements) {
+    if (ts.isExportDeclaration(st)) {
+      const target = st.moduleSpecifier ? resolveModule(file, st.moduleSpecifier.text) : file
+      if (!target) {
+        warn(`${file}: cannot follow ${st.getText(sf)} (only relative files inside guest-js), not documented`)
+        continue
+      }
+      if (!st.exportClause) collect(api, target, files) // export * from './x'
+      else if (ts.isNamedExports(st.exportClause)) {
+        for (const el of st.exportClause.elements) {
+          const decls = lookup(target, (el.propertyName ?? el.name).text)
+          if (!decls.length) warn(`${file}: cannot find the declaration of ${el.name.text}, not documented`)
+          for (const x of decls) addExport(api, el.name.text, x)
+        }
+      } else warn(`${file}: unhandled export kind: ${st.getText(sf)}`)
+    } else if (ts.isExportAssignment(st)) warn(`${file}: unhandled export kind: ${st.getText(sf).split('\n')[0]}`)
+    else if (hasModifier(st, ts.SyntaxKind.ExportKeyword)) {
+      if (hasModifier(st, ts.SyntaxKind.DefaultKeyword)) warn(`${file}: default export is not documented`)
+      else if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) addExport(api, d.name.getText(sf), { st, sf, d })
+      else if (st.name) addExport(api, st.name.text, { st, sf })
+      else warn(`${file}: unhandled export kind ${ts.SyntaxKind[st.kind]}`)
+    }
+  }
+}
+
+const apis = entryPoints.filter((e) => exists(e.file)).map(({ file, specifier }) => {
+  const api = { file, specifier, functions: [], events: [], objects: [], types: [], reexports: [] }
+  collect(api, file)
   return api
 })
 const callables = (api) => [...api.functions, ...api.events, ...api.objects.flatMap((o) => o.members)]
 const undocumented = apis.flatMap(callables).filter((e) => !e.doc).map((e) => e.name)
-if (undocumented.length) console.warn(`generate.mjs: no JSDoc: ${undocumented.join(', ')}`)
+if (undocumented.length) warn(`no JSDoc: ${undocumented.join(', ')}`)
 
-const anchor = (name) => name.toLowerCase().replace(/\./g, '')
 const entries = (list) =>
-  list.map((e) => `### \`${e.name}()\`\n\n\`\`\`ts\n${e.sig}\n\`\`\`\n${e.doc ? `\n${e.doc}\n` : ''}`).join('\n')
+  list.map((e) => `### \`${e.name}()\`\n\n\`\`\`ts\n${e.sigs.join('\n')}\n\`\`\`\n${e.doc ? `\n${e.doc}\n` : ''}`).join('\n')
 const summary = (list) =>
   '| Function | Description |\n|----------|-------------|\n' +
   list.map((e) => `| [${cell(e.name + '()')}](#${anchor(e.name)}) | ${oneLine(e.doc.split('\n\n')[0])} |`).join('\n')
+const reexportLine = (api) => {
+  const items = api.reexports.map((r) => `[${cell(r.name + (r.callable ? '()' : ''))}](${r.callable ? '' : '/reference/types'}#${r.anchor})`)
+  return items.length ? [`Also exported here, documented once above: ${items.join(', ')}.`, ''] : []
+}
 
 function jsApiPage() {
-  const sections = apis.filter((api) => callables(api).length).flatMap((api) => [
+  const sections = apis.filter((api) => callables(api).length || api.reexports.length).flatMap((api) => [
     `## \`${api.specifier}\``,
     '',
     `From ${link(api.file)}.`,
     '',
-    summary(callables(api)),
-    '',
+    ...reexportLine(api),
+    ...(callables(api).length ? [summary(callables(api)), ''] : []),
     entries(api.functions),
     ...(api.events.length ? ['**Event listeners**', '', entries(api.events)] : []),
-    ...api.objects.flatMap((o) => [`**\`${o.name}\`**`, '', entries(o.members)]),
+    ...api.objects.flatMap((o) => [`**${o.label}**`, '', ...(o.doc ? [o.doc, ''] : []), entries(o.members)]),
   ])
   const body = sections.length
     ? ['Everything `tauri-plugin-i18n-next-api` exports, generated from the guest-js sources.','Option and result types are on the [types page](/reference/types).', '', ...sections].join('\n')
@@ -122,12 +229,11 @@ function jsApiPage() {
 }
 
 function typesPage() {
-  const blocks = apis.flatMap(({ sf, interfaces, aliases }) => {
-    const head = (name, st) => {
+  const blocks = apis.flatMap(({ types }) =>
+    types.map(({ name, st, sf }) => {
       const doc = docBlock(jsdoc(st))
-      return `### \`${name}\`\n\n${doc ? `${doc}\n\n` : ''}`
-    }
-    const ifaces = interfaces.map((st) => {
+      const head = (title) => `### \`${title}\`\n\n${doc ? `${doc}\n\n` : ''}`
+      if (ts.isTypeAliasDeclaration(st)) return `${head(name)}\`\`\`ts\n${st.getText(sf).replace(/^export\s+/, '')}\n\`\`\`\n`
       const ext = st.heritageClauses?.map((h) => h.getText(sf)).join(' ')
       const rows = st.members.map((m) => {
         const d = docBlock(jsdoc(m))
@@ -138,12 +244,10 @@ function typesPage() {
         const opt = m.questionToken ? '?' : ''
         return `| ${cell(m.name.getText(sf) + opt)} | ${cell(m.type?.getText(sf) ?? 'unknown')} | ${desc} |`
       })
-      const name = st.name.text + (st.typeParameters ? `<${st.typeParameters.map((t) => t.getText(sf)).join(', ')}>` : '')
-      return `${head(name, st)}${ext ? `Extends ${cell(ext.replace(/^extends\s+/, ''))}.\n\n` : ''}| Property | Type | Description |\n|----------|------|-------------|\n${rows.join('\n')}\n`
-    })
-    const als = aliases.map((st) => `${head(st.name.text, st)}\`\`\`ts\n${st.getText(sf).replace(/^export\s+/, '')}\n\`\`\`\n`)
-    return [...ifaces, ...als]
-  })
+      const title = name + (st.typeParameters ? `<${st.typeParameters.map((t) => t.getText(sf)).join(', ')}>` : '')
+      return `${head(title)}${ext ? `Extends ${cell(ext.replace(/^extends\s+/, ''))}.\n\n` : ''}| Property | Type | Description |\n|----------|------|-------------|\n${rows.join('\n')}\n`
+    }),
+  )
   const body = blocks.length
     ? ['Every interface and type alias the package exports, generated from the guest-js sources.', '', blocks.join('\n')].join('\n')
     : 'No exported types yet. Option, payload and event types arrive with the full API in M8.'
@@ -213,10 +317,30 @@ const camel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
 
 // Rust doc -> page text: `# Parameters` / `# Returns` only repeat the table below, so they go;
 // other `# Section` headings become bold lines (a markdown `#` would be a page title).
+// Inside a rustdoc code fence, `# line` is a hidden doctest line (dropped) and `##` an escaped `#`.
+const rustdocFence = /^(rust|ignore|no_run|should_panic|compile_fail|test_harness|standalone_crate|edition\d+)$/
 function rustDoc(lines) {
   const out = []
   let skip = false
+  let fence = null // { marker, rust }
   for (const line of lines) {
+    const f = line.match(/^\s*(`{3,}|~{3,})\s*(.*)$/)
+    if (f && (!fence || (f[1].startsWith(fence.marker) && !f[2].trim()))) {
+      if (fence) fence = null
+      else {
+        const rust = f[2].trim().split(/[\s,]+/).every((t) => !t || rustdocFence.test(t))
+        fence = { marker: f[1], rust }
+        if (!skip) out.push(rust ? '```rust' : line.trim())
+        continue
+      }
+      if (!skip) out.push('```')
+      continue
+    }
+    if (fence) {
+      if (fence.rust && /^\s*#(\s|$)/.test(line)) continue
+      if (!skip) out.push(fence.rust ? line.replace(/^(\s*)##/, '$1#') : line)
+      continue
+    }
     const h = line.match(/^#+\s+(.*)$/)
     if (h) {
       skip = /^(Parameters|Returns)$/.test(h[1].trim())
@@ -226,6 +350,12 @@ function rustDoc(lines) {
     if (!skip) out.push(line)
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+// `Result<T>`, `crate::Result<T>`, `Result<T, E>` (any E) -> `T`; anything else as is.
+function okType(ret) {
+  const m = ret.match(/^(?:[\w:]+::)?Result\s*<([\s\S]*)>$/)
+  return (m ? splitTopLevel(m[1])[0] : ret) || '()'
 }
 
 function parseCommands(src) {
@@ -238,10 +368,13 @@ function parseCommands(src) {
       doc.push(line.replace(/^\/\/\/ ?/, ''))
       continue
     }
-    if (!/^#\[(tauri::)?command(\(.*\))?\]$/.test(line)) {
+    const attr = line.match(/^#\[(?:tauri::)?command(?:\((.*)\))?\]$/)
+    if (!attr) {
       if (!line.startsWith('#[')) doc = []
       continue
     }
+    // `#[tauri::command(rename_all = "snake_case")]` keeps Rust names in JS; the default is camelCase.
+    const snake = /rename_all\s*=\s*"snake_case"/.test(attr[1] ?? '')
     // Skip further attributes, then read the signature up to the body's `{`.
     let j = i + 1
     while (lines[j].trim().startsWith('#[')) j++
@@ -260,14 +393,20 @@ function parseCommands(src) {
     const params = splitTopLevel(sig.slice(open + 1, close))
       .map((p) => {
         const [name, ...type] = p.split(':')
-        return { name: name.trim(), type: type.join(':').trim() }
+        const rust = name.replace(/^mut\s+/, '').trim()
+        return { name: rust, js: snake ? rust : camel(rust), type: type.join(':').trim() }
       })
-      // Injected by Tauri, not passed from JS.
-      .filter((p) => !/^(AppHandle|State|Window|WebviewWindow|Webview)\b/.test(p.type))
-    const ret = sig.slice(close + 1).replace(/^\s*->\s*/, '').trim()
-    // `Result<T>`, `crate::Result<T>`, `Result<T, Error>` -> `T`.
-    const ok = ret.match(/^(?:[\w:]+::)?Result<([\s\S]*?)(,\s*[\w:]*Error)?>$/)?.[1].trim() ?? (ret || '()')
-    commands.push({ name: m[2], async: Boolean(m[1]), params, returns: ok.replace(/\s+/g, ' '), doc: rustDoc(doc) })
+      // Injected by Tauri, not passed from JS (a `Channel<T>` is: the JS side passes the Channel object).
+      .filter((p) => !/^(?:[\w:]+::)?(AppHandle|State|Window|WebviewWindow|Webview|Request)\b/.test(p.type))
+    // Return type: after `->`, before a `where` clause.
+    const ret = sig.slice(close + 1).split(/\bwhere\b/)[0].replace(/^\s*->\s*/, '').trim()
+    commands.push({
+      name: m[2],
+      async: Boolean(m[1]) || /(^|,)\s*async\s*(,|$)/.test(attr[1] ?? ''),
+      params,
+      returns: okType(ret).replace(/\s+/g, ' '),
+      doc: rustDoc(doc),
+    })
     doc = []
     i = j - 1
   }
@@ -292,7 +431,7 @@ function commandsPage() {
       const permission = `allow-${c.name.replace(/_/g, '-')}`
       const params = c.params.length
         ? '| Argument (JS) | Rust parameter | Type |\n|---------------|----------------|------|\n' +
-          c.params.map((p) => `| ${cell(camel(p.name))} | ${cell(p.name)} | ${cell(p.type)} |`).join('\n')
+          c.params.map((p) => `| ${cell(p.js)} | ${cell(p.name)} | ${cell(p.type)} |`).join('\n')
         : 'No arguments.'
       return [
         `### \`${c.name}\``,
@@ -300,7 +439,7 @@ function commandsPage() {
         c.doc,
         '',
         '```ts',
-        `invoke('plugin:i18n-next|${c.name}'${c.params.length ? `, { ${c.params.map((p) => camel(p.name)).join(', ')} }` : ''})`,
+        `invoke('plugin:i18n-next|${c.name}'${c.params.length ? `, { ${c.params.map((p) => p.js).join(', ')} }` : ''})`,
         '```',
         '',
         params,
@@ -314,8 +453,9 @@ function commandsPage() {
 
   const body = [
     `The \`#[tauri::command]\` functions in ${link(file)}, called with \`invoke('plugin:i18n-next|<name>', args)\`.`,
-    'You normally use the [JavaScript API](/reference/javascript-api) instead. Arguments are sent in camelCase;',
-    'parameters injected by Tauri (`AppHandle`, `State`, `Window`) are not listed.',
+    'You normally use the [JavaScript API](/reference/javascript-api) instead. Arguments are sent in camelCase',
+    '(Rust names as is for `rename_all = "snake_case"`); parameters injected by Tauri (`AppHandle`, `State`,',
+    '`Window`, `WebviewWindow`, `Webview`, `ipc::Request`) are not listed.',
     '',
     '| Command | Description |',
     '|---------|-------------|',

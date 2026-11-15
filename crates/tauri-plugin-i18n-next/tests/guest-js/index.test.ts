@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
-import { ping } from '../../guest-js/index'
+import { ping } from '../../guest-js/index.js'
 
 // mockIPC patches window.__TAURI_INTERNALS__; the node environment has no window.
 beforeAll(() => {

@@ -6,12 +6,17 @@
 #
 # leak-timeout: "leaky" means nextest had not seen EOF on the test's stdout/stderr within
 # this period after the process exited. Threads cannot hold the pipes past exit (they die
-# with the process); only a child process could, and no test or tool spawns one: every
-# thread in tests/concurrency.rs is joined, the stories spawn none. Under load the marks
-# came from nextest itself observing EOF late (CPU starvation), not from a held handle:
-# with leak-timeout = "1ms" and 3 x ncpu busy loops, 4 marks in 2 runs fell on tests that
-# spawn nothing (wasi guard, inventory parser, alloc); with the 100ms default, 0 marks in
-# 5 runs. 1s keeps a real leak (a child outliving the test) visible.
+# with the process) and no test or tool spawns a child: every thread in tests/concurrency.rs
+# is joined, the stories spawn none. The marks seen on macOS came from the runner: std on
+# Apple has no pipe2, so it makes the capture pipes with pipe() and sets FD_CLOEXEC after
+# (rust-lang/rust#95584); nextest spawned tests from several threads, so a sibling spawned
+# in that window inherited another test's pipe write end and held it until it exited. A
+# sibling running > leak-timeout (json_differential 1.5 s, alloc 1.2 s) then made a 20 ms
+# test LEAK at ~1.02 s. Reproduced with 300 empty tests: test processes held pipe fds > 2
+# in 4-16 of 300 per run, and an empty test went LEAK at 1.012 s when its slow sibling held
+# its pipe. nextest 0.9.145 creates the capture pipes itself, serialized with spawning;
+# older versions warn below. 1s keeps a real leak (a child outliving the test) visible.
+nextest-version = { recommended = "0.9.145" }
 
 [profile.default]
 retries = 0

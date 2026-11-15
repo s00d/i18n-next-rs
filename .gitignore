@@ -10,6 +10,8 @@ yarn.lock
 
 /.tauri
 /target
+# tools/size-probe is its own workspace with its own target dir
+/tools/size-probe/target/
 # Cargo.lock is tracked (unlike the template): CI size and perf diffs need the same
 # dependency versions on the base commit and the PR.
 node_modules/

@@ -8,5 +8,8 @@ mod inventory;
 
 #[test]
 fn every_public_function_has_a_bench() {
-    inventory::check(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
+    inventory::check(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+        env!("CARGO_PKG_NAME"),
+    );
 }

@@ -15,6 +15,7 @@
   "compareUrlFormat": "https://github.com/s00d/i18n-next-rs/compare/{{previousTag}}...{{currentTag}}",
   "issueUrlFormat": "https://github.com/s00d/i18n-next-rs/issues/{{id}}",
   "tagPrefix": "",
+  "commitAll": true,
   "scripts": {
     "postbump": "export V=$(jq -r .version crates/tauri-plugin-i18n-next/package.json) && perl -pi -e 's/^version = \".*\"/version = \"$ENV{V}\"/' Cargo.toml && perl -pi -e 's/^(i18n-next = \\{ version = \"=)[^\"]*/${1}$ENV{V}/' crates/tauri-plugin-i18n-next/Cargo.toml && cargo update --workspace && cargo update --workspace --manifest-path tools/size-probe/Cargo.toml && cargo test -p i18n-next --test version_sync && git add Cargo.toml Cargo.lock crates/tauri-plugin-i18n-next/Cargo.toml crates/tauri-plugin-i18n-next/package.json tools/size-probe/Cargo.lock",
     "postchangelog": "cp CHANGELOG.md crates/i18n-next/CHANGELOG.md && cp CHANGELOG.md crates/tauri-plugin-i18n-next/CHANGELOG.md && git add CHANGELOG.md Cargo.toml crates/i18n-next/CHANGELOG.md crates/tauri-plugin-i18n-next/CHANGELOG.md"

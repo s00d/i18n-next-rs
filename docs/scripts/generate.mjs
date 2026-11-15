@@ -313,7 +313,49 @@ function splitTopLevel(text) {
   return parts.map((p) => p.trim()).filter(Boolean)
 }
 
-const camel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+// The JS argument key Tauri derives from a parameter (tauri-macros 2.7.4 `wrapper.rs`):
+// `ident.unraw()`, then heck 0.5 `to_lower_camel_case` (default) or `to_snake_case`
+// (`rename_all = "snake_case"`). A line-by-line port of heck's `transform`: split on
+// non-alphanumerics (empty parts vanish), then split words on case changes
+// (`aB` -> `a|B`, `HTTPRequest` -> `HTTP|Request`); digits never split.
+const isLower = (c) => /\p{Lowercase}/u.test(c)
+const isUpper = (c) => /\p{Uppercase}/u.test(c)
+const heckLower = (s) => [...s].map((c, i, a) => (c === 'Σ' && i === a.length - 1 ? 'ς' : c.toLowerCase())).join('')
+const heckCapitalize = (s) => {
+  const [first = '', ...rest] = s
+  return first.toUpperCase() + heckLower(rest.join(''))
+}
+function heckWords(s) {
+  const words = []
+  for (const part of s.split(/[^\p{Alphabetic}\p{N}]/u)) {
+    const chars = [...part]
+    let init = 0
+    let mode = 'boundary'
+    for (let i = 0; i < chars.length; i++) {
+      const c = chars[i]
+      const next = chars[i + 1]
+      if (next === undefined) {
+        words.push(chars.slice(init).join(''))
+        break
+      }
+      const nextMode = isLower(c) ? 'lower' : isUpper(c) ? 'upper' : mode
+      if (nextMode === 'lower' && isUpper(next)) {
+        words.push(chars.slice(init, i + 1).join(''))
+        init = i + 1
+        mode = 'boundary'
+      } else if (mode === 'upper' && isUpper(c) && isLower(next)) {
+        words.push(chars.slice(init, i).join(''))
+        init = i
+        mode = 'boundary'
+      } else mode = nextMode
+    }
+  }
+  return words
+}
+function argKey(rustName, snake) {
+  const words = heckWords(rustName.replace(/^r#/, ''))
+  return snake ? words.map(heckLower).join('_') : words.map((w, i) => (i ? heckCapitalize(w) : heckLower(w))).join('')
+}
 
 // Rust doc -> page text: `# Parameters` / `# Returns` only repeat the table below, so they go;
 // other `# Section` headings become bold lines (a markdown `#` would be a page title).
@@ -394,9 +436,7 @@ function parseCommands(src) {
       .map((p) => {
         const [name, ...type] = p.split(':')
         const rust = name.replace(/^mut\s+/, '').trim()
-        // Tauri converts with heck, which drops leading underscores: `_unused_arg` -> `unusedArg` / `unused_arg`.
-        const bare = rust.replace(/^_+/, '')
-        return { name: rust, js: snake ? bare : camel(bare), type: type.join(':').trim() }
+        return { name: rust, js: argKey(rust, snake), type: type.join(':').trim() }
       })
       // Injected by Tauri, not passed from JS (a `Channel<T>` is: the JS side passes the Channel object).
       .filter((p) => !/^(?:[\w:]+::)?(AppHandle|State|Window|WebviewWindow|Webview|Request)\b/.test(p.type))

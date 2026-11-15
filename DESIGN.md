@@ -727,7 +727,7 @@ git diff origin/main.. > target/pr.diff && cargo mutants -p i18n-next --in-diff 
 Три уровня. Каждый ловит своё, и ни один не зависит от шума машины в CI.
 
 **1. criterion — бенч на каждую публичную функцию** (`crates/*/benches/`).
-- Правило: у каждого `pub fn` и публичного метода есть бенч с тем же именем (`group/function/case`). Тест `bench_inventory.rs` проверяет это: собирает публичные функции из `src/` и имена `bench_function` из `benches/` и падает на функции без бенча, как `command-inventory` в serialplugin.
+- Правило: у каждого `pub fn` и публичного метода есть бенч с тем же именем (`group/function/case`). Тест `bench_inventory.rs` проверяет это: берёт публичные функции из снимка `api/<crate>.txt` (8b.9), имена `bench_function` из `benches/` и падает на функции без бенча, как `command-inventory` в serialplugin.
 - Кейсы для каждой функции — реальные размеры и худшие случаи:
   - lookup: root hit, page hit, page miss → root, промах по всей цепочке из трёх локалей, ключ глубиной 6;
   - `Text`: 0, 1, 5 и 10 аргументов, плюрал (index, unmarked, `=0 `), слоты, `html`;

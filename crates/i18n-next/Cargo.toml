@@ -10,9 +10,10 @@ authors.workspace = true
 keywords = ["i18n", "localization", "translation", "tauri", "wasm"]
 categories = ["internationalization", "localization", "wasm"]
 include = ["/src/**/*", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md",
-    # Workspace check, not a crate test: reads the root Cargo.toml, the other members and
-    # the plugin package.json, which do not exist in the published package.
-    "!/tests/version_sync.rs"]
+    # Workspace checks, not crate tests: version_sync reads the root Cargo.toml, the other
+    # members and the plugin package.json; bench_inventory reads api/<crate>.txt at the
+    # workspace root. None of them exist in the published package.
+    "!/tests/version_sync.rs", "!/tests/bench_inventory.rs", "!/tests/support/inventory.rs"]
 
 [lints]
 workspace = true

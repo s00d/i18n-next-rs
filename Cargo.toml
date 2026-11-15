@@ -30,3 +30,12 @@ debug = false
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# Tests and models run on dev builds: optimize the property-testing machinery and the crate under
+# test a little, so the proptest models finish in seconds even on a loaded CI runner (a 60 s
+# watchdog would otherwise trip under heavy CPU contention). Debug assertions stay on.
+[profile.dev.package.proptest]
+opt-level = 3
+
+[profile.dev.package.i18n-next]
+opt-level = 1

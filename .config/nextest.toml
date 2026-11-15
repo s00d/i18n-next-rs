@@ -3,15 +3,26 @@
 #
 # No retries in any profile: a test that fails once in a hundred runs is a bug to fix,
 # not noise to rerun.
+#
+# leak-timeout: "leaky" means nextest had not seen EOF on the test's stdout/stderr within
+# this period after the process exited. Threads cannot hold the pipes past exit (they die
+# with the process); only a child process could, and no test or tool spawns one: every
+# thread in tests/concurrency.rs is joined, the stories spawn none. Under load the marks
+# came from nextest itself observing EOF late (CPU starvation), not from a held handle:
+# with leak-timeout = "1ms" and 3 x ncpu busy loops, 4 marks in 2 runs fell on tests that
+# spawn nothing (wasi guard, inventory parser, alloc); with the 100ms default, 0 marks in
+# 5 runs. 1s keeps a real leak (a child outliving the test) visible.
 
 [profile.default]
 retries = 0
+leak-timeout = "1s"
 slow-timeout = { period = "10s", terminate-after = 3 }
 fail-fast = false
 
 # CI: run everything, report every failure, JUnit for the run summary.
 [profile.ci]
 retries = 0
+leak-timeout = "1s"
 slow-timeout = { period = "30s", terminate-after = 2 }
 fail-fast = false
 

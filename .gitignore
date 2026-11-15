@@ -10,6 +10,8 @@ yarn.lock
 
 /.tauri
 /target
+# a stray build inside a crate (criterion with a relative CARGO_TARGET_DIR, .cargo/config.toml)
+/crates/*/target/
 # tools/size-probe is its own workspace with its own target dir
 /tools/size-probe/target/
 # Cargo.lock is tracked (unlike the template): CI size and perf diffs need the same

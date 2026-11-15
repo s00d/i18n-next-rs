@@ -1,0 +1,7 @@
+# Criterion writes its reports to $CRITERION_HOME, else to $CARGO_TARGET_DIR/criterion read
+# as is. A bench runs with its package dir as cwd, so a relative CARGO_TARGET_DIR
+# (`CARGO_TARGET_DIR=target/x cargo bench` from the root) put the reports in
+# crates/<pkg>/target/. Pin them to the workspace target; a CRITERION_HOME already set
+# (cargo-criterion) still wins.
+[env]
+CRITERION_HOME = { value = "target/criterion", relative = true }

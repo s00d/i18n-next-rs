@@ -637,7 +637,9 @@ impl Model {
     }
 
     /// Names the app gave: start (builder or config, or the default `en`), the global
-    /// fallback, both ends of every `fallback_for`, `iso` codes.
+    /// fallback, both ends of every link (`fallback_for` and `i18n.json` `fallbackLocale`),
+    /// builder `iso` codes (an `i18n.json` `iso` names a configured code). Each is known
+    /// even with no data of its own.
     fn named(&self, code: &str) -> bool {
         let start = match self.case.start {
             Start::Default => "en",
@@ -645,7 +647,7 @@ impl Model {
         };
         code == start
             || self.case.fallback == Some(code)
-            || self.case.links.iter().any(|&(a, b)| a == code || b == code)
+            || self.links().iter().any(|(&a, &b)| a == code || b == code)
             || self.case.iso.is_some_and(|(c, _)| c == code)
     }
 
@@ -670,23 +672,23 @@ impl Model {
         links
     }
 
-    /// `code`, its links until a repeat, then the global fallback and its links.
+    /// `code`, its links until a repeat, then the global fallback alone: its own links are
+    /// not followed (`buildFallbackLocaleChain`).
     fn chain(&self, code: &str) -> Vec<String> {
         let links = self.links();
         let mut out: Vec<String> = Vec::new();
-        let mut follow = |start: &str| {
-            let mut c = Some(start.to_owned());
-            while let Some(x) = c {
-                if out.contains(&x) {
-                    break;
-                }
-                c = links.get(x.as_str()).map(|s| (*s).to_owned());
-                out.push(x);
+        let mut c = Some(code);
+        while let Some(x) = c {
+            if out.iter().any(|o| o == x) {
+                break;
             }
-        };
-        follow(code);
-        if let Some(fb) = self.case.fallback {
-            follow(fb);
+            out.push(x.to_owned());
+            c = links.get(x).copied();
+        }
+        if let Some(fb) = self.case.fallback
+            && !out.iter().any(|o| o == fb)
+        {
+            out.push(fb.to_owned());
         }
         out
     }
@@ -993,7 +995,7 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
 
     prop_assert_eq!(i18n.pages(), m.pages(), "after build: pages()");
     prop_assert_eq!(infos(&i18n), m.locales(), "after build: locales()");
-    prop_assert_eq!(i18n.locale(), m.locale.clone(), "after build: locale()");
+    prop_assert_eq!(&*i18n.locale(), m.locale.as_str(), "after build: locale()");
 
     for (step, action) in case.actions.iter().enumerate() {
         let mut expected_missing: Vec<String> = Vec::new();
@@ -1117,7 +1119,12 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
             action
         );
         prop_assert_eq!(i18n.version(), m.version, "step {}: version", step);
-        prop_assert_eq!(i18n.locale(), m.locale.clone(), "step {}: locale()", step);
+        prop_assert_eq!(
+            &*i18n.locale(),
+            m.locale.as_str(),
+            "step {}: locale()",
+            step
+        );
         prop_assert_eq!(i18n.pages(), m.pages(), "step {}: pages()", step);
         prop_assert_eq!(infos(&i18n), m.locales(), "step {}: locales()", step);
         versions.push(i18n.version());
@@ -1205,7 +1212,7 @@ fn check_lookup(
         (None, None) => None,
     };
     if let (Some(v), Some(code)) = (&view, vloc) {
-        prop_assert_eq!(v.locale(), code.to_owned());
+        prop_assert_eq!(&*v.locale(), code);
     }
     let what = format!("step {step}: {via:?} {key:?} on {vloc:?} / {page:?}");
     match via {

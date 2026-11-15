@@ -12,7 +12,7 @@
 //! collisions): nulls and containers stay in it as markers, so a merge knows what an
 //! incoming value replaces.
 
-use crate::args::{Args, Count};
+use crate::args::{Args, Count, MAX_SCALAR_LEN};
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::json::{Event, Reader, number_to_js_string};
@@ -23,7 +23,10 @@ use std::sync::Arc;
 pub(crate) trait Params {
     /// Appends the value of `name`; `false` when there is none (`{name}` stays).
     fn put(&self, name: &str, out: &mut String) -> bool;
-    /// Bytes one value adds at most.
+    /// Bytes [`Params::put`] appends for `name`: exact, an upper bound for a float; `None`
+    /// when there is no value.
+    fn len_of(&self, name: &str) -> Option<usize>;
+    /// At least the longest value any name can get.
     fn max_len(&self) -> usize;
 }
 
@@ -38,12 +41,17 @@ impl Params for Args<'_> {
         }
     }
 
+    fn len_of(&self, name: &str) -> Option<usize> {
+        self.find(name).map(|v| v.len())
+    }
+
     fn max_len(&self) -> usize {
         self.max_value_len()
     }
 }
 
-/// `tc` params: JS `{ ...params, count }`, so `{count}` is the count whatever `args` say.
+/// `tc` params: JS `{ ...params, count }`, so `{count}` is the count whatever `args` say,
+/// and a list gives its items but not `{length}` (a spread copies no `length`).
 pub(crate) struct WithCount<'x, 'a> {
     pub(crate) args: Option<&'x Args<'a>>,
     pub(crate) count: Count,
@@ -55,12 +63,24 @@ impl Params for WithCount<'_, '_> {
             self.count.write(out);
             return true;
         }
-        self.args.is_some_and(|a| a.put(name, out))
+        match self.args.and_then(|a| a.spread(name)) {
+            Some(v) => {
+                v.write(out);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn len_of(&self, name: &str) -> Option<usize> {
+        if name == "count" {
+            return Some(self.count.len());
+        }
+        self.args.and_then(|a| a.spread(name)).map(|v| v.len())
     }
 
     fn max_len(&self) -> usize {
-        // `-9223372036854775808`; `-2.2250738585072014e-308`
-        self.args.map_or(0, Params::max_len).max(24)
+        self.args.map_or(0, Args::max_value_len).max(MAX_SCALAR_LEN)
     }
 }
 
@@ -80,16 +100,30 @@ pub(crate) enum Msg {
     Plural(Box<PluralMsg>),
 }
 
-/// `a | b | c`, split once at load (DESIGN 4.5): `tc` parses nothing.
+/// `a | b | c`, split once at load (DESIGN 4.5): `tc` parses nothing. The forms are ranges
+/// of the one shared text, so a message of many tiny forms (`"|"` × 10^6) costs 12 bytes a
+/// form, not a string each.
 #[derive(Debug, Clone)]
 pub(crate) struct PluralMsg {
     /// The whole string, for `t` / `get` (JS `t` interpolates the string with its pipes).
     pub(crate) text: Template,
     /// Starts with the `=0 ` marker.
     marked: bool,
-    /// The forms, trimmed (JS `trim`) and tokenized one by one: `{a|b}` is no placeholder.
-    forms: Box<[Template]>,
+    /// The forms, trimmed (JS `trim`): byte ranges of `text.raw`.
+    forms: Box<[Form]>,
+    /// Placeholders of every form in order, as byte ranges of `text.raw`. Each form is
+    /// tokenized alone: `{a|b}` is no placeholder.
+    holes: Box<[(u32, u32)]>,
     shape: Shape,
+}
+
+/// One trimmed form: `text.raw[start..end]`; its holes end at `holes_end` and start where
+/// the previous form's end.
+#[derive(Debug, Clone, Copy)]
+struct Form {
+    start: u32,
+    end: u32,
+    holes_end: u32,
 }
 
 /// The `=0 ` marker of `text.ts`: the first form for 0, the others by category.
@@ -98,16 +132,28 @@ const ZERO_MARKER: &str = "=0 ";
 impl PluralMsg {
     fn new(raw: &str) -> PluralMsg {
         let marked = raw.starts_with(ZERO_MARKER);
-        let body = raw
-            .get(if marked { ZERO_MARKER.len() } else { 0 }..)
-            .unwrap_or("");
+        let skip = if marked { ZERO_MARKER.len() } else { 0 };
+        let body = raw.get(skip..).unwrap_or("");
+        let mut forms = Vec::with_capacity(body.matches('|').count() + 1);
+        let mut holes = Vec::new();
+        let mut at = skip;
+        for f in body.split('|') {
+            let t = f.trim_matches(is_js_space);
+            // `t` is a slice of `f`: its offset in `raw`.
+            let start = at + (t.as_ptr() as usize - f.as_ptr() as usize);
+            holes.extend(Holes::new(t).map(|(s, e)| ((start + s) as u32, (start + e) as u32)));
+            forms.push(Form {
+                start: start as u32,
+                end: (start + t.len()) as u32,
+                holes_end: holes.len() as u32,
+            });
+            at += f.len() + 1;
+        }
         PluralMsg {
             text: Template::new(raw),
             marked,
-            forms: body
-                .split('|')
-                .map(|f| Template::new(f.trim_matches(is_js_space)))
-                .collect(),
+            forms: forms.into_boxed_slice(),
+            holes: holes.into_boxed_slice(),
             shape: Shape::new(body.split('|')),
         }
     }
@@ -120,9 +166,22 @@ impl PluralMsg {
         params: &impl Params,
     ) -> String {
         let at = self.shape.index(self.marked, count.whole(), plural);
-        self.forms
-            .get(at)
-            .map_or_else(String::new, |f| f.interpolate(params))
+        let Some(f) = self.forms.get(at) else {
+            return String::new();
+        };
+        let first = at
+            .checked_sub(1)
+            .and_then(|j| self.forms.get(j))
+            .map_or(0, |p| p.holes_end as usize);
+        let holes = self.holes.get(first..f.holes_end as usize).unwrap_or(&[]);
+        render(
+            &self.text.raw,
+            f.start as usize,
+            f.end as usize,
+            holes.iter().map(|&(s, e)| (s as usize, e as usize)),
+            holes.len(),
+            params,
+        )
     }
 }
 
@@ -163,45 +222,65 @@ fn is_js_space(c: char) -> bool {
     )
 }
 
-impl Template {
-    /// Finds the tokens of `core/src/text.ts`: `{` + one or more chars that are not `{`,
-    /// `}` or JS `\s` + `}`.
-    pub(crate) fn new(raw: &str) -> Self {
-        let mut holes = Vec::new();
-        let mut open = None;
-        for (i, c) in raw.char_indices() {
+/// The placeholders of `core/src/text.ts` in a string: `{` + one or more chars that are not
+/// `{`, `}` or JS `\s` + `}`, as byte ranges of the name (without the braces).
+#[derive(Clone)]
+struct Holes<'a> {
+    chars: std::str::CharIndices<'a>,
+    open: Option<usize>,
+}
+
+impl<'a> Holes<'a> {
+    fn new(raw: &'a str) -> Self {
+        Holes {
+            chars: raw.char_indices(),
+            open: None,
+        }
+    }
+}
+
+impl Iterator for Holes<'_> {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<(usize, usize)> {
+        for (i, c) in self.chars.by_ref() {
             match c {
-                '{' => open = Some(i + 1),
+                '{' => self.open = Some(i + 1),
                 '}' => {
-                    if let Some(start) = open.take()
+                    if let Some(start) = self.open.take()
                         && i > start
                     {
-                        holes.push((start as u32, i as u32));
+                        return Some((start, i));
                     }
                 }
-                c if is_js_space(c) => open = None,
+                c if is_js_space(c) => self.open = None,
                 _ => {}
             }
         }
+        None
+    }
+}
+
+impl Template {
+    /// Finds the placeholders once ([`Holes`]).
+    pub(crate) fn new(raw: &str) -> Self {
         Template {
             raw: Arc::from(raw),
-            holes: holes.into_boxed_slice(),
+            holes: Holes::new(raw).map(|(s, e)| (s as u32, e as u32)).collect(),
         }
     }
 
     /// The text with every placeholder `args` has replaced, in one allocation.
     pub(crate) fn interpolate(&self, args: &impl Params) -> String {
-        if self.holes.is_empty() {
-            return String::from(&*self.raw);
-        }
         let raw = &*self.raw;
-        let mut out = String::with_capacity(raw.len() + self.holes.len() * args.max_len());
-        let mut from = 0;
-        for &(s, e) in &self.holes {
-            from = substitute(raw, from, s as usize, e as usize, args, &mut out);
+        if self.holes.is_empty() {
+            return String::from(raw);
         }
-        out.push_str(raw.get(from..).unwrap_or(""));
-        out
+        render(raw, 0, raw.len(), self.holes(), self.holes.len(), args)
+    }
+
+    fn holes(&self) -> impl Iterator<Item = (usize, usize)> + Clone + '_ {
+        self.holes.iter().map(|&(s, e)| (s as usize, e as usize))
     }
 
     /// The one form of a `tc` on a string without `|`: the `=0 ` marker dropped, trimmed
@@ -213,68 +292,74 @@ impl Template {
         let trimmed = body.trim_matches(is_js_space);
         let start = trimmed.as_ptr() as usize - raw.as_ptr() as usize;
         let end = start + trimmed.len();
-        let holes = self
-            .holes
-            .iter()
-            .filter(|&&(s, e)| s as usize > start && (e as usize) < end);
-        let mut out = String::with_capacity(trimmed.len() + holes.clone().count() * args.max_len());
-        let mut from = start;
-        for &(s, e) in holes {
-            from = substitute(raw, from, s as usize, e as usize, args, &mut out);
-        }
-        out.push_str(raw.get(from..end).unwrap_or(""));
-        out
+        let holes = self.holes().filter(|&(s, e)| s > start && e < end);
+        render(raw, start, end, holes, self.holes.len(), args)
     }
 }
 
-/// Copies `raw[from..]` up to the hole `{raw[s..e]}` and writes its value, when `args` has
-/// one; returns where the next copy starts. `.get` instead of indexing: the ranges are
-/// char boundaries by construction, and no slice panic (with its `fmt` code) is linked.
-fn substitute(
+/// Growth up to which [`render`] sizes its result by the cheap bound, holes × longest
+/// value: at most this many bytes too big, and every hole is looked up once. Past it a
+/// first pass sizes the result exactly (a second lookup per hole), so a long argument the
+/// text does not use, or many holes, can neither over-reserve nor overflow: the bound alone
+/// reserved 11.5 MB for 11 holes beside an unused 1 MiB argument, and overflowed `usize`
+/// on wasm32. (Always sizing exactly cost +5 ns on `t_with` with one argument, a cache of
+/// the looked-up values +30 ns.)
+const CHEAP: usize = 256;
+
+/// `raw[from..end]` with each hole (name ranges inside it, in order) that `args` has a
+/// value for replaced, in one allocation. `max_holes` bounds the number of holes.
+fn render(
     raw: &str,
     from: usize,
-    s: usize,
-    e: usize,
+    end: usize,
+    holes: impl Iterator<Item = (usize, usize)> + Clone,
+    max_holes: usize,
     args: &impl Params,
-    out: &mut String,
-) -> usize {
-    let Some(name) = raw.get(s..e) else {
-        return from;
-    };
-    let mark = out.len();
-    out.push_str(raw.get(from..s - 1).unwrap_or(""));
-    if args.put(name, out) {
-        e + 1
-    } else {
-        out.truncate(mark);
-        from
+) -> String {
+    if max_holes == 0 {
+        return String::from(raw.get(from..end).unwrap_or(""));
     }
-}
-
-/// [`Template::new`] + [`Template::interpolate`] in one pass, for text used once (the
-/// default of `t_with`): no `Template` is built.
-pub(crate) fn interpolate_once(raw: &str, args: &impl Params) -> String {
-    // Every `{` may open a placeholder: sized once, never reallocated.
-    let holes = raw.bytes().filter(|&b| b == b'{').count();
-    let mut out = String::with_capacity(raw.len() + holes * args.max_len());
-    let mut from = 0;
-    let mut open = None;
-    for (i, c) in raw.char_indices() {
-        match c {
-            '{' => open = Some(i + 1),
-            '}' => {
-                if let Some(s) = open.take()
-                    && i > s
-                {
-                    from = substitute(raw, from, s, i, args, &mut out);
-                }
+    let text = end.saturating_sub(from);
+    let growth = max_holes.saturating_mul(args.max_len());
+    let capacity = if growth <= CHEAP {
+        text + growth
+    } else {
+        let (mut removed, mut added) = (0usize, 0usize);
+        for (s, e) in holes.clone() {
+            if let Some(n) = raw.get(s..e).and_then(|name| args.len_of(name)) {
+                // `{name}`: the braces go too.
+                removed += e - s + 2;
+                added = added.saturating_add(n);
             }
-            c if is_js_space(c) => open = None,
-            _ => {}
+        }
+        text.saturating_sub(removed).saturating_add(added)
+    };
+    let mut out = String::with_capacity(capacity);
+    let mut at = from;
+    for (s, e) in holes {
+        // `.get` instead of indexing: the ranges are char boundaries by construction, and
+        // no slice panic (with its `fmt` code) is linked.
+        let Some(name) = raw.get(s..e) else {
+            continue;
+        };
+        let mark = out.len();
+        out.push_str(raw.get(at..s - 1).unwrap_or(""));
+        if args.put(name, &mut out) {
+            at = e + 1;
+        } else {
+            out.truncate(mark);
         }
     }
-    out.push_str(raw.get(from..).unwrap_or(""));
+    out.push_str(raw.get(at..end).unwrap_or(""));
     out
+}
+
+/// [`Template::new`] + [`Template::interpolate`] for text used once (the default of
+/// `t_with`): no `Template` is built, the text is tokenized on the fly. Every `{` may open
+/// a placeholder: that bounds the holes.
+pub(crate) fn interpolate_once(raw: &str, args: &impl Params) -> String {
+    let max_holes = raw.bytes().filter(|&b| b == b'{').count();
+    render(raw, 0, raw.len(), Holes::new(raw), max_holes, args)
 }
 
 /// A node of the tree as stored by path.

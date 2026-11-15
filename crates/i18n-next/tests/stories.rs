@@ -976,3 +976,105 @@ fn tc_on_every_kind_of_value() {
     assert_eq!(i18n.page("settings").tc("gone", 1), "gone");
     assert_eq!(guard.seen(), ["en|index|nope", "en|settings|gone"]);
 }
+
+/// Given `en` active and `ru` known, when the app reads Russian plurals through a view, then
+/// switches to `ru`, then views a code that is not known but has rules (`fr`, reading the
+/// fallback's text), then each answer goes by the rules of the locale read, not the active one.
+#[test]
+fn views_count_by_their_own_rules() {
+    let guard = Guard::new();
+    let i18n = I18n::builder()
+        .locale("en")
+        .fallback("en")
+        .messages(
+            "en",
+            None,
+            r#"{"apples": "no apples | {count} apple | {count} apples | {count} lots",
+                "cart": "=0 empty | {count} one | {count} many | {count} other"}"#,
+        )
+        .messages(
+            "ru",
+            None,
+            r#"{"apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок"}"#,
+        )
+        .missing(guard.missing())
+        .build()
+        .unwrap();
+
+    // step 1: a view in the known `ru` while `en` is active → Russian categories (21 → one)
+    let ru = i18n.with_locale("ru");
+    assert_eq!(ru.tc("apples", 21), "21 яблоко");
+    assert_eq!(ru.tc("apples", 22), "22 яблока");
+    // the active `en` goes by English rules: two named categories, so the index rule
+    assert_eq!(i18n.tc("apples", 21), "21 lots");
+
+    // step 2: switch to `ru` → the same Russian answers, for the instance and the view
+    i18n.set_locale("ru").unwrap();
+    assert_eq!(i18n.tc("apples", 21), "21 яблоко");
+    assert_eq!(i18n.with_locale("ru").tc("apples", 21), "21 яблоко");
+    // and a view back in `en` keeps English rules
+    assert_eq!(i18n.with_locale("en").tc("apples", 21), "21 lots");
+
+    // step 3: `fr` is not known: the fallback's text, French categories (`one, many,
+    // other`: 2 → other, 10^6 → many); English or no rules would give `2 many`
+    let fr = i18n.with_locale("fr");
+    assert_eq!(fr.tc("cart", 2), "2 other");
+    assert_eq!(fr.tc("cart", 1_000_000), "1000000 many");
+    assert_eq!(i18n.with_locale("en").tc("cart", 2), "2 many");
+    assert_eq!(guard.seen(), Vec::<String>::new());
+}
+
+/// Given plural messages, when the app passes `tc_with` an argument named `count`, a list,
+/// and counts past 2^53, then the count wins (JS `{ ...params, count }`), a list gives its
+/// items but no `{length}` (a spread array has none), and a huge integer is the `f64` JS
+/// holds, for the form and for `{count}`.
+#[test]
+fn counts_win_spread_and_round_like_js() {
+    let guard = Guard::new();
+    let i18n = I18n::builder()
+        .locale("fr")
+        .messages(
+            "fr",
+            None,
+            r#"{"n": "{count}", "pair": "{0}+{1} of {length} | {0}+{1} of {length}, {count}",
+                "cart": "=0 zéro | {count} un | {count} beaucoup | {count} autre"}"#,
+        )
+        .missing(guard.missing())
+        .build()
+        .unwrap();
+
+    // step 1: an argument named `count` loses to the count, in the form and in a default
+    guard.allow("fr|index|nope");
+    let args = Args::new().int("count", 9);
+    assert_eq!(i18n.tc_with("n", 3, &args), "3");
+    assert_eq!(i18n.tc_with("nope", 3, &args.clone().or("{count}")), "3");
+
+    // step 2: a list → `{0}`, `{1}`, but `{length}` stays (t_with still reads it)
+    guard.allow("fr|index|nope");
+    guard.allow("fr|index|nope");
+    let list = Args::list(["A", "B"]);
+    assert_eq!(i18n.tc_with("pair", 1, &list), "A+B of {length}, 1");
+    assert_eq!(
+        i18n.tc_with("nope", 1, &list.clone().or("{0} {length}")),
+        "A {length}"
+    );
+    assert_eq!(i18n.t_with("nope", &list.clone().or("{0} {length}")), "A 2");
+
+    // step 3: past 2^53 → the nearest f64, printed as JS `String(n)`
+    assert_eq!(i18n.tc("n", (1u64 << 53) + 1), "9007199254740992");
+    assert_eq!(i18n.tc("n", u64::MAX), "18446744073709552000");
+    assert_eq!(i18n.tc("n", i64::MIN), "-9223372036854776000");
+    assert_eq!(i18n.tc("n", (1u64 << 62) + 1), "4611686018427388000");
+    assert_eq!(i18n.tc("n", 1u64 << 53), "9007199254740992");
+
+    // step 4: the category of such a count is ICU's (`Intl.PluralRules("fr")`): 10^18 and
+    // 2·10^18 have `i % 10^18 = 0` → one, 3·10^17 → many; a negative one takes the last form
+    assert_eq!(i18n.tc("cart", 10u64.pow(18)), "1000000000000000000 un");
+    assert_eq!(i18n.tc("cart", 2 * 10u64.pow(18)), "2000000000000000000 un");
+    assert_eq!(
+        i18n.tc("cart", 3 * 10u64.pow(17)),
+        "300000000000000000 beaucoup"
+    );
+    assert_eq!(i18n.tc("cart", i64::MIN), "-9223372036854776000 autre");
+    assert_eq!(guard.seen().len(), 3);
+}

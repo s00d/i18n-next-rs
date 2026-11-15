@@ -567,10 +567,68 @@ impl fmt::Write for ExpBuf {
 }
 
 /// Appends ECMAScript `Number::toString(v)` (JS `String(v)`) to `out`, with no heap
-/// temporary: shortest round-trip digits from Rust's `{:e}` (the same digits JS uses) in
-/// the [`layout`] of ECMA-262; `NaN`, `Infinity`, `-Infinity`, and `-0` as `0`.
+/// temporary; `NaN`, `Infinity`, `-Infinity`, and `-0` as `0`.
+///
+/// A short decimal (`1.5`, `0.25`, `19.99`, any integer under 2^50) is printed from its
+/// integer digits: `{:e}` costs ~60 ns of a 120 ns `tc` with a fractional count. Anything
+/// else goes through [`push_js_number_exact`].
 #[cfg(feature = "format")]
 pub(crate) fn push_js_number(out: &mut String, v: f64) {
+    if let Some((m, k)) = short_decimal(v.abs()) {
+        let mut buf = [0u8; 20];
+        let mut i = buf.len();
+        let mut rest = m;
+        loop {
+            i -= 1;
+            buf[i] = b'0' + (rest % 10) as u8;
+            rest /= 10;
+            if rest == 0 {
+                break;
+            }
+        }
+        let digits = &buf[i..];
+        let n = digits.len() as i32 - k as i32;
+        // Trailing zeros only when `k` is 0 (else `k - 1` would have matched).
+        let end = digits.iter().rposition(|&d| d != b'0').map_or(1, |p| p + 1);
+        let sig = std::str::from_utf8(digits.get(..end).unwrap_or(digits)).unwrap_or("0");
+        layout(out, v < 0.0, sig, n);
+        return;
+    }
+    push_js_number_exact(out, v);
+}
+
+/// `v` (finite, > 0) as `m / 10^k` with the fewest fraction digits `k` ≤ 6, when that
+/// decimal reads back as `v`: then its digits are the shortest round-trip digits JS prints.
+///
+/// Why it is exact: `m < 2^50`, so `v · 10^k` is within `m · 2^-52 < 1/4` of the real
+/// product and of every decimal with `k` digits that reads back as `v`; there is at most
+/// one such decimal and `round` finds it. `m / 10^k` is one correctly rounded division of
+/// two exact doubles: it equals `v` exactly when the decimal reads back as `v`. Fewer
+/// fraction digits are fewer significant digits (the integer part is fixed, and an integer
+/// is its own double below 2^53), so the first `k` that matches is the shortest. Checked
+/// against [`push_js_number_exact`] on millions of doubles (`tests/json_differential.rs`).
+#[cfg(feature = "format")]
+fn short_decimal(v: f64) -> Option<(u64, usize)> {
+    const POW10: [f64; 7] = [1.0, 10.0, 100.0, 1e3, 1e4, 1e5, 1e6];
+    const LIMIT: f64 = (1u64 << 50) as f64;
+    for (k, &p) in POW10.iter().enumerate() {
+        let scaled = v * p;
+        // Also false for NaN and infinities.
+        if scaled.is_nan() || scaled >= LIMIT {
+            return None;
+        }
+        let m = scaled.round();
+        if m / p == v {
+            return Some((m as u64, k));
+        }
+    }
+    None
+}
+
+/// [`push_js_number`] by Rust's `{:e}`: the shortest round-trip digits (the same digits JS
+/// uses) in the [`layout`] of ECMA-262.
+#[cfg(feature = "format")]
+pub(crate) fn push_js_number_exact(out: &mut String, v: f64) {
     if v.is_nan() {
         out.push_str("NaN");
         return;
@@ -598,12 +656,121 @@ pub(crate) fn push_js_number(out: &mut String, v: f64) {
         digits[k] = b;
         k += 1;
     }
+    if k > 0 && digits[k - 1] & 1 == 1 {
+        even_tie(v.abs(), &mut digits[..k], exp);
+    }
     layout(
         out,
         v < 0.0,
         std::str::from_utf8(&digits[..k]).unwrap_or("0"),
         exp + 1,
     );
+}
+
+/// Two shortest digit strings can be equally close to `v`: ECMA-262 `Number::toString`
+/// takes the even one, Rust's `{:e}` the larger (`1e15 + 0.25`: JS `1000000000000000.2`,
+/// `{:e}` `…0.3`). Such a tie needs the exact value of `v` to be their midpoint, a decimal
+/// one digit longer ending in 5; then the odd `digits` (`d0.d1… × 10^exp`) become the even
+/// neighbour when that reads back as `v` (at a power of two the gap below is half, and
+/// `2^-24` keeps its odd `…063`).
+#[cfg(feature = "format")]
+fn even_tie(v: f64, digits: &mut [u8], exp: i32) {
+    let Some(exact) = exact_digits(v) else {
+        return;
+    };
+    let k = digits.len();
+    let d = digits
+        .iter()
+        .fold(0u128, |a, &b| a * 10 + u128::from(b - b'0'));
+    if exact % 10 != 5 || u128_len(exact) != k + 1 {
+        return;
+    }
+    let below = exact / 10;
+    let alt = if d == below + 1 {
+        below
+    } else if d == below {
+        below + 1
+    } else {
+        return;
+    };
+    // `alt` ending in 0 would be shorter than the shortest: never a real tie.
+    if alt % 10 == 0 || u128_len(alt) != k {
+        return;
+    }
+    // `alt` × 10^(exp - k + 1) as text, parsed: the one exact check that it reads back.
+    let mut text = ExpBuf {
+        bytes: [0; 32],
+        len: 0,
+    };
+    let _ = fmt::Write::write_fmt(&mut text, format_args!("{alt}e{}", exp - k as i32 + 1));
+    let reads_back = std::str::from_utf8(&text.bytes[..text.len])
+        .ok()
+        .and_then(|t| t.parse::<f64>().ok())
+        == Some(v);
+    if reads_back {
+        let mut rest = alt;
+        for slot in digits.iter_mut().rev() {
+            *slot = b'0' + (rest % 10) as u8;
+            rest /= 10;
+        }
+    }
+}
+
+/// The digits of the exact value of `v` (finite, > 0) without trailing zeros, when there
+/// are at most 19 of them (`None`: more, so no tie with ≤ 17 shortest digits is possible).
+/// `v = m · 2^e`: for `e < 0` the exact value is `m · 5^-e` × 10^e; for `e ≥ 0` the factors
+/// 5 of `m` pair with factors 2 into trailing zeros.
+#[cfg(feature = "format")]
+fn exact_digits(v: f64) -> Option<u128> {
+    let bits = v.to_bits();
+    let biased = ((bits >> 52) & 0x7ff) as i32;
+    let fraction = bits & ((1 << 52) - 1);
+    let (m, e) = if biased == 0 {
+        (fraction, -1074)
+    } else {
+        (fraction | 1 << 52, biased - 1075)
+    };
+    if m == 0 {
+        return None;
+    }
+    let tz = m.trailing_zeros();
+    let (mut m, e) = (m >> tz, e + tz as i32);
+    let digits = if e < 0 {
+        // 5^28 has 20 digits: more than 19 already.
+        let q = u32::try_from(-e).ok().filter(|&q| q <= 27)?;
+        u128::from(m) * 5u128.pow(q)
+    } else {
+        let mut z = 0;
+        while z < e && m % 5 == 0 {
+            m /= 5;
+            z += 1;
+        }
+        // 2^64 has 20 digits.
+        let shift = u32::try_from(e - z).ok().filter(|&s| s <= 63)?;
+        u128::from(m) << shift
+    };
+    Some(digits)
+}
+
+/// How many decimal digits `n` has.
+#[cfg(feature = "format")]
+fn u128_len(mut n: u128) -> usize {
+    let mut len = 1;
+    while n >= 10 {
+        n /= 10;
+        len += 1;
+    }
+    len
+}
+
+/// How many decimal digits `n` has.
+pub(crate) fn u64_len(mut n: u64) -> usize {
+    let mut len = 1;
+    while n >= 10 {
+        n /= 10;
+        len += 1;
+    }
+    len
 }
 
 /// Appends the decimal digits of `n` (no `core::fmt`).

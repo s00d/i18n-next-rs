@@ -41,3 +41,8 @@ fn files_and_messages() {
 fn chains_aliases_and_folding() {
     platform::chains_aliases_and_folding();
 }
+
+#[wasm_bindgen_test]
+fn many_holes_beside_a_huge_argument() {
+    platform::many_holes_beside_a_huge_argument();
+}

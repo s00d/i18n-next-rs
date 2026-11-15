@@ -16,5 +16,6 @@
   "tree": { "a": "b" },
   "list": ["x", "y"],
   "nil": null,
-  "en_only": "en one | en {count}"
+  "en_only": "en one | en {count}",
+  "listy": "{0} of {length} | {0} and {1} of {length}: {count}"
 }

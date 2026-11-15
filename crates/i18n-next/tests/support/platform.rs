@@ -6,6 +6,31 @@
 
 use i18n_next::{Args, Error, I18n};
 
+/// Given a message with 600 placeholders beside an unused 4 MiB argument, when `t_with`,
+/// `tc_with` and a default fill it, then the result is sized by the values used. On wasm32
+/// (a 32-bit `usize`) the old bound, holes × longest value = 2.4 GB, overflowed and
+/// panicked with "capacity overflow".
+pub fn many_holes_beside_a_huge_argument() {
+    let tpl = "{a}".repeat(600);
+    let json = format!(r#"{{"k": "{tpl}", "p": "x | {tpl}", "one": " {tpl} "}}"#);
+    let i18n = I18n::builder()
+        .locale("en")
+        .messages("en", None, &json)
+        .missing(|_, _, _| {})
+        .build()
+        .unwrap();
+    let big = "y".repeat(4 << 20);
+    let args = Args::new().str("b", &big).str("a", "1");
+    let want = "1".repeat(600);
+    // step 1: a template, a plural form, a single form → 600 ones
+    assert_eq!(i18n.t_with("k", &args), want);
+    assert_eq!(i18n.tc_with("p", 5, &args), want);
+    assert_eq!(i18n.tc_with("one", 5, &args), want);
+    // step 2: a default tokenized on the fly → the same
+    assert_eq!(i18n.t_with("nope", &args.clone().or(&tpl)), want);
+    assert_eq!(i18n.tc_with("nope", 5, &args.clone().or(&tpl)), want);
+}
+
 /// Given embedded files, when the app switches locales and adds messages, then the
 /// snapshot path (thread-local cache, `RwLock`) works, also in a single-threaded runtime.
 pub fn files_and_switching() {

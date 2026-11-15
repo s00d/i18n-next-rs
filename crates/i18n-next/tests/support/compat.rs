@@ -463,7 +463,12 @@ pub fn run() -> Result<usize, String> {
                     let i18n = singles
                         .entry((iso, tag.clone(), template.clone()))
                         .or_insert_with(|| single(iso, tag, template));
-                    spell(&i18n.tc("k", count(*n)))
+                    let out = i18n.tc("k", count(*n));
+                    // An integer past 2^53 as a u64 / i64 count: what JS holds, the same answer.
+                    match int_count(*n).map(|c| i18n.tc("k", c)) {
+                        Some(int) if int != out => format!("<f64 {out:?}, integer {int:?}>"),
+                        _ => spell(&out),
+                    }
                 }
                 (
                     "tc_in" | "tc_missing",
@@ -536,6 +541,22 @@ fn count(n: f64) -> Count {
         Count::from(n as i64)
     } else {
         Count::from(n)
+    }
+}
+
+/// A whole count past ±2^53 that a `u64` (up to 2^64, saturating) or an `i64` holds, as
+/// that integer: `Count` rounds it to the same `f64` JS holds.
+fn int_count(n: f64) -> Option<Count> {
+    let safe = 9_007_199_254_740_992.0;
+    if n.fract() != 0.0 || n.abs() <= safe || n.abs() > 18_446_744_073_709_551_616.0 {
+        return None;
+    }
+    if n > 0.0 {
+        Some(Count::from(n as u64))
+    } else if n >= i64::MIN as f64 {
+        Some(Count::from(n as i64))
+    } else {
+        None
     }
 }
 

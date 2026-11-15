@@ -783,6 +783,13 @@ fn write_str_matches_json_stringify() {
 /// node -e 'const xs=[...];console.log(xs.map(x=>"(\""+x+"\", \""+String(Number(x))+"\"),").join("\n"))'
 /// ```
 const TO_STRING: &[(&str, &str)] = &[
+    // Ties: two shortest digit strings equally close, JS takes the even one (Rust's `{:e}`
+    // the larger); at a power of two the odd one when the even does not read back.
+    ("1000000000000000.25", "1000000000000000.2"),
+    ("1000000000000000.75", "1000000000000000.8"),
+    ("5.9604644775390625e-8", "5.960464477539063e-8"),
+    ("2.98023223876953125e-8", "2.9802322387695312e-8"),
+    ("4503599627370495.5", "4503599627370495.5"),
     ("0", "0"),
     ("-0", "0"),
     ("1", "1"),
@@ -867,7 +874,8 @@ fn number_to_js_string_matches_node() {
             } else if s.contains('.') {
                 prop_assert!(!s.ends_with('0') && !s.ends_with('.'));
             }
-            // Same shortest digits as Rust's `{:e}`.
+            // Same shortest digits as Rust's `{:e}`, but for a tie: there JS takes the even
+            // neighbour of Rust's odd last digit.
             let digits = |t: &str| -> String {
                 let m = t.split('e').next().unwrap();
                 m.chars()
@@ -876,8 +884,62 @@ fn number_to_js_string_matches_node() {
                     .trim_matches('0')
                     .to_string()
             };
-            prop_assert_eq!(digits(&s), digits(&raw));
+            let (ours, rust) = (digits(&s), digits(&raw));
+            if ours != rust {
+                let (a, b): (u64, u64) = (ours.parse().unwrap(), rust.parse().unwrap());
+                prop_assert!(
+                    ours.len() == rust.len() && a.abs_diff(b) == 1 && a % 2 == 0,
+                    "{} -> {}",
+                    raw,
+                    s
+                );
+            }
             Ok(())
         })
         .unwrap();
+}
+
+/// Scenario: a number parameter prints the same through the short-decimal fast path of
+/// `push_js_number` as through the exact `{:e}` path, on two million doubles: short
+/// decimals of every length (the fast path), their neighbours, few binary fraction bits on
+/// big integers (ties), any bit pattern, integers around 2^50.
+#[test]
+fn js_number_fast_path_matches_the_exact_path() {
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let (mut a, mut b) = (String::new(), String::new());
+    for i in 0..2_000_000u32 {
+        let r = next();
+        let v = match i % 5 {
+            0 => {
+                let k = (r % 9) as i32;
+                let m = (next() % 10u64.pow((r >> 8) as u32 % 17)) as f64;
+                m / 10f64.powi(k)
+            }
+            1 => {
+                let k = (r % 7) as i32;
+                let m = (next() % 10u64.pow((r >> 8) as u32 % 16)) as f64;
+                let x = m / 10f64.powi(k);
+                if r & 1 << 40 == 0 {
+                    f64::from_bits(x.to_bits() + 1)
+                } else {
+                    f64::from_bits(x.to_bits().saturating_sub(1))
+                }
+            }
+            2 => (next() >> 11) as f64 / 2f64.powi((r % 40) as i32),
+            3 => f64::from_bits(next()),
+            _ => (1u64 << 50) as f64 + (r % 4096) as f64 / 8.0 - 256.0,
+        };
+        let v = if r & 1 << 50 == 0 { v } else { -v };
+        a.clear();
+        b.clear();
+        json::push_js_number(&mut a, v);
+        json::push_js_number_exact(&mut b, v);
+        assert_eq!(a, b, "{v:e} ({:#x})", v.to_bits());
+    }
 }

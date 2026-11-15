@@ -15,6 +15,9 @@
 //!
 //! Self-contained (no `crate::` paths): tests and benches include it with `#[path]`.
 
+// ponytail: every rule set and locale is compiled in (~40 functions); DESIGN 2.4 wants only
+// the locales of `I18N_NEXT_LOCALES`. That filter lands with the CLDR data stage (M5, the
+// `build.rs` that selects locales), and the rule tables go through it then.
 #[rustfmt::skip]
 #[allow(
     clippy::nonminimal_bool,
@@ -66,11 +69,12 @@ pub(crate) struct Operands {
 const I_MOD: u64 = 1_000_000_000_000_000_000;
 
 impl Operands {
-    /// A whole number.
+    /// A whole number up to 2^53 (a larger count is rounded to an `f64` first, as JS holds
+    /// it, and read by [`Operands::whole_f64`]): `n` is exact, `i` is `n`.
     pub(crate) fn int(n: u64) -> Operands {
         Operands {
             n: n as f64,
-            i: n % I_MOD,
+            i: n,
             v: 0,
             w: 0,
             f: 0,
@@ -85,24 +89,18 @@ impl Operands {
     /// (`getPluralOperand` returns one) and taken modulo as that double. `2^61` is
     /// `2305843009213694000`: `i` = 305843009213694000 → 305843009213694016, so `i % 10`
     /// is 6, not the 2 of the exact value nor the 0 of the digits.
-    #[cfg(feature = "format")]
     pub(crate) fn whole_f64(x: f64) -> Operands {
-        struct Digits(u64);
-        impl std::fmt::Write for Digits {
-            fn write_str(&mut self, s: &str) -> std::fmt::Result {
-                for b in s.bytes().filter(u8::is_ascii_digit) {
-                    self.0 = (self.0 % (I_MOD / 10)) * 10 + u64::from(b - b'0');
-                }
-                Ok(())
-            }
-        }
         let x = x.abs();
-        // `{}` of a whole f64: its shortest digits padded with zeros, never an exponent.
-        let mut d = Digits(0);
-        let _ = std::fmt::Write::write_fmt(&mut d, format_args!("{x}"));
+        let last18 = match shortest_whole(x) {
+            Some((digits, zeros)) => match 10u64.checked_pow(zeros) {
+                Some(p) if zeros < 18 => (digits % (I_MOD / p)) * p,
+                _ => 0,
+            },
+            None => digits_of_huge(x),
+        };
         Operands {
             n: x,
-            i: d.0 as f64 as u64,
+            i: last18 as f64 as u64,
             ..Operands::int(0)
         }
     }
@@ -130,12 +128,94 @@ impl Operands {
     }
 }
 
-/// A count `pluralForm` reads by category: whole and not negative. Past 2^53 an `f64` keeps
-/// its own spelling (see [`Operands::whole_f64`]).
+/// The last 18 of the shortest digits of a whole `f64` from 2^126 up (a count only an
+/// `f64` reaches): `{}` spells them padded with zeros, never with an exponent.
+#[cfg(feature = "format")]
+fn digits_of_huge(x: f64) -> u64 {
+    struct Digits(u64);
+    impl std::fmt::Write for Digits {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            for b in s.bytes().filter(u8::is_ascii_digit) {
+                self.0 = (self.0 % (I_MOD / 10)) * 10 + u64::from(b - b'0');
+            }
+            Ok(())
+        }
+    }
+    let mut d = Digits(0);
+    let _ = std::fmt::Write::write_fmt(&mut d, format_args!("{x}"));
+    d.0
+}
+
+/// Without `format` a whole count past 2^53 comes from an integer (at most 2^64), never here.
+#[cfg(not(feature = "format"))]
+fn digits_of_huge(_: f64) -> u64 {
+    0
+}
+
+/// The shortest round-trip digits of a whole `f64` `x` (2^53 ≤ x < 2^126), as JS
+/// `Number::toString` and Rust `{}` choose them: `(digits, zeros)` for `digits · 10^zeros`,
+/// with no trailing zero in `digits`. Below 2^53, `x` itself; `None` from 2^126 up.
+///
+/// Integer arithmetic, no `core::fmt`: `x` is `M · 2^e` (`e ≥ 1`), every value in its
+/// rounding interval rounds to it (ties to even `M`), so the answer is the multiple of the
+/// largest power of 10 inside the interval, the closer one to `x` when there are two
+/// (ECMA-262: then the even one). Checked against `{}` (`tests/plural_props.rs`).
+pub(crate) fn shortest_whole(x: f64) -> Option<(u64, u32)> {
+    const SAFE: f64 = 9_007_199_254_740_992.0;
+    const MAX: f64 = 85_070_591_730_234_615_865_843_651_857_942_052_864.0; // 2^126
+    if x.is_nan() || x >= MAX || x.fract() != 0.0 || x < 0.0 {
+        return None;
+    }
+    if x < SAFE {
+        return Some((x as u64, 0));
+    }
+    let bits = x.to_bits();
+    let fraction = bits & ((1 << 52) - 1);
+    let e = ((bits >> 52) & 0x7ff) as u32 - 1075;
+    let v = x as u128;
+    let up = 1u128 << e;
+    // At a power of two the double below is closer: half the gap.
+    let down = if fraction == 0 { up / 2 } else { up };
+    let even = fraction & 1 == 0;
+    // Doubled bounds: `y` rounds to `x` when `2v - down ≤ 2y ≤ 2v + up` (strict unless even).
+    let (lo, hi) = (2 * v - down, 2 * v + up);
+    let inside = |y: u128| {
+        let d = 2 * y;
+        if even {
+            lo <= d && d <= hi
+        } else {
+            lo < d && d < hi
+        }
+    };
+    let (mut best, mut zeros, mut p) = (v, 0u32, 1u128);
+    loop {
+        let next = p * 10;
+        let below = v / next * next;
+        let above = below + next;
+        let pick = match (inside(below), inside(above)) {
+            (false, false) => break,
+            (true, false) => below,
+            (false, true) => above,
+            (true, true) => match (v - below).cmp(&(above - v)) {
+                std::cmp::Ordering::Less => below,
+                std::cmp::Ordering::Greater => above,
+                std::cmp::Ordering::Equal if (below / next).is_multiple_of(2) => below,
+                std::cmp::Ordering::Equal => above,
+            },
+        };
+        best = pick;
+        zeros += 1;
+        p = next;
+    }
+    u64::try_from(best / p).ok().map(|d| (d, zeros))
+}
+
+/// A count `pluralForm` reads by category: whole and not negative. Past 2^53 a count is an
+/// `f64` and keeps its own spelling (see [`Operands::whole_f64`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Whole {
+    /// 0..=2^53.
     Int(u64),
-    #[cfg(feature = "format")]
     Big(f64),
 }
 
@@ -222,7 +302,6 @@ impl Plural {
                 Some(&c) if n < PROBE as u64 => c,
                 _ => (self.select)(&Operands::int(n)),
             },
-            #[cfg(feature = "format")]
             Whole::Big(x) => (self.select)(&Operands::whole_f64(x)),
         }
     }
@@ -347,13 +426,36 @@ struct Tag<'a> {
     language: Buf<8>,
     script: Option<&'a str>,
     region: Option<&'a str>,
-    /// The first variant (aliases like `art-lojban` name one).
-    variants: [Option<&'a str>; 2],
+    /// The replacement of the first variant with a `language-variant` alias
+    /// (`aa-1996-saaho` → `ssy`), looked up as each variant is read.
+    variant_alias: Option<&'static str>,
+}
+
+/// A variant subtag: 5..8 alphanumerics, or 4 starting with a digit.
+fn variant(s: &str) -> bool {
+    alnum(s)
+        && (matches!(s.len(), 5..=8)
+            || (s.len() == 4 && s.as_bytes().first().is_some_and(u8::is_ascii_digit)))
+}
+
+/// Whether `v` repeats (ASCII case aside) one of the `-`-separated subtags of `before`.
+fn repeats(before: &str, v: &str) -> bool {
+    before.split('-').any(|p| p.eq_ignore_ascii_case(v))
+}
+
+/// Byte offset of `part` (a slice of `tag`) in `tag`.
+fn offset(tag: &str, part: &str) -> usize {
+    part.as_ptr() as usize - tag.as_ptr() as usize
 }
 
 /// `unicode_locale_id` of UTS 35 as ECMA-402 `IsStructurallyValidLanguageTag` checks it:
 /// `None` where `Intl` throws a RangeError (`en_US`, `root`, `i-klingon`, a repeated variant
-/// or singleton). Extensions are checked by shape only (singleton, then subtags of 2..8).
+/// or singleton). Extensions are checked by shape only (singleton, then subtags of 2..8),
+/// without a buffer: a tag of any length is read in place, with no allocation.
+///
+/// Known difference: ICU stops checking a `-u-` extension after a repeated key
+/// (`ru-u-rg-rg-a1` is accepted as `ru-u-rg`); this follows the grammar and rejects it
+/// (`fixtures/compat/README.md`).
 fn parse(tag: &str) -> Option<Tag<'_>> {
     let mut parts = tag.split('-').peekable();
     let language = parts.next()?;
@@ -364,10 +466,10 @@ fn parse(tag: &str) -> Option<Tag<'_>> {
         language: Buf::of(language, lower),
         script: None,
         region: None,
-        variants: [None; 2],
+        variant_alias: None,
     };
-    let mut seen_variants: [Buf<8>; 8] = [Buf::new(); 8];
-    let mut n_variants = 0;
+    // Where the variants start in `tag`: a new one is checked against those before it.
+    let mut variants_at = None;
     let mut stage = 0;
     while let Some(&s) = parts.peek() {
         if s.len() == 1 {
@@ -380,28 +482,24 @@ fn parse(tag: &str) -> Option<Tag<'_>> {
         } else if stage <= 1 && ((s.len() == 2 && alpha(s)) || (s.len() == 3 && digit(s))) {
             out.region = Some(s);
             stage = 2;
-        } else if alnum(s)
-            && (matches!(s.len(), 5..=8)
-                || (s.len() == 4 && s.as_bytes().first().is_some_and(u8::is_ascii_digit)))
-        {
-            let v = Buf::<8>::of(s, lower);
-            let known = seen_variants.get(..n_variants.min(8)).unwrap_or(&[]);
-            if known.iter().any(|k| k.as_str() == v.as_str()) {
+        } else if variant(s) {
+            let at = offset(tag, s);
+            let start = *variants_at.get_or_insert(at);
+            if repeats(tag.get(start..at).unwrap_or(""), s) {
                 return None;
             }
-            if let Some(slot) = seen_variants.get_mut(n_variants) {
-                *slot = v;
+            if out.variant_alias.is_none() {
+                let mut key = Buf::<17>::of(out.language.as_str(), lower);
+                key.push("-", lower);
+                key.push(s, lower);
+                out.variant_alias = language_alias(key.as_str(), tag);
             }
-            if let Some(slot) = out.variants.get_mut(n_variants) {
-                *slot = Some(s);
-            }
-            n_variants += 1;
             stage = 2;
         } else {
             return None;
         }
     }
-    // Extensions and private use.
+    // Extensions and private use; a singleton is a digit (0..9) or a letter (10..35).
     let mut singletons = 0u64;
     while let Some(s) = parts.next() {
         let c = *s.as_bytes().first()?;
@@ -419,13 +517,18 @@ fn parse(tag: &str) -> Option<Tag<'_>> {
             }
             return any.then_some(out);
         }
-        let bit = 1u64 << (c % 64);
+        let slot = if c.is_ascii_digit() {
+            c - b'0'
+        } else {
+            c - b'a' + 10
+        };
+        let bit = 1u64 << slot;
         if singletons & bit != 0 {
             return None;
         }
         singletons |= bit;
-        // The subtags up to the next singleton.
-        let mut ext = Vec::new();
+        // The subtags up to the next singleton, as one slice of `tag`.
+        let (mut start, mut end) = (None, 0);
         while let Some(&p) = parts.peek() {
             if p.len() == 1 {
                 break;
@@ -433,12 +536,15 @@ fn parse(tag: &str) -> Option<Tag<'_>> {
             if !(matches!(p.len(), 2..=8) && alnum(p)) {
                 return None;
             }
-            ext.push(p);
+            let at = offset(tag, p);
+            start.get_or_insert(at);
+            end = at + p.len();
             parts.next();
         }
+        let ext = start.and_then(|s| tag.get(s..end)).unwrap_or("");
         let valid = match c {
-            b'u' => unicode_extension(&ext),
-            b't' => transformed_extension(&ext),
+            b'u' => unicode_extension(ext),
+            b't' => transformed_extension(ext),
             _ => !ext.is_empty(),
         };
         if !valid {
@@ -448,11 +554,11 @@ fn parse(tag: &str) -> Option<Tag<'_>> {
     Some(out)
 }
 
-/// `unicode_locale_extensions` after `-u`: attributes (3..8), then keywords: a key
-/// (alphanumeric + letter) and its type subtags (3..8).
-fn unicode_extension(ext: &[&str]) -> bool {
+/// `unicode_locale_extensions` after `-u` (`ext`: its subtags joined by `-`): attributes
+/// (3..8), then keywords: a key (alphanumeric + letter) and its type subtags (3..8).
+fn unicode_extension(ext: &str) -> bool {
     let mut keys = false;
-    for p in ext {
+    for p in ext.split('-') {
         let b = p.as_bytes();
         if b.len() == 2 {
             if !b.get(1).is_some_and(u8::is_ascii_alphabetic) {
@@ -466,45 +572,42 @@ fn unicode_extension(ext: &[&str]) -> bool {
     !ext.is_empty()
 }
 
-/// `transformed_extensions` after `-t`: an optional language id, then fields: a key
-/// (letter + digit) and one or more values (3..8).
-fn transformed_extension(ext: &[&str]) -> bool {
-    let mut i = 0;
+/// `transformed_extensions` after `-t` (`ext`: its subtags joined by `-`): an optional
+/// language id (its variants unique, as in the tag itself), then fields: a key (letter +
+/// digit) and one or more values (3..8).
+fn transformed_extension(ext: &str) -> bool {
+    if ext.is_empty() {
+        return false;
+    }
+    let mut it = ext.split('-').peekable();
     let mut lang = false;
-    if let Some(l) = ext.first()
-        && alpha(l)
-        && matches!(l.len(), 2 | 3 | 5..=8)
+    if it
+        .next_if(|l| alpha(l) && matches!(l.len(), 2 | 3 | 5..=8))
+        .is_some()
     {
         lang = true;
-        i = 1;
-        if ext.get(i).is_some_and(|s| s.len() == 4 && alpha(s)) {
-            i += 1;
-        }
-        if ext
-            .get(i)
-            .is_some_and(|s| (s.len() == 2 && alpha(s)) || (s.len() == 3 && digit(s)))
-        {
-            i += 1;
-        }
-        while ext.get(i).is_some_and(|s| {
-            matches!(s.len(), 5..=8)
-                || (s.len() == 4 && s.as_bytes().first().is_some_and(u8::is_ascii_digit))
-        }) {
-            i += 1;
+        let _ = it.next_if(|s| s.len() == 4 && alpha(s));
+        let _ = it.next_if(|s| (s.len() == 2 && alpha(s)) || (s.len() == 3 && digit(s)));
+        let mut variants_at = None;
+        while let Some(v) = it.next_if(|s| variant(s)) {
+            let at = offset(ext, v);
+            let start = *variants_at.get_or_insert(at);
+            if repeats(ext.get(start..at).unwrap_or(""), v) {
+                return false;
+            }
         }
     }
     let mut fields = false;
-    while let Some(key) = ext.get(i) {
+    while let Some(key) = it.next() {
         let b = key.as_bytes();
         if !(b.len() == 2 && b[0].is_ascii_alphabetic() && b[1].is_ascii_digit()) {
             return false;
         }
-        i += 1;
-        let start = i;
-        while ext.get(i).is_some_and(|s| (3..=8).contains(&s.len())) {
-            i += 1;
+        let mut values = 0;
+        while it.next_if(|s| (3..=8).contains(&s.len())).is_some() {
+            values += 1;
         }
-        if i == start {
+        if values == 0 {
             return false;
         }
         fields = true;
@@ -541,14 +644,9 @@ pub(crate) fn rule_index(tag: &str) -> Option<usize> {
     });
     let mut region = t.region.map(|r| Buf::<3>::of(r, upper));
     // A `language-variant` alias first (`art-lojban`), then the language alone (`iw`).
-    let mut replacement = None;
-    for v in t.variants.iter().flatten() {
-        let mut key = Buf::<17>::of(language.as_str(), lower);
-        key.push("-", lower);
-        key.push(v, lower);
-        replacement = replacement.or_else(|| language_alias(key.as_str(), tag));
-    }
-    let replacement = replacement.or_else(|| language_alias(language.as_str(), tag));
+    let replacement = t
+        .variant_alias
+        .or_else(|| language_alias(language.as_str(), tag));
     if let Some(r) = replacement {
         let mut parts = r.split('-');
         language = Buf::of(parts.next().unwrap_or(""), lower);
@@ -634,7 +732,6 @@ impl Shape {
         };
         let by_index = || match count {
             Whole::Int(n) => usize::try_from(n).map_or(last, |n| n.min(last)),
-            #[cfg(feature = "format")]
             Whole::Big(_) => last,
         };
         let zero = matches!(count, Whole::Int(0));

@@ -32,6 +32,11 @@ fn chains_aliases_and_folding() {
 }
 
 #[test]
+fn many_holes_beside_a_huge_argument() {
+    platform::many_holes_beside_a_huge_argument();
+}
+
+#[test]
 fn dir_story() {
     platform::dir_story();
 }

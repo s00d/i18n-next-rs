@@ -242,7 +242,11 @@ mod tests {
         let x = 0x0123_4567_89ab_cdefu64;
         let w = int(&|h| h.write_u64(x));
         assert_eq!(w, (SEED ^ x).wrapping_mul(K));
-        assert_eq!(int(&|h| h.write_usize(x as usize)), w);
+        // `usize` is 32 bits on wasm32: the truncated value, widened.
+        assert_eq!(
+            int(&|h| h.write_usize(x as usize)),
+            int(&|h| h.write_u64(x as usize as u64))
+        );
         assert_eq!(int(&|h| h.write_u32(7)), (SEED ^ 7).wrapping_mul(K));
         assert_eq!(int(&|h| h.write_u8(7)), SEED.rotate_left(8) ^ 7);
         // `str`: the bytes, then the 0xff terminator.

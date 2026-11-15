@@ -173,8 +173,9 @@ Options of `@i18n-micro/utils` and the Nuxt module that core alone does not show
   other count through `f64`.
 - `tc_code("<code>", "<template>", <count>)`: the same with no iso, the code is the tag.
 - `tc_in(<ctx>, "<key>", <count>, <params>, <default>) → <result>`: `tc` on the `plural/` catalog in context
-  `<locale>|<fallback>, <page>`; `tc(key, count, default)` without params, else `tc(key, {count, ...params},
-  default)`. Rust: `view.tc` / `view.tc_with(key, count, args.or(default))`.
+  `<locale>|<fallback>, <page>`; `tc(key, count, default)` without params, else `tc(key, {...params, count},
+  default)`: the count wins over a param named `count`, and an array param is spread (its items, no
+  `length`). Rust: `view.tc` / `view.tc_with(key, count, args.or(default))`.
 - `tc_missing(<same>) → "<locale> <key> <route>; …"`: the `missingHandler` calls of that `tc`.
 - A count JS gets from `params.count` (a string, `null`, nothing) has no Rust spelling and is not recorded.
 
@@ -184,6 +185,11 @@ Options of `@i18n-micro/utils` and the Nuxt module that core alone does not show
 `pluralCategories`), `integers` (one letter per count 0..1000: `z o t f m x` for zero … other), `decimals` and
 `big` (the numbers of `decimal_list()` / `big_list()`), and `tag("<tag>") → "<resolved locale>"` (or `<none>` /
 `<invalid>`) for every alias, region, script and malformed tag tried. Rust needs no Node to read it.
+
+Known difference, pinned in `tests/plural_props.rs` (`KNOWN_DIFFERENCES`): after a repeated `-u-` key ICU stops
+checking the extension, so `tag("ru-u-rg-rg-a1") → "ru-u-rg"` although `a1` is no valid key (a key is
+alphanumeric + letter). Rust follows the BCP 47 grammar and rejects the tag (the index rule). Not copied: it is an
+ICU parser shortcut, not a rule, and a tag like that is a typo.
 
 ## Contract for Rust
 

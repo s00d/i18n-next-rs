@@ -86,6 +86,55 @@ fn rules_match_intl_for_every_locale() {
     assert!(checked > 200_000, "only {checked} numbers");
 }
 
+/// Tags ICU accepts against the BCP 47 grammar, rejected here on purpose
+/// (`fixtures/compat/README.md`): after a repeated `-u-` key ICU stops checking, so `a1`
+/// (no valid key) passes.
+const KNOWN_DIFFERENCES: &[&str] = &["ru-u-rg-rg-a1"];
+
+/// Given whole doubles from 2^53 to 2^126, when their shortest digits are found with
+/// integers ([`plural::shortest_whole`], what `Count` prints and the plural operand reads),
+/// then they are the digits `{}` prints (shortest round-trip, padded with zeros); below
+/// 2^53 the number itself, from 2^126 up `None`.
+#[test]
+fn shortest_whole_matches_display() {
+    let mut state = 0x2545_f491_4f6c_dd1du64;
+    let mut checked = 0;
+    for i in 0..400_000u32 {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let x = match i % 4 {
+            // any mantissa at any exponent of the range
+            0 | 1 => ((state >> 11) | 1 << 52) as f64 * 2f64.powi(1 + (state % 73) as i32),
+            // powers of two and their neighbours: the uneven rounding interval
+            2 => {
+                f64::from_bits((2f64.powi(53 + (state % 73) as i32)).to_bits() + (state >> 62) - 1)
+            }
+            // round decimals: many trailing zeros
+            _ => ((state >> 40) as f64) * 10f64.powi(10 + (state % 20) as i32),
+        };
+        if !(9_007_199_254_740_992.0..2f64.powi(126)).contains(&x) || x.fract() != 0.0 {
+            continue;
+        }
+        let (digits, zeros) = plural::shortest_whole(x).unwrap();
+        assert_ne!(digits % 10, 0, "{x:e}");
+        assert_eq!(
+            format!("{digits}{}", "0".repeat(zeros as usize)),
+            format!("{x}"),
+            "{x:e}"
+        );
+        checked += 1;
+    }
+    assert!(checked > 350_000, "only {checked}");
+    assert_eq!(plural::shortest_whole(12345.0), Some((12345, 0)));
+    assert_eq!(plural::shortest_whole(2f64.powi(126)), None);
+    // `u64::MAX` as JS holds it: 2^64, `18446744073709552000`
+    assert_eq!(
+        plural::shortest_whole(2f64.powi(64)),
+        Some((18446744073709552, 3))
+    );
+}
+
 /// Given the tags Intl resolved (or rejected), when Rust resolves the same tag, then it gets
 /// the rule of the locale Intl resolved to, and no rule where Intl threw or knew nothing.
 #[test]
@@ -94,6 +143,15 @@ fn tags_resolve_like_supported_locales_of() {
     for (name, tag, expected) in lines().filter(|(n, _, _)| *n == "tag") {
         let _ = name;
         tags += 1;
+        if KNOWN_DIFFERENCES.contains(&tag) {
+            // ICU accepts it, the grammar does not: no rules here (the index rule).
+            assert!(
+                !expected.starts_with('<'),
+                "{tag}: Intl agrees now ({expected})"
+            );
+            assert_eq!(plural::rule_index(tag), None, "{tag}");
+            continue;
+        }
         // `JSON.stringify` spelling: none of the tags needs an escape
         let want = if expected.starts_with('<') {
             None

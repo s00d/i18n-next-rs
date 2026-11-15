@@ -4,8 +4,8 @@
 
 #[cfg(feature = "format")]
 use crate::json::push_js_number;
-use crate::json::push_u64;
-use crate::plural::Whole;
+use crate::json::{push_u64, u64_len};
+use crate::plural::{Whole, shortest_whole};
 
 /// One parameter value, printed like JS `String(value)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,15 +42,15 @@ impl Arg<'_> {
         }
     }
 
-    /// Bytes [`Arg::write`] appends at most: exact for text, an upper bound otherwise.
-    pub(crate) fn max_len(&self) -> usize {
-        match self {
+    /// Bytes [`Arg::write`] appends: exact, an upper bound for a float.
+    pub(crate) fn len(&self) -> usize {
+        match *self {
             Arg::Str(s) => s.len(),
-            // `-9223372036854775808`; `-2.2250738585072014e-308`
-            Arg::Int(_) => 24,
+            Arg::Int(n) => usize::from(n < 0) + u64_len(n.unsigned_abs()),
             #[cfg(feature = "format")]
-            Arg::Float(_) => 24,
-            Arg::Bool(_) | Arg::Null => 5,
+            Arg::Float(_) => MAX_SCALAR_LEN,
+            Arg::Bool(true) | Arg::Null => 4,
+            Arg::Bool(false) => 5,
         }
     }
 }
@@ -98,11 +98,20 @@ impl From<bool> for Arg<'_> {
     }
 }
 
+/// The longest spelling of a number, boolean or `null`, a count included: an `f64`'s,
+/// `-0.0000012345678901234567` (17 digits after `0.00000`), one more than
+/// `-2.2250738585072014e-308`.
+pub(crate) const MAX_SCALAR_LEN: usize = 25;
+
+/// 2^53: integers up to it are exact in an `f64`, as JS holds every number.
+const SAFE: u64 = 1 << 53;
+
 /// The count of [`I18n::tc`](crate::I18n::tc): an integer, or (feature `format`) an `f64`.
 ///
 /// It picks the plural form and fills `{count}`, printed as JS prints the number. A
-/// negative, fractional or non-finite count takes the last form, as in JS. Integers are
-/// exact: a `u64` past 2^53 is read as written, where JS would round it first.
+/// negative, fractional or non-finite count takes the last form, as in JS. An integer past
+/// ±2^53 is what JS would hold: the nearest `f64` (`2^53 + 1` is `9007199254740992`,
+/// `u64::MAX` is `18446744073709552000`), for the form and for `{count}` alike.
 ///
 /// ```
 /// use i18n_next::Count;
@@ -114,8 +123,12 @@ pub struct Count(CountRepr);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CountRepr {
+    /// 0..=2^53.
     Whole(u64),
+    /// -2^53..0.
     Negative(i64),
+    /// An integer past ±2^53, rounded to the nearest `f64` (no `format` feature needed).
+    Big(f64),
     #[cfg(feature = "format")]
     Float(f64),
 }
@@ -126,11 +139,13 @@ impl Count {
         match self.0 {
             CountRepr::Whole(n) => Some(Whole::Int(n)),
             CountRepr::Negative(_) => None,
+            CountRepr::Big(x) if x > 0.0 => Some(Whole::Big(x)),
+            CountRepr::Big(_) => None,
             // `-0.0 >= 0.0`: JS `Number.isInteger(-0) && !(-0 < 0)`, the zero form.
             #[cfg(feature = "format")]
             CountRepr::Float(x) if x >= 0.0 && x.fract() == 0.0 => {
-                // Below 2^53 every whole f64 is exact and spelled with its own digits.
-                if x < 9_007_199_254_740_992.0 {
+                // Up to 2^53 every whole f64 is exact and spelled with its own digits.
+                if x <= SAFE as f64 {
                     Some(Whole::Int(x as u64))
                 } else {
                     Some(Whole::Big(x))
@@ -149,18 +164,40 @@ impl Count {
                 out.push('-');
                 push_u64(out, n.unsigned_abs());
             }
+            CountRepr::Big(x) => {
+                if x < 0.0 {
+                    out.push('-');
+                }
+                // Past 2^53 and at most 2^64: never `None`, never an exponent.
+                let (digits, zeros) = shortest_whole(x.abs()).unwrap_or((0, 0));
+                push_u64(out, digits);
+                out.extend(std::iter::repeat_n('0', zeros as usize));
+            }
             #[cfg(feature = "format")]
             CountRepr::Float(v) => push_js_number(out, v),
+        }
+    }
+
+    /// Bytes [`Count::write`] appends: exact, an upper bound for a float.
+    pub(crate) fn len(self) -> usize {
+        match self.0 {
+            CountRepr::Whole(n) => u64_len(n),
+            CountRepr::Negative(n) => 1 + u64_len(n.unsigned_abs()),
+            // `-18446744073709552000`
+            CountRepr::Big(_) => 21,
+            #[cfg(feature = "format")]
+            CountRepr::Float(_) => MAX_SCALAR_LEN,
         }
     }
 }
 
 impl From<i64> for Count {
     fn from(n: i64) -> Self {
-        Count(match u64::try_from(n) {
-            Ok(n) => CountRepr::Whole(n),
-            Err(_) => CountRepr::Negative(n),
-        })
+        match u64::try_from(n) {
+            Ok(n) => Count::from(n),
+            Err(_) if n.unsigned_abs() <= SAFE => Count(CountRepr::Negative(n)),
+            Err(_) => Count(CountRepr::Big(n as f64)),
+        }
     }
 }
 
@@ -172,7 +209,11 @@ impl From<i32> for Count {
 
 impl From<u64> for Count {
     fn from(n: u64) -> Self {
-        Count(CountRepr::Whole(n))
+        Count(if n <= SAFE {
+            CountRepr::Whole(n)
+        } else {
+            CountRepr::Big(n as f64)
+        })
     }
 }
 
@@ -184,7 +225,7 @@ impl From<u32> for Count {
 
 impl From<usize> for Count {
     fn from(n: usize) -> Self {
-        Count(CountRepr::Whole(n as u64))
+        Count::from(n as u64)
     }
 }
 
@@ -349,6 +390,19 @@ impl<'a> Args<'a> {
     /// The value of placeholder `name`: the newest named match, a list item for a canonical
     /// index (`0`, `12`, never `01`), or the list length for `length`.
     pub(crate) fn find(&self, name: &str) -> Option<Arg<'a>> {
+        self.lookup(name, true)
+    }
+
+    /// What JS `{ ...args }` holds under `name`: [`Args::find`] without `length` (a spread
+    /// array has none).
+    pub(crate) fn spread(&self, name: &str) -> Option<Arg<'a>> {
+        self.lookup(name, false)
+    }
+
+    // One function for both: as two (`spread` + a `length` fallback) `t_with` with one
+    // argument took +20 ns.
+    #[inline]
+    fn lookup(&self, name: &str, length: bool) -> Option<Arg<'a>> {
         // Only `list` makes index slots.
         let index = self.list_len.and_then(|_| canonical_index(name));
         for (slot, value) in self.slots().iter().rev() {
@@ -365,18 +419,27 @@ impl<'a> Args<'a> {
             }
         }
         match self.list_len {
-            Some(n) if name == "length" => Some(Arg::Int(n as i64)),
+            Some(n) if length && name == "length" => Some(Arg::Int(n as i64)),
             _ => None,
         }
     }
 
-    /// Bytes the parameters add at most when every one is written once.
+    /// At least the longest [`Arg::len`] of the parameters, `{length}` of a list included:
+    /// exact for text, [`MAX_SCALAR_LEN`] for anything else (no digit counting: it only
+    /// sizes the cheap bound of an interpolation).
     pub(crate) fn max_value_len(&self) -> usize {
+        let list = if self.list_len.is_some() {
+            MAX_SCALAR_LEN
+        } else {
+            0
+        };
         self.slots()
             .iter()
-            .map(|(_, v)| v.max_len())
-            .max()
-            .unwrap_or(0)
+            .map(|(_, v)| match v {
+                Arg::Str(s) => s.len(),
+                _ => MAX_SCALAR_LEN,
+            })
+            .fold(list, usize::max)
     }
 }
 

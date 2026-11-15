@@ -25,8 +25,10 @@
 //! changes if the root layer were read before the page layer, and lookups whose answer
 //! changes if merging an object into an object replaced it. The run fails if either stays
 //! 0. A third counts `tc` answers where the category rule (unmarked or `=0 `) picked another
-//! form than the index rule would. The model's `pluralForm` is its own: only the category
-//! of a count comes from the generated rules (checked against `Intl` by `plural_props`).
+//! form than the index rule would. The model's `pluralForm` is transcribed from the JS
+//! (`createLocalePlural`, `unmarkedIndex`, `pluralIndex`, `markedIndex`), not from the
+//! crate: only the category of a count comes from the generated rules (checked against
+//! `Intl` by `plural_props`).
 //! At the end of a session: a value and a view handed out before it are unchanged /
 //! live, versions only grew, and a fresh catalog built from the model's chunks through
 //! `messages` answers every locale × page × key like the session's catalog.
@@ -120,6 +122,8 @@ const TEXTS: &[&str] = &[
     "|",
     "=0 lone {count}",
     "{x} | {count} {x} | {count}",
+    // the category shape but for a `{` in the zero form: the index rule
+    "z {x} | {count} o | {count} f | {count} m",
 ];
 
 /// `tc` counts: the `Count`, its JS spelling, and the whole count `pluralForm` reads.
@@ -889,7 +893,7 @@ impl Model {
         file.unwrap_or(code).to_owned()
     }
 
-    /// `tc` / `tc_with` (JS `tc(key, { count, ...params }, default)` with `defaultPlural`):
+    /// `tc` / `tc_with` (JS `tc(key, { ...params, count }, default)` with `defaultPlural`):
     /// the text, and the `missing` record it causes.
     fn tc(
         &self,
@@ -900,12 +904,11 @@ impl Model {
         args: Option<ArgsKind>,
     ) -> (String, Option<String>) {
         let (_, spelled, whole) = count;
-        let param = |name: &str| {
-            if name == "count" {
-                Some(spelled.to_owned())
-            } else {
-                args.and_then(|k| k.param(name))
-            }
+        // `{ ...params, count }`: the count wins, a spread list keeps no `length`
+        let param = |name: &str| match name {
+            "count" => Some(spelled.to_owned()),
+            "length" => None,
+            _ => args.and_then(|k| k.param(name)),
         };
         // `defaultValue ? interpolate(defaultValue, values) : defaultValue ?? key`
         let fallback = || match args {
@@ -1010,76 +1013,130 @@ impl Model {
     }
 }
 
-/// What `localePlural` of `text.ts` computes for a tag, from the category of each count:
-/// `(small, named, all)`, `None` for a tag with no rules.
-fn facts(tag: &str) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-    let (select, mask) = plural::rule(plural::rule_index(tag)?);
-    let small: Vec<u8> = (0..200)
-        .map(|n| select(&plural::Operands::int(n)) as u8)
-        .collect();
-    let named = (1..6u8).filter(|c| small.contains(c)).collect();
-    let all = (0..6u8).filter(|c| mask & (1 << c) != 0).collect();
-    Some((small, named, all))
+/// `createLocalePlural` (`R` in the `text` chunk of `@i18n-micro/core` 2.1.0 `dist/`),
+/// transcribed: `null` when `Intl` does not support the tag, else
+/// `{ small, named, all, unmarked, shared }`. Categories are numbers in the order of
+/// `CATEGORY_ORDER` (`zero` 0 … `other` 5); `rules.select` is the generated rule (checked
+/// against `Intl` by `plural_props`), the only piece taken from the crate.
+struct LocalePlural {
+    select: fn(&plural::Operands) -> plural::Category,
+    /// `Array.from({ length: 200 }, (_, n) => rules.select(n))`
+    small: Vec<u8>,
+    /// `order(small).filter((c) => c !== 'zero')`
+    named: Vec<u8>,
+    /// `order(rules.resolvedOptions().pluralCategories)`
+    all: Vec<u8>,
+    /// `named.length >= 3`
+    unmarked: bool,
+    /// `named.map((c) => small.indexOf(c) !== small.lastIndexOf(c))`
+    shared: Vec<bool>,
 }
 
-/// `pluralForm(text, count, tag)`, written out from `text.ts`; `whole` is the count when it
-/// is a whole number ≥ 0 (else the last form).
+fn create_locale_plural(tag: &str) -> Option<LocalePlural> {
+    let (select, mask) = plural::rule(plural::rule_index(tag)?);
+    let small: Vec<u8> = (0..200u64)
+        .map(|n| select(&plural::Operands::int(n)) as u8)
+        .collect();
+    // `order(list)`: CATEGORY_ORDER filtered by the set of `list`
+    let named: Vec<u8> = (0..6u8).filter(|c| small.contains(c) && *c != 0).collect();
+    let all = (0..6u8).filter(|c| mask & (1 << c) != 0).collect();
+    let index_of = |c: u8| small.iter().position(|&x| x == c);
+    let last_index_of = |c: u8| small.iter().rposition(|&x| x == c);
+    let shared = named
+        .iter()
+        .map(|&c| index_of(c) != last_index_of(c))
+        .collect();
+    Some(LocalePlural {
+        select,
+        unmarked: named.len() >= 3,
+        small,
+        named,
+        all,
+        shared,
+    })
+}
+
+/// `categoryOf` (`B`): `small[n] ?? rules.select(n)`.
+fn category_of(p: &LocalePlural, n: u64) -> u8 {
+    match p.small.get(n as usize) {
+        Some(&c) => c,
+        None => (p.select)(&plural::Operands::int(n)) as u8,
+    }
+}
+
+/// `unmarkedIndex` (`V`): -1 when the forms do not have the category shape.
+fn unmarked_index(forms: &[&str], t: u64, p: &LocalePlural) -> i64 {
+    if !p.unmarked
+        || forms.len() != p.named.len() + 1
+        || forms[0].contains('{')
+        || p.shared
+            .iter()
+            .enumerate()
+            .any(|(n, &s)| s && !forms[n + 1].contains("{count}"))
+    {
+        return -1;
+    }
+    if t == 0 {
+        return 0;
+    }
+    match p.named.iter().position(|&c| c == category_of(p, t)) {
+        None => forms.len() as i64 - 1,
+        Some(o) => o as i64 + 1,
+    }
+}
+
+/// `pluralIndex` (`H`); `t` is `None` when `!Number.isInteger(t) || t < 0`.
+fn plural_index(forms: &[&str], t: Option<u64>, tag: &str) -> usize {
+    let r = forms.len() - 1;
+    let Some(t) = t else {
+        return r;
+    };
+    let a = match create_locale_plural(tag) {
+        Some(i) => unmarked_index(forms, t, &i),
+        None => -1,
+    };
+    if a == -1 {
+        (t as usize).min(r)
+    } else {
+        a as usize
+    }
+}
+
+/// `markedIndex` (`U`), for a text that starts with `=0 `.
+fn marked_index(forms: &[&str], t: Option<u64>, tag: &str) -> usize {
+    let r = forms.len() - 1;
+    let Some(t) = t else {
+        return r;
+    };
+    if t == 0 {
+        return 0;
+    }
+    let Some(i) = create_locale_plural(tag) else {
+        return (t as usize).min(r);
+    };
+    let list = if r > i.named.len() { &i.all } else { &i.named };
+    match list.iter().position(|&c| c == category_of(&i, t)) {
+        None => r,
+        Some(a) => (a + 1).min(r),
+    }
+}
+
+/// `pluralForm(text, count, locale)` (`W`): `whole` is the count when it is a whole number
+/// ≥ 0. Counts a category rule answers differently from the index rule.
 fn plural_form(text: &str, whole: Option<u64>, tag: &str) -> String {
     let marked = text.starts_with("=0 ");
-    let body = if marked { &text[3..] } else { text };
-    let forms: Vec<&str> = body.split('|').collect();
-    let last = forms.len() - 1;
-    let facts = facts(tag);
-    let category = |n: u64| -> u8 {
-        let (small, _, _) = facts.as_ref().unwrap();
-        match small.get(n as usize) {
-            Some(&c) => c,
-            None => {
-                let (select, _) = plural::rule(plural::rule_index(tag).unwrap());
-                select(&plural::Operands::int(n)) as u8
-            }
-        }
+    let forms: Vec<&str> = (if marked { &text[3..] } else { text })
+        .split('|')
+        .collect();
+    let index = if marked {
+        marked_index(&forms, whole, tag)
+    } else {
+        plural_index(&forms, whole, tag)
     };
-    let by_index = |n: u64| (n as usize).min(last);
-    let index = match whole {
-        None => last,
-        Some(n) if marked => match &facts {
-            _ if n == 0 => 0,
-            None => by_index(n),
-            Some((_, named, all)) => {
-                let cats = if last > named.len() { all } else { named };
-                match cats.iter().position(|&c| c == category(n)) {
-                    None => last,
-                    Some(i) => (i + 1).min(last),
-                }
-            }
-        },
-        Some(n) => {
-            let unmarked = facts.as_ref().and_then(|(small, named, _)| {
-                let shared = |c: u8| small.iter().filter(|&&x| x == c).count() > 1;
-                let fits = named.len() >= 3
-                    && forms.len() == named.len() + 1
-                    && !forms[0].contains('{')
-                    && named
-                        .iter()
-                        .enumerate()
-                        .all(|(i, &c)| !shared(c) || forms[i + 1].contains("{count}"));
-                fits.then(|| {
-                    if n == 0 {
-                        return 0;
-                    }
-                    named
-                        .iter()
-                        .position(|&c| c == category(n))
-                        .map_or(last, |i| i + 1)
-                })
-            });
-            unmarked.unwrap_or_else(|| by_index(n))
-        }
-    };
-    if whole.is_some_and(|n| index != by_index(n)) {
+    if whole.is_some_and(|n| index != (n as usize).min(forms.len() - 1)) {
         CATEGORY_SEEN.fetch_add(1, Ordering::Relaxed);
     }
+    // `.trim()`
     forms[index].trim_matches(js_space).to_owned()
 }
 

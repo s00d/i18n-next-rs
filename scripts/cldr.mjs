@@ -269,6 +269,16 @@ for (const t of [
   'jw', 'tl-PH', 'in', 'ji', 'iw', 'hy-arevmda', 'zh-hakka', 'zh-guoyu', 'zh-yue', 'art-lojban', 'aa-saaho', 'cel-gaulish',
   'en-ab-cd', 'en-u-nu', 'de-DE-u-co-phonebk', 'de-CH-1901', 'sl-rozaj-biske-1994', 'ca-ES-valencia', 'en-Qaai', 'ja-JP-u-ca-japanese',
   'th-TH-u-nu-thai', 'ü', 'en-ü', 'ru-RU', 'ru-UA', 'uk', 'pl-PL', 'he-IL', 'ar-EG', 'cy-GB', 'ga-IE', 'br-FR', 'mt-MT', 'lv-LV',
+  // a variant alias after other variants; a repeat past the 8th variant or in other case; repeats inside `-t-`
+  'aa-1996-abcde-saaho', 'hy-1996-abcde-arevmda', 'aa-saaho-1996', 'aa-SAAHO', 'art-1996-lojban',
+  'en-a1234-b1234-c1234-d1234-e1234-f1234-g1234-h1234-i1234-a1234',
+  'en-a1234-b1234-c1234-d1234-e1234-f1234-g1234-h1234-I1234-i1234', 'en-1996-abcde-ABCDE',
+  'en-t-zh-1996-1996', 'en-t-zh-1996-1996a', 'en-t-zh-abcde-ABCDE', 'en-t-zh-1996-1996-h0-hybrid', 'en-t-zh-1996-h0-hybrid',
+  // singletons: a digit and the letter 36 code points later are different (`6` / `v`, `0` / `p`)
+  'en-v-aa-6-bb', 'en-6-aa-v-bb', 'en-0-aa-p-bb', 'en-9-aa-y-bb', 'en-Latn-z-Bd-v-0Ad-6-50x6324', 'ru-p-5656-nu-ddfd-0-mkhduq',
+  'en-6-aa-6-bb', 'en-6-aa-x-6', 'ru-u-nu-latn', 'ru-t-en-h0-hybrid',
+  // known difference (fixtures/compat/README.md): ICU accepts this after the repeated key
+  'ru-u-rg-rg-a1',
 ]) tags.add(t)
 for (const t of [...tags].sort(utf8)) {
   const r = intl(t)

@@ -201,6 +201,116 @@ fn hot_path_allocations() {
     assert_eq!(ru.tc("apples", 2f64.powi(61)), "2305843009213694000 яблок");
     assert_eq!(en.tc("apples", 21), "21 apples");
 
+    // case: a view in a tag with extensions, resolved on every call (not a known locale) →
+    // still 1 block: the extensions are checked in place, no buffer.
+    for tag in [
+        "ru-u-nu-latn",
+        "ru-t-en-h0-hybrid",
+        "ru-x-a-b-c-d-e-f-g-h-i",
+    ] {
+        let view = ru.with_locale(tag);
+        let n = blocks(|| {
+            std::hint::black_box(view.tc("apples", 21));
+        });
+        assert_eq!(n, 1, "view {tag}: {n} blocks");
+    }
+
+    // case: beside a long argument the result is reserved at its exact length (dhat bytes =
+    // output bytes): 11 holes beside an unused 1 MiB argument once reserved 11.5 MB. Small
+    // values take the cheap bound (holes × longest value): at most 256 bytes over.
+    let holes = I18n::builder()
+        .locale("ru")
+        .messages(
+            "ru",
+            None,
+            r#"{"k": "{a}{a}{a}{a}{a}{a}{a}{a}{a}{a}{a}", "p": "x | {a}{a}{a}{a}{a}{a}{a}{a}{a}{a}{a} {count}",
+                "one": "  {a} {a}  ", "f": "{f}"}"#,
+        )
+        .missing(|_, _, _| {})
+        .build()
+        .unwrap();
+    let huge = "y".repeat(1 << 20);
+    let args = Args::new()
+        .str("big", &huge)
+        .str("a", "ab")
+        .int("n", -12345);
+    let calls: [(&str, &dyn Fn() -> String, &str); 6] = [
+        (
+            "t_with",
+            &|| holes.t_with("k", &args),
+            "ababababababababababab",
+        ),
+        (
+            "tc_with form",
+            &|| holes.tc_with("p", 5, &args),
+            "ababababababababababab 5",
+        ),
+        (
+            "tc_with one form",
+            &|| holes.tc_with("one", 5, &args),
+            "ab ab",
+        ),
+        (
+            "default",
+            &|| {
+                holes.t_with(
+                    "nope",
+                    &args.clone().or("{a}{a}{a}{a}{a}{a}{a}{a}{a}{a}{a}{n}"),
+                )
+            },
+            "ababababababababababab-12345",
+        ),
+        (
+            "tc default",
+            &|| holes.tc_with("nope", 7, &args.clone().or("{count}{a}{a}{a}")),
+            "7ababab",
+        ),
+        (
+            "float",
+            &|| holes.t_with("f", &Args::new().float("f", -1.2345678901234567e-6)),
+            "-0.0000012345678901234567",
+        ),
+    ];
+    for (what, f, want) in calls {
+        let before = dhat::HeapStats::get();
+        let out = std::hint::black_box(f());
+        let after = dhat::HeapStats::get();
+        assert_eq!(out, want, "{what}");
+        let (n, bytes) = (
+            after.total_blocks - before.total_blocks,
+            after.total_bytes - before.total_bytes,
+        );
+        // `args.clone()` (no heap: 3 inline args) and the result
+        assert_eq!(n, 1, "{what}: {n} blocks");
+        let len = out.len() as u64;
+        if what == "float" {
+            assert!(
+                bytes >= len && bytes <= len + 256,
+                "{what}: {bytes} bytes for {len}"
+            );
+        } else {
+            assert_eq!(bytes, len, "{what}: {bytes} bytes reserved for {len}");
+        }
+    }
+
+    // case: a message of a million empty forms (`"|"` × 10^6) keeps its forms as ranges of
+    // the one text: 12 bytes a form plus the text, not a string each (49× the input before).
+    let pipes = format!("{{\"p\": \"{}\"}}", "|".repeat(1_000_000));
+    let base = dhat::HeapStats::get().curr_bytes;
+    let many = I18n::builder()
+        .locale("en")
+        .messages("en", None, &pipes)
+        .build()
+        .unwrap();
+    let grown = dhat::HeapStats::get().curr_bytes - base;
+    assert!(
+        grown < 14 * pipes.len(),
+        "{grown} bytes held for a {} byte message",
+        pipes.len()
+    );
+    assert_eq!(many.tc("p", 999_999), "");
+    drop(many);
+
     // case: a dropped instance leaves no snapshot behind in thread caches. Two live
     // threads cache a big catalog, every handle is dropped, then each thread reads another
     // instance → live bytes fall back near the baseline (the reads purge the dead slots;

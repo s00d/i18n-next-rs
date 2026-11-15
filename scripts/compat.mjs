@@ -262,6 +262,24 @@ for (const cp of [...JS_SPACE, 0x180e, 0x0085, 0x200b]) {
   INTERP.push([`{a${c}b}`, { [`a${c}b`]: 'X' }])
   INTERP.push([`{${c}}`, { [c]: 'X' }])
 }
+// Numbers as params, printed as `String(n)`: short decimals (the fast path of the Rust
+// printer: at most 6 fraction digits, under 2^50) and their edges, then a seeded spread.
+const NUMBERS = [
+  0.1, 0.25, 19.99, 1234.5, 0.000001, 0.0000015, 5e-7, 0.123456, 0.1234567, 1.000001, 99999.999999, 2 ** 50 - 0.5,
+  2 ** 50, 2 ** 50 + 1, 2 ** 52 + 0.5, 2 ** 53 - 1, 1e15 + 0.125, 1e15 + 0.3, 123456789.123, 0.3 - 0.1, 1 / 3, 2 / 3,
+  -0.1, -19.99, -1e-6, 4.35, 0.07, 1.005, 8.675309, 1e21 - 65536,
+]
+let numberSeed = 7
+const numberRnd = () => {
+  numberSeed = (Math.imul(numberSeed, 1103515245) + 12345) >>> 0
+  return numberSeed / 4294967296
+}
+for (let i = 0; i < 120; i++) {
+  const k = Math.floor(numberRnd() * 8)
+  const m = Math.floor(numberRnd() * 10 ** Math.floor(numberRnd() * 16))
+  NUMBERS.push((numberRnd() < 0.2 ? -1 : 1) * (m / 10 ** k))
+}
+for (const n of NUMBERS) INTERP.push(['{n}', { n }])
 const interpLines = INTERP.map(([tpl, params]) => [`interpolate(${s(tpl)}, ${lit(params)})`, enc(interpolate(tpl, params))])
 
 // t(key, params[, default]) through the instance: lookup, then interpolation of string values only
@@ -414,6 +432,8 @@ const GENERIC_TEMPLATES = [
   '=0 none | f1 | f2 | f3 | f4 | f5 | f6', '=0none | x', ' =0 none | x', '=0 ', '=0 |a', '=0  two spaces | x', '',
   'zero | {count} one | {count} few | {count} many', 'zero | {count} one | {count} other',
   'zero | {count} zero | {count} one | {count} two | {count} few | {count} many | {count} other',
+  // JS `trim` drops U+FEFF but keeps U+0085 (no JS whitespace)
+  '\ufeff a \ufeff|\u0085 b \u0085', '\ufeff{count}\u0085', '\u0085{count}\ufeff',
 ]
 const PLURAL_TAGS = [
   'en', 'ru', 'uk', 'pl', 'ar', 'fr', 'lv', 'ja', 'he', 'cy', 'ga', 'sl', 'br', 'mt', 'uk-UA', 'xx', 'en_US', 'de-AT', 'pt-PT',
@@ -424,6 +444,8 @@ const COUNTS = []
 for (let n = 0; n <= 25; n++) COUNTS.push(n)
 for (let n = 100; n <= 112; n++) COUNTS.push(n)
 COUNTS.push(199, 200, 201, 1000, 1000000, 1e18, 1e21, 2 ** 61, 1.5, -1, -0, Number.NaN, Number.POSITIVE_INFINITY, Number('x'))
+// Integers past 2^53 as JS holds them (Rust also runs them as u64 / i64 counts)
+COUNTS.push(2 ** 53 + 2, 2 ** 63, 2 ** 64, -(2 ** 60))
 const pluralLines = []
 const runTc = (code, iso, template, count) => new Single(code, iso, template).tc('k', count)
 for (const tag of PLURAL_TAGS) {
@@ -461,15 +483,20 @@ class Catalog extends BaseI18n {
 const catalog = new Catalog()
 const PLURAL_KEYS = [
   'apples', 'car', 'marked', 'greet', 'plain', 'spaced', 'zero_marker', 'pipe', 'empty', 'num', 'neg', 'big', 'yes', 'no', 'tree',
-  'list', 'list.0', 'nil', 'en_only', 'page_only', 'nope', '',
+  'list', 'list.0', 'nil', 'en_only', 'page_only', 'listy', 'nope', '',
 ]
 const CATALOG_CASES = []
-for (const [locale, fallback, page] of [['en', 'en', 'index'], ['ru', 'en', 'index'], ['en', 'en', 'about'], ['xx', 'en', 'index']]) {
+// `fr` has no messages: the fallback's text, by the rules of `fr`
+for (const [locale, fallback, page] of [['en', 'en', 'index'], ['ru', 'en', 'index'], ['en', 'en', 'about'], ['xx', 'en', 'index'], ['fr', 'en', 'index']]) {
   for (const key of PLURAL_KEYS) {
     for (const count of [0, 1, 2, 5, 21, 1.5, -1]) CATALOG_CASES.push([locale, fallback, page, key, count, undefined, undefined])
   }
-  for (const key of ['greet', 'plain', 'nope', 'yes', 'tree', 'empty', 'apples']) {
+  for (const key of ['greet', 'plain', 'nope', 'yes', 'tree', 'empty', 'apples', 'listy']) {
     CATALOG_CASES.push([locale, fallback, page, key, 3, { name: 'Ann' }, undefined])
+    // a param named `count` loses to the count; an array is spread: items, no `length`
+    CATALOG_CASES.push([locale, fallback, page, key, 3, { count: 9, name: 'Ann' }, undefined])
+    CATALOG_CASES.push([locale, fallback, page, key, 1, ['A', 'B'], undefined])
+    CATALOG_CASES.push([locale, fallback, page, key, 2, ['A', 'B'], '{0} {1} {length} {count}'])
     CATALOG_CASES.push([locale, fallback, page, key, 3, { name: 'Ann' }, 'Default {name} {count}'])
     CATALOG_CASES.push([locale, fallback, page, key, 3, undefined, 'Default {count}'])
     CATALOG_CASES.push([locale, fallback, page, key, 3, undefined, ''])
@@ -479,7 +506,7 @@ for (const [locale, fallback, page] of [['en', 'en', 'index'], ['ru', 'en', 'ind
 for (const [locale, fallback, page, key, count, params, def] of CATALOG_CASES) {
   catalog.ctx = [locale, fallback, page]
   catalog.missed = []
-  const arg = params === undefined ? count : { count, ...params }
+  const arg = params === undefined ? count : { ...params, count }
   const r = def === undefined ? catalog.tc(key, arg) : catalog.tc(key, arg, def)
   const call = `${ctx(locale, fallback, page)}, ${s(key)}, ${lit(count)}, ${lit(params)}, ${lit(def)}`
   pluralLines.push([`tc_in(${call})`, enc(r)])

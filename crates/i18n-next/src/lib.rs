@@ -23,6 +23,9 @@ mod scope;
 mod source;
 mod text;
 mod trace;
+#[cfg(feature = "tz")]
+#[allow(dead_code, reason = "filled in by stage M6")]
+mod tz;
 #[cfg(all(
     feature = "watch",
     not(all(target_arch = "wasm32", target_os = "unknown"))

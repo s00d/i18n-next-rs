@@ -394,7 +394,9 @@ function parseCommands(src) {
       .map((p) => {
         const [name, ...type] = p.split(':')
         const rust = name.replace(/^mut\s+/, '').trim()
-        return { name: rust, js: snake ? rust : camel(rust), type: type.join(':').trim() }
+        // Tauri converts with heck, which drops leading underscores: `_unused_arg` -> `unusedArg` / `unused_arg`.
+        const bare = rust.replace(/^_+/, '')
+        return { name: rust, js: snake ? bare : camel(bare), type: type.join(':').trim() }
       })
       // Injected by Tauri, not passed from JS (a `Channel<T>` is: the JS side passes the Channel object).
       .filter((p) => !/^(?:[\w:]+::)?(AppHandle|State|Window|WebviewWindow|Webview|Request)\b/.test(p.type))

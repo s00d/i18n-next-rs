@@ -7,9 +7,12 @@
 //! also building with `--features empty` (no call into i18n-next).
 #![forbid(unsafe_code)]
 
-use std::hint::black_box;
+// The `empty` build links i18n-next without calling it (nothing of it is kept), so the
+// dependency counts as used and the build has no warnings.
+#[cfg(feature = "empty")]
+use i18n_next as _;
 
 fn main() {
     #[cfg(not(feature = "empty"))]
-    black_box(i18n_next::version().len());
+    std::hint::black_box(i18n_next::version().len());
 }

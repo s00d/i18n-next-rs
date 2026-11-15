@@ -103,3 +103,22 @@ fn versions_are_in_sync() {
         "package.json version differs from {version}: {line}"
     );
 }
+
+/// Each crate ships plain copies of the root LICENSE and CHANGELOG.md, not symlinks: a
+/// `core.symlinks=false` checkout (the Windows default) would package the link text.
+/// The release flow (`.versionrc.json` postchangelog) refreshes the CHANGELOG copies.
+#[test]
+fn license_and_changelog_copies_match_the_root() {
+    for file in ["LICENSE", "CHANGELOG.md"] {
+        let root = fs::read(workspace().join(file)).unwrap();
+        for krate in ["i18n-next", "tauri-plugin-i18n-next"] {
+            let path = workspace().join("crates").join(krate).join(file);
+            let copy = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert!(
+                copy == root,
+                "{} differs from the root {file}: copy the root file over it",
+                path.display()
+            );
+        }
+    }
+}

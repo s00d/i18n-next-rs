@@ -266,6 +266,20 @@ jobs:
             cargo bench -p i18n-next --locked --bench instructions
           fi
 
+  # benches/compare (rust-i18n, fluent, ICU4X; dev-dependencies of that crate only): build
+  # and one pass of every bench (`--test`), no timings or thresholds. The numbers come from
+  # a quiet machine through scripts/bench-table.mjs (DESIGN 7.7); fmt and clippy of the
+  # crate run in the `test` job with the rest of the workspace.
+  compare:
+    name: benches/compare smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench -p compare --locked -- --test
+
   # guest-js (scripts live in crates/tauri-plugin-i18n-next/package.json).
   node:
     name: guest-js

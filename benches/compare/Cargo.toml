@@ -1,6 +1,6 @@
 [package]
 name = "compare"
-description = "Benchmarks of i18n-next against rust-i18n, fluent-bundle and ICU4X (M10)"
+description = "Benchmarks of i18n-next against rust-i18n, fluent-bundle and ICU4X (M10, DESIGN 7.7)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,25 @@ publish = false
 [lints]
 workspace = true
 
-# Empty until M10 (DESIGN 7.7): the comparison libraries come in as dependencies
-# of this crate only, never of i18n-next.
-[dependencies]
+# The comparison libraries are dependencies of this crate only, never of i18n-next (the
+# deps job checks i18n-next alone, DESIGN 2.3). All of them serve the benches; the lib only
+# builds the catalog sources.
+[dev-dependencies]
+i18n-next = { path = "../../crates/i18n-next" }
+rust-i18n = "4.2"
+fluent-bundle = "0.16"
+unic-langid = { version = "0.9", features = ["macros"] }
+icu = "2.4"
+# `Decimal::try_from_f64`: the number rows give ICU4X the same f64 as i18n-next
+fixed_decimal = { version = "0.7", features = ["ryu"] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+dhat = "0.3"
+
+[[bench]]
+name = "compare"
+harness = false
+
+[[bench]]
+name = "memory"
+harness = false
+

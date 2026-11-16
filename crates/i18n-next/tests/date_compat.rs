@@ -3,8 +3,9 @@
 //! (`tests/wasm.rs`). `date-props.md` is the property run: 20 000 seeded random instants ×
 //! modern locales × supported options and zones, recorded once in Node.
 
-// zones and CLDR data: features `format` and `tz` (defaults)
-#![cfg(all(feature = "format", feature = "tz"))]
+// zones and CLDR data: features `format` and `tz` (defaults). Native only: the browser runs
+// the goldens in tests/wasm.rs, and under wasmtime (`--dir=.`) no zoneinfo is reachable.
+#![cfg(all(feature = "format", feature = "tz", not(target_arch = "wasm32")))]
 
 #[path = "support/date.rs"]
 mod date;

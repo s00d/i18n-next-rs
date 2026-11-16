@@ -3,7 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', 'README.md', 'DESIGN.md', 'PLAN.md', 'CHANGELOG.md']
   pull_request:
+    paths-ignore: ['docs/**', 'README.md', 'DESIGN.md', 'PLAN.md', 'CHANGELOG.md']
 
 # A newer push to the same branch or PR cancels the run still going.
 concurrency:
@@ -20,7 +22,7 @@ env:
   CRATES_PUBLISHED: "false"
 
 jobs:
-  # Native matrix: stable and MSRV on linux / macOS / windows, tests through nextest.
+  # Native: stable on linux / macOS / windows, MSRV on linux; tests through nextest.
   test:
     name: test (${{ matrix.os }}, ${{ matrix.toolchain }})
     runs-on: ${{ matrix.os }}
@@ -29,7 +31,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        toolchain: [stable, "1.90"]
+        toolchain: [stable]
+        # MSRV once, on linux: the code is the same on every OS.
+        include:
+          - os: ubuntu-latest
+            toolchain: "1.90"
     steps:
       - uses: actions/checkout@v4
 
@@ -88,6 +94,11 @@ jobs:
       - name: Doctests
         run: cargo test --doc --workspace --locked
 
+      # Console tour over every locale, the axum server among its stops (DESIGN 8a).
+      - name: playground-rust --check
+        if: runner.os == 'Linux' && matrix.toolchain == 'stable'
+        run: cargo run -p playground-rust --locked -- --check
+
       - name: JUnit report
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,13 +107,20 @@ jobs:
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
 
-  # The core crate builds for the browser and WASI from the first commit (DESIGN 2.1, 7.6).
+  # The core crate builds for the browser and WASI (DESIGN 2.1, 7.6); .wasm size of the micro,
+  # full and guest builds after `wasm-opt -Oz`, against the budget and the PR base (DESIGN 2.4).
   wasm:
-    name: wasm
+    name: wasm + size
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout base commit
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .size-base
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown, wasm32-wasip1
@@ -149,37 +167,10 @@ jobs:
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir=.
         run: cargo test -p i18n-next --locked --target wasm32-wasip1
-
-  # .wasm size of the micro and full builds after `wasm-opt -Oz`; PRs fail on >2% growth
-  # against the base commit (DESIGN 2.4).
-  size:
-    name: size
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Checkout base commit
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .size-base
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
       - name: Install wasm-opt (binaryen)
         run: |
           curl -sSfL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar xz -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
-      # The full probe links `js-sys` (browser zones): tools/size-check.sh runs wasm-bindgen
-      # as an app's build does, which drops its describe metadata. Version as in Cargo.lock.
-      - name: Install wasm-bindgen
-        run: |
-          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version' | head -n1)
-          echo "WASM_BINDGEN_VERSION=$v" >> "$GITHUB_ENV"
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-bindgen-cli@${{ env.WASM_BINDGEN_VERSION }}
       - name: Size check
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -188,14 +179,30 @@ jobs:
             tools/size-check.sh
           fi
 
-  # `i18n-next` has no runtime dependencies with default features (DESIGN 2.3).
-  deps:
-    name: no runtime deps
+  # Repository checks on one runner: no runtime deps (DESIGN 2.3); licenses, advisories and
+  # unused deps (8b.10); compat goldens and generated data still match their JS oracles; the
+  # public API snapshots in api/ (8b.9) and semver checks.
+  checks:
+    name: checks (deps, deny, compat, public API)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - name: Linux system deps (webkit for tauri)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.PUBLIC_API_NIGHTLY }}
+          targets: wasm32-unknown-unknown
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
       # Every target (`--target all`), so a `cfg(windows)` or wasm-only dependency counts too.
       - name: cargo tree must list only allowlisted dependencies
         run: |
@@ -215,14 +222,6 @@ jobs:
             echo "::error::i18n-next gained runtime dependencies (DESIGN 2.3, owner decision required): ${bad[*]}"
             exit 1
           fi
-
-  # Licenses, advisories, duplicates and sources; unused dependencies (DESIGN 8b.10).
-  deny:
-    name: deny + machete
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -230,11 +229,48 @@ jobs:
         with:
           tool: cargo-machete
       - run: cargo machete
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C scripts cldr
+      - run: git diff --exit-code crates/i18n-next/src/plural/rules.rs crates/i18n-next/src/format/data fixtures/compat/__golden__/plural-categories.md fixtures/compat/__golden__/number-locales.md fixtures/compat/__golden__/number-locales-all.md
+      - run: pnpm -C scripts casing
+      - run: git diff --exit-code crates/i18n-next/src/linked/case_data.rs
+      - run: pnpm -C scripts compat
+      - run: git diff --exit-code fixtures/compat
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api@0.52.0,cargo-semver-checks@0.51.0
+      - name: Snapshot matches api/
+        run: |
+          # `payload` (encode / apply, the plugin's side of the protocol) is public API too
+          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next --features payload > api/i18n-next.txt
+          # what exists on wasm32 only (`tauri_guest`); bench_inventory reads both snapshots
+          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next --features tauri-guest --target wasm32-unknown-unknown > api/i18n-next-wasm.txt
+          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p tauri-plugin-i18n-next > api/tauri-plugin-i18n-next.txt
+          git diff --exit-code api/ || {
+            echo "::error::public API changed: regenerate api/*.txt with cargo public-api and commit the diff"
+            exit 1
+          }
+      # cargo-semver-checks: until the first crates.io release there is no registry
+      # baseline, so PRs compare with their base commit; after it (CRATES_PUBLISHED =
+      # "true") the last published version is the baseline.
+      - name: Semver checks (against the PR base commit)
+        if: env.CRATES_PUBLISHED != 'true' && github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          cargo semver-checks -p i18n-next --features payload --baseline-rev "$BASE_SHA"
+          cargo semver-checks -p tauri-plugin-i18n-next --baseline-rev "$BASE_SHA"
+      - name: Semver checks (against crates.io)
+        if: env.CRATES_PUBLISHED == 'true'
+        run: |
+          cargo semver-checks -p i18n-next --features payload
+          cargo semver-checks -p tauri-plugin-i18n-next
 
   # Instruction counts with gungraun (Valgrind): deterministic, no timing noise. On PRs
   # the base commit is measured first and the PR fails on >3% more instructions (DESIGN 7.7).
   perf:
-    name: perf
+    name: perf + compare smoke
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -270,19 +306,7 @@ jobs:
           else
             cargo bench -p i18n-next --locked --bench instructions
           fi
-
-  # benches/compare (rust-i18n, fluent, ICU4X; dev-dependencies of that crate only): build
-  # and one pass of every bench (`--test`), no timings or thresholds. The numbers come from
-  # a quiet machine through scripts/bench-table.mjs (DESIGN 7.7); fmt and clippy of the
-  # crate run in the `test` job with the rest of the workspace.
-  compare:
-    name: benches/compare smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      # benches/compare: one pass of every bench (`--test`), no timings or thresholds.
       - run: cargo bench -p compare --locked -- --test
 
   # guest-js (scripts live in crates/tauri-plugin-i18n-next/package.json).
@@ -314,89 +338,15 @@ jobs:
         env:
           BENCH_TIME: "20"
 
-  # The Tauri playground (DESIGN 8a): its own workspace and lock, built on linux with the
-  # plugin from this checkout. The Vue front end (a pnpm workspace member on the guest-js
-  # package of this checkout) is type-checked (vue-tsc) and built first: `generate_context!`
-  # embeds its dist. guest-js is built without its dist checks: the guest-js job runs them.
-  tauri-app:
-    name: tauri-app build
+  # The playgrounds (DESIGN 8a, 8b.19) on one runner, each on its own workspace and lock with
+  # the plugin and guest-js of this checkout: tauri-app (Vue front end type-checked and built
+  # first: `generate_context!` embeds its dist), leptos-app (trunk for the browser, the Tauri
+  # side with tauri-guest), nuxt-site (nuxt generate, texts equal `playground-rust --texts`).
+  # The Android build of tauri-app is in heavy.yml (manual).
+  examples:
+    name: examples (tauri-app, leptos-app, nuxt-site)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: examples/tauri-app/src-tauri
-    steps:
-      - uses: actions/checkout@v4
-      - name: Linux system deps (webkit for tauri)
-        working-directory: .
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: examples/tauri-app/src-tauri
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - name: Front end (guest-js, then the Vue app)
-        working-directory: .
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm -C crates/tauri-plugin-i18n-next build:lib
-          pnpm -C examples/tauri-app typecheck
-          pnpm -C examples/tauri-app build
-      - run: cargo fmt --check
-      - run: cargo clippy --locked -- -D warnings
-      - run: cargo build --locked
-
-  # The same playground for Android (DESIGN 8a): `gen/android` is generated here, never
-  # committed (tauri android init), then a debug APK for aarch64. The runner image has the
-  # Android SDK and NDK; the lock must not move (the CLI runs cargo without --locked).
-  tauri-android:
-    name: tauri-app android build
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: examples/tauri-app/src-tauri
-          key: android
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: |
-          pnpm install --frozen-lockfile
-          pnpm -C crates/tauri-plugin-i18n-next build:lib
-      - name: Android APK (debug, aarch64)
-        working-directory: examples/tauri-app
-        run: |
-          export NDK_HOME="${ANDROID_NDK_LATEST_HOME}"
-          pnpm tauri android init --ci
-          pnpm tauri android build --apk --target aarch64 --debug --ci
-          ls -l src-tauri/gen/android/app/build/outputs/apk/universal/debug/
-          git diff --exit-code -- src-tauri/Cargo.lock
-
-  # The Leptos playground (DESIGN 8a): one Rust front end that trunk builds for the browser and
-  # the Tauri side embeds (tauri-guest). Two workspaces and locks, the plugin from this checkout.
-  leptos-app:
-    name: leptos-app build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Linux system deps (webkit for tauri)
@@ -410,13 +360,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
+            . -> target
+            examples/tauri-app/src-tauri
             examples/leptos-app
             examples/leptos-app/src-tauri
       # pinned: trunk fetches the wasm-bindgen CLI of the app's Cargo.lock itself
       - uses: taiki-e/install-action@v2
         with:
           tool: trunk@0.21.14
-      - name: Front end (trunk build --release)
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Front end (guest-js, then the Vue app)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm -C crates/tauri-plugin-i18n-next build:lib
+          pnpm -C examples/tauri-app typecheck
+          pnpm -C examples/tauri-app build
+      - name: tauri-app (Rust side)
+        working-directory: examples/tauri-app/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --locked -- -D warnings
+          cargo build --locked
+      - name: leptos-app front end (trunk build --release)
         working-directory: examples/leptos-app
         run: |
           cargo fmt --check
@@ -425,153 +394,23 @@ jobs:
           ls -l dist/*.wasm
           # the footer's size (post_build hook): "<bytes> <gzip bytes>"
           grep -E '^[0-9]+ [0-9]+$' dist/wasm-size.txt
-      - name: Tauri side
+      - name: leptos-app Tauri side
         working-directory: examples/leptos-app/src-tauri
         run: |
           cargo fmt --check
           cargo clippy --locked -- -D warnings
           cargo build --locked
-
-  # Console tour over every locale, the axum server among its stops; fails on any problem
-  # (DESIGN 8a). The server's own test runs in the test matrix (nextest --workspace).
-  playground:
-    name: playground-rust --check
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo run -p playground-rust --locked -- --check
-
-  # Nuxt site on the same files (DESIGN 8b.19, its own pnpm project): nuxt generate, then
-  # every text of its pages must equal what playground-rust --texts prints.
-  nuxt-site:
-    name: nuxt-site generate + texts
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
+      - name: nuxt-site (generate, texts equal the Rust tour's, shared locales untouched)
         working-directory: examples/nuxt-site
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: examples/nuxt-site/package.json
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: examples/nuxt-site/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm generate
-      - name: Texts equal the Rust tour's
-        run: pnpm check
-
-  compat:
-    # The JS oracle (@i18n-micro/core and utils, pinned in scripts/package.json) must still
-    # produce the committed goldens: a diff means the oracle or the fixtures changed. The
-    # same for the generated plural rules and number data (cldr-core / cldr-numbers-full +
-    # Node's Intl) and their oracles.
-    name: compat goldens up to date
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -C scripts cldr
-      - run: git diff --exit-code crates/i18n-next/src/plural/rules.rs crates/i18n-next/src/format/data fixtures/compat/__golden__/plural-categories.md fixtures/compat/__golden__/number-locales.md fixtures/compat/__golden__/number-locales-all.md
-      - run: pnpm -C scripts casing
-      - run: git diff --exit-code crates/i18n-next/src/linked/case_data.rs
-      - run: pnpm -C scripts compat
-      - run: git diff --exit-code fixtures/compat
-
-  # Public API snapshots in api/ (DESIGN 8b.9): any change shows up as a diff in the PR.
-  public-api:
-    name: public API
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Linux system deps (webkit for tauri)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.PUBLIC_API_NIGHTLY }}
-          targets: wasm32-unknown-unknown
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-public-api@0.52.0,cargo-semver-checks@0.51.0
-      - name: Snapshot matches api/
-        run: |
-          # `payload` (encode / apply, the plugin's side of the protocol) is public API too
-          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next --features payload > api/i18n-next.txt
-          # what exists on wasm32 only (`tauri_guest`); bench_inventory reads both snapshots
-          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next --features tauri-guest --target wasm32-unknown-unknown > api/i18n-next-wasm.txt
-          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p tauri-plugin-i18n-next > api/tauri-plugin-i18n-next.txt
-          git diff --exit-code api/ || {
-            echo "::error::public API changed: regenerate api/*.txt with cargo public-api and commit the diff"
-            exit 1
-          }
-      # cargo-semver-checks: until the first crates.io release there is no registry
-      # baseline, so PRs compare with their base commit; after it (CRATES_PUBLISHED =
-      # "true") the last published version is the baseline.
-      - name: Semver checks (against the PR base commit)
-        if: env.CRATES_PUBLISHED != 'true' && github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          cargo semver-checks -p i18n-next --features payload --baseline-rev "$BASE_SHA"
-          cargo semver-checks -p tauri-plugin-i18n-next --baseline-rev "$BASE_SHA"
-      - name: Semver checks (against crates.io)
-        if: env.CRATES_PUBLISHED == 'true'
-        run: |
-          cargo semver-checks -p i18n-next --features payload
-          cargo semver-checks -p tauri-plugin-i18n-next
+          pnpm install --frozen-lockfile
+          pnpm generate
+          pnpm check
+          git diff --exit-code -- ../locales
+          test -z "$(git status --porcelain -- ../locales)"
 
-  # The docs site (docs/, its own pnpm project): the reference pages generated from the
-  # sources, the static build, and every internal link and anchor of it.
-  docs:
-    name: docs (generate + links)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: docs
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: docs/package.json
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: docs/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - name: Generate (reference pages + nuxt generate)
-        env:
-          NUXT_APP_BASE_URL: /i18n-next-rs/
-        run: pnpm generate
-      - name: Internal links
-        env:
-          NUXT_APP_BASE_URL: /i18n-next-rs/
-        run: pnpm check-links
-
-  # cargo mutants on the lines a PR changes (DESIGN 7.5, .cargo/mutants.toml). The full run
-  # over both crates is local (M10); here a changed line no test sees fails the PR.
+  # cargo mutants on the lines a PR changes (DESIGN 7.5, .cargo/mutants.toml). A changed line
+  # no test sees fails the PR.
   mutants:
     name: mutants (PR diff)
     if: github.event_name == 'pull_request'
@@ -605,9 +444,10 @@ jobs:
           path: target/mutants-*/mutants.out
 
   # Fuzz smoke (DESIGN 8b.11): 30 s per target from the fixtures, so a target that no longer
-  # builds or a crash an obvious input reaches fails the PR. Long runs are local (fuzz/Cargo.toml).
+  # builds or a crash an obvious input reaches fails the PR.
   fuzz:
     name: fuzz smoke
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

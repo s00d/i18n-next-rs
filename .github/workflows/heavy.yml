@@ -1,4 +1,4 @@
-# Benchmark suites on a GitHub runner, so they never load a developer machine: all criterion
+# The Android build of tauri-app and the benchmark suites on a GitHub runner, so they never load a developer machine: all criterion
 # benches, benches/compare and the guest-js bench, then the tables of docs/content/5.performance.md.
 # Manual (Actions -> heavy -> Run workflow); the regenerated page and raw reports are the artifact.
 name: heavy
@@ -61,3 +61,40 @@ jobs:
             docs/content/5.performance.md
             target/criterion
             node_modules/.cache/logs/guest-js-bench.log
+
+  # tauri-app for Android (DESIGN 8a): `gen/android` is generated here, never
+  # committed (tauri android init), then a debug APK for aarch64. The runner image has the
+  # Android SDK and NDK; the lock must not move (the CLI runs cargo without --locked).
+  tauri-android:
+    name: tauri-app android build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/tauri-app/src-tauri
+          key: android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: |
+          pnpm install --frozen-lockfile
+          pnpm -C crates/tauri-plugin-i18n-next build:lib
+      - name: Android APK (debug, aarch64)
+        working-directory: examples/tauri-app
+        run: |
+          export NDK_HOME="${ANDROID_NDK_LATEST_HOME}"
+          pnpm tauri android init --ci
+          pnpm tauri android build --apk --target aarch64 --debug --ci
+          ls -l src-tauri/gen/android/app/build/outputs/apk/universal/debug/
+          git diff --exit-code -- src-tauri/Cargo.lock

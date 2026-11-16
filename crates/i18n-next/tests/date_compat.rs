@@ -15,6 +15,9 @@ mod date;
 /// matches.
 #[test]
 fn date_goldens_match_intl() {
+    if !date::zones_pinned("date_goldens_match_intl") {
+        return;
+    }
     match date::run(date::DATE) {
         Ok(n) => assert!(n > 39_000, "only {n} lines ran"),
         Err(diff) => panic!("date.md differs:\n{diff}"),
@@ -25,6 +28,9 @@ fn date_goldens_match_intl() {
 /// Rust says them relative to the same `now`, then each matches `formatRelativeTime`.
 #[test]
 fn relative_goldens_match_intl() {
+    if !date::zones_pinned("relative_goldens_match_intl") {
+        return;
+    }
     match date::run(date::RELATIVE) {
         Ok(n) => assert!(n > 9_800, "only {n} lines ran"),
         Err(diff) => panic!("relative.md differs:\n{diff}"),
@@ -35,6 +41,9 @@ fn relative_goldens_match_intl() {
 /// them, then each matches what `Intl.DateTimeFormat` gave for it.
 #[test]
 fn random_dates_match_intl() {
+    if !date::zones_pinned("random_dates_match_intl") {
+        return;
+    }
     match date::run(date::PROPS) {
         Ok(n) => assert!(n > 19_900, "only {n} lines ran"),
         Err(diff) => panic!("date-props.md differs:\n{diff}"),

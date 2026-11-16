@@ -1896,6 +1896,7 @@ dependencies = [
  "foldhash",
  "gungraun",
  "jiff",
+ "jiff-tzdb",
  "js-sys",
  "proptest",
  "rustc-hash 2.1.3",

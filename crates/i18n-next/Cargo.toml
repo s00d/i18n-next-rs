@@ -86,6 +86,8 @@ rustc-hash = "2.1"
 # Oracle of the own `tz` (tests/tz_*.rs): system TZif files and its bundled tzdb, which is
 # the IANA release scripts/tzdb.mjs bundles.
 jiff = { version = "0.2.45", features = ["tzdb-bundle-always"] }
+# tests/support/date.rs: the TZif files of that release, so the date goldens never read the OS zones.
+jiff-tzdb = "0.1.10"
 # tests/tracing.rs: `with_default` needs `std` (the library dep stays without it).
 tracing = { version = "0.1", features = ["std"] }
 

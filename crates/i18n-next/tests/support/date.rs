@@ -112,6 +112,47 @@ fn lines(text: &str) -> Vec<(&str, &str)> {
         .collect()
 }
 
+/// `$TZDIR` (searched before the system zoneinfo, src/tz/mod.rs `read`) for the goldens:
+/// TZif files of jiff-tzdb, the IANA release of `src/tz/tzdb.bin` (tests/tz_tzdb.rs), written
+/// under `CARGO_TARGET_TMPDIR`. The goldens hold Node's zone data; the system's is whatever
+/// the OS ships: macOS runners had a tzdata from before Morocco's 2026 change (+01 with a
+/// Ramadan +00, precomputed to 2087) where the goldens say +00, so Africa/Casablanca after
+/// 2026 was an hour off there. The crate forbids `unsafe`, so no `set_var`: the test runs
+/// again in a child process with the variable set. `true` in that child; in the parent the
+/// child has run `test` and passed (else this panics with its output), and the test returns.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn zones_pinned(test: &str) -> bool {
+    use std::path::Path;
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("zoneinfo-golden");
+    if std::env::var_os("TZDIR").is_some_and(|d| d == dir.as_os_str()) {
+        return true;
+    }
+    let tmp = format!("tmp.{}.{test}", std::process::id());
+    for name in jiff_tzdb::available() {
+        let (_, bytes) = jiff_tzdb::get(name).unwrap();
+        let path = dir.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // other tests (threads here, other processes under nextest) write and read these
+        // files too: each writes its own temporary file and replaces in one rename
+        let part = path.with_extension(&tmp);
+        std::fs::write(&part, bytes).unwrap();
+        std::fs::rename(&part, &path).unwrap();
+    }
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([test, "--exact", "--nocapture", "--test-threads=1"])
+        .env("TZDIR", &dir)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && stdout.contains("1 passed"),
+        "{test} with TZDIR={}:\n{stdout}\n{}",
+        dir.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    false
+}
+
 /// Replays `text`; `Err` holds every differing line (`-` golden, `+` Rust).
 pub fn run(text: &str) -> Result<usize, String> {
     let lines = lines(text);

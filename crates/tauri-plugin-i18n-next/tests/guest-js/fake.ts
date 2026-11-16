@@ -38,6 +38,8 @@ export class FakePlugin {
   missing: Array<{ locale: string; page: string; key: string }> = []
   /** `false`: `report_missing` is not registered (a release build). */
   dev = true
+  /** An HTTP status every protocol read answers instead of the chunk (a broken handler). */
+  status: number | undefined
   /** Runs once after the next `meta` answer is built (to change the catalog under a read). */
   afterMeta: (() => void) | undefined
 
@@ -64,6 +66,7 @@ export class FakePlugin {
           case 'plugin:i18n-next|load':
             return raw({ ...(this.source.load(this.locale, a.page as string | undefined) as Tree), version: this.version })
           case 'plugin:i18n-next|set_locale':
+            if (!this.source.locales().includes(a.locale as string)) throw { kind: 'UnknownLocale', message: `unknown locale: ${a.locale}` }
             this.switch(a.locale as string)
             return this.version
           case 'plugin:i18n-next|report_missing':
@@ -79,6 +82,7 @@ export class FakePlugin {
     globalThis.fetch = (async (input: string) => {
       this.fetches.push(input)
       if (!this.protocol) throw new TypeError('Load failed')
+      if (this.status !== undefined) return new Response('{}', { status: this.status })
       const prefix = 'i18n-next://localhost/'
       if (!input.startsWith(prefix)) throw new TypeError(`unexpected URL ${input}`)
       const path = decodeURIComponent(input.slice(prefix.length))

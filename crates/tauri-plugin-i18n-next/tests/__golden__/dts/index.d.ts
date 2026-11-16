@@ -93,11 +93,17 @@ export interface Link {
     setPage(page: string): Promise<void>;
     /** Switches Rust, native labels and every window; resolves once this instance shows it. */
     setLocale(locale: string): Promise<void>;
-    /** Loads a page without showing it; it is never evicted. */
+    /** Loads a page without showing it; it is never evicted and follows every locale. */
     preload(page: string): Promise<void>;
+    /**
+     * Loads a page about to be shown (a router guard, before the navigation is confirmed)
+     * without showing it: the shown page and its texts stay. It is kept until the next
+     * `setPage` or `load`, which a cancelled navigation may never bring.
+     */
+    load(page: string): Promise<void>;
     /** Reads the meta again and loads what changed. */
     refresh(): Promise<void>;
-    /** Stops following `changed` and reporting misses. */
+    /** Stops following `changed` and reporting misses; gives the instance its `missingHandler` back. */
     close(): void;
 }
 /**

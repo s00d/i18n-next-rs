@@ -14,8 +14,10 @@ const cat: Catalog = {
 let fake: FakePlugin
 afterEach(() => fake.uninstall())
 
+let live: Catalog
 function setup() {
-  fake = new FakePlugin(catalogSource(structuredClone(cat), { en: ['en'], de: ['de', 'en'] }, ['index', 'settings']), 'en')
+  live = structuredClone(cat)
+  fake = new FakePlugin(catalogSource(live, { en: ['en'], de: ['de', 'en'] }, ['index', 'settings']), 'en')
   fake.install()
 }
 
@@ -28,6 +30,15 @@ async function story(i18n: I18nInstance, text: () => string, flush: (f: () => Pr
   expect(text()).toBe('Settings · 2 apples')
   await flush(() => link.setLocale('de'))
   expect(text()).toBe('Einstellungen · 2 apples') // `apples` from the chain: de → en
+  // the shown page loses its chunks in Rust: the component re-renders from the root
+  delete live.de!.settings
+  delete live.en!.settings
+  fake.bump()
+  await flush(async () => {
+    await fake.deliver(fake.pending.length - 1) // the newest: the switch's own event is late
+    await link.setPage('settings')
+  })
+  expect(text()).toBe('Start · 2 apples')
   link.close()
 }
 

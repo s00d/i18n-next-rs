@@ -26,3 +26,15 @@ export declare function layer(lower: Tree, upper: Tree, fresh?: WeakSet<object>)
  * its `linked` as own keys (an own key is read before the walk).
  */
 export declare function premerge(chunks: readonly Chunk[]): Tree;
+/** A chunk of a page view's chain, weakest first; `page`: a page chunk, else a root. */
+export type ViewChunk = Chunk & {
+    page: boolean;
+};
+/**
+ * The view of a page from the chunks of its chain: the page chunks as one flat layer, by
+ * dotted key. Rust reads each layer as a flat map (a container stops the lookup), page before
+ * root per locale; the JS core reads the page view, then the root view when the page view has
+ * nothing (a node counts: it stops there too). So a page key a stronger root answers is left
+ * out, and a container is `{}`. The root is never copied: a page view holds only its own keys.
+ */
+export declare function pageView(chunks: readonly ViewChunk[]): Tree;

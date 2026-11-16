@@ -54,7 +54,9 @@ type Action =
   | { t: 'preload'; page: string }
   | { t: 'locale'; locale: string }
   | { t: 'other'; locale: string } // another window or the tray switches
-  | { t: 'edit'; locale: string; page: string; key: string; value: string | null; underRead: boolean }
+  // `del`: the key goes (a page whose last key goes has no chunk); `underRead`: the edit lands
+  // between `meta` and the read of the shown view, whose chunk then answers 410
+  | { t: 'edit'; locale: string; page: string; key: string; value: string | null; del: boolean; underRead: boolean }
   | { t: 'deliver'; index: number }
 
 const action: fc.Arbitrary<Action> = fc.oneof(
@@ -68,6 +70,7 @@ const action: fc.Arbitrary<Action> = fc.oneof(
     page: fc.constantFrom(...PAGES),
     key: fc.constantFrom(...KEYS),
     value,
+    del: fc.boolean(),
     underRead: fc.boolean(),
   }),
   fc.record({ t: fc.constant('deliver' as const), index: fc.nat(8) }),
@@ -90,7 +93,14 @@ async function run(cat: Catalog, actions: Action[], maxPages: number, protocol: 
     const t = ((cat[a.locale] ??= {})[a.page] ??= {})
     const [k, sub] = a.key.split('.')
     const next: Tree = { ...t }
-    if (sub === undefined) next[k!] = a.value
+    if (a.del) {
+      if (sub === undefined) delete next[k!]
+      else if (typeof t[k!] === 'object' && t[k!]) {
+        const inner = { ...(t[k!] as Tree) }
+        delete inner[sub]
+        next[k!] = inner
+      }
+    } else if (sub === undefined) next[k!] = a.value
     else next[k!] = { ...((typeof t[k!] === 'object' && t[k!]) || {}), [sub]: a.value }
     cat[a.locale]![a.page] = next
     f.bump()
@@ -133,7 +143,10 @@ async function run(cat: Catalog, actions: Action[], maxPages: number, protocol: 
         break
       case 'edit':
         if (a.underRead) {
-          f.afterMeta = () => edit(a) // the catalog changes between meta and the read
+          // a chunk of the shown view, edited before the read and again between meta and the read
+          const shown = { ...a, locale: CHAINS[f.locale]![a.page.length % CHAINS[f.locale]!.length]!, page: PAGES.includes(link.page) ? link.page : 'index' }
+          edit(shown)
+          f.afterMeta = () => edit({ ...shown, value: `${shown.value}!` })
           await link.refresh()
         } else edit(a)
         break

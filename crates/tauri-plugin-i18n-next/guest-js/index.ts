@@ -113,11 +113,17 @@ export interface Link {
   setPage(page: string): Promise<void>
   /** Switches Rust, native labels and every window; resolves once this instance shows it. */
   setLocale(locale: string): Promise<void>
-  /** Loads a page without showing it; it is never evicted. */
+  /** Loads a page without showing it; it is never evicted and follows every locale. */
   preload(page: string): Promise<void>
+  /**
+   * Loads a page about to be shown (a router guard, before the navigation is confirmed)
+   * without showing it: the shown page and its texts stay. It is kept until the next
+   * `setPage` or `load`, which a cancelled navigation may never bring.
+   */
+  load(page: string): Promise<void>
   /** Reads the meta again and loads what changed. */
   refresh(): Promise<void>
-  /** Stops following `changed` and reporting misses. */
+  /** Stops following `changed` and reporting misses; gives the instance its `missingHandler` back. */
   close(): void
 }
 
@@ -138,6 +144,9 @@ const kindOf = (e: unknown) => (typeof e === 'object' && e !== null ? (e as { ki
 
 /** The catalog moved between `meta` and a read: start over from a new `meta`. */
 class Stale extends Error {}
+
+/** The meta of a page read before `connect` (by `createTauriI18n`), not a public option. */
+const PRIMED = Symbol.for('tauri-plugin-i18n-next.meta')
 
 /**
  * Connects `i18n` to the plugin: loads the active locale's root (and `page`), follows
@@ -165,6 +174,9 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
   const chunks = new Map<string, Chunk>() // by content tag
   const views = new Map<string, View>() // by `locale:page`, least recently used first
   const pinned = new Set<string>()
+  let pending: string | undefined // `load`ed, not shown yet
+  // `createTauriI18n` read the start meta already: the first `show` of the root takes it
+  let primed = (options as { [PRIMED]?: { meta: Meta; page: string } })[PRIMED]
 
   // every operation runs after the one before: events and calls apply in order
   let queue: Promise<unknown> = Promise.resolve()
@@ -177,8 +189,9 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
 
   async function fetchChunk(tag: string, key: string): Promise<Chunk> {
     const res = await fetch(convertFileSrc(`${tag}/${key}.json`, SCHEME))
-    if (res.status === 410) throw new Stale(key)
-    if (!res.ok) throw new Error(`i18n-next: ${res.status} for ${key}`)
+    if (res.status === 410) throw new Stale(`i18n-next: chunk ${key} changed while it was read`)
+    // an HTTP error is an answer of the protocol: a failed read, not a missing protocol
+    if (!res.ok) throw new Error(`i18n-next: ${res.status} for chunk ${key}`)
     const c = (await res.json()) as Chunk
     chunks.set(tag, c)
     return c
@@ -194,20 +207,21 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
     })
     if (missing.length === 0) return got
     if (transport === 'protocol') {
-      const links = missing.map((key) => hint(convertFileSrc(`${m.tags[key]}/${key}.json`, SCHEME)))
       try {
         const all = await Promise.all(missing.map((key) => fetchChunk(m.tags[key]!, key)))
         missing.forEach((key, i) => got.set(key, all[i]!))
         return got
       } catch (e) {
-        if (e instanceof Stale || options.transport === 'protocol') throw e
-        transport = 'invoke' // no protocol here (or not for this origin): raw invoke from now on
-      } finally {
-        for (const l of links) l?.remove()
+        // `fetch` rejects with a TypeError when the scheme is not there (or not for this
+        // origin): raw invoke from now on; anything else is an error of this read
+        if (!(e instanceof TypeError) || options.transport === 'protocol') throw e
+        transport = 'invoke'
       }
     }
     const payload = parse<Load>(await invoke<ArrayBuffer>(cmd('load'), pg === 'index' ? {} : { page: pg }))
-    if (payload.version !== m.version || payload.locale !== m.locale) throw new Stale()
+    if (payload.version !== m.version || payload.locale !== m.locale) {
+      throw new Stale(`i18n-next: the catalog moved from version ${m.version} to ${payload.version} during a load`)
+    }
     for (const c of payload.chunks) {
       const key = `${c.locale}/${c.page}`
       const chunk: Chunk = c.linked ? { data: c.data, linked: c.linked } : { data: c.data }
@@ -217,16 +231,11 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
     return got
   }
 
-  /** `<link rel="preload">` for a chunk URL about to be read: the fetch takes the preloaded response. */
-  function hint(href: string): HTMLLinkElement | undefined {
-    if (!doc?.head) return undefined
-    const l = doc.createElement('link')
-    l.rel = 'preload'
-    l.as = 'fetch'
-    l.crossOrigin = 'anonymous'
-    l.href = href
-    doc.head.appendChild(l)
-    return l
+  /** Removes a page view and tells the instance (it re-renders on the root view). */
+  function drop(loc: string, pg: string) {
+    // an empty view through the public call notifies every adapter; the entry goes after it
+    i18n.addRouteTranslations(loc, pg, {}, false)
+    i18n.storage.translations.delete(`${loc}:${pg}`)
   }
 
   /** Builds and stores the view of `pg` (`index`: the root) unless its chunks are the same. */
@@ -242,7 +251,7 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
     views.delete(id) // re-inserted last: the most recently used
     // a page without chunks of its own reads the root view: nothing to store
     if (pg !== 'index' && keys.every((k) => k.endsWith('/index'))) {
-      if (old?.tags.length) i18n.storage.translations.delete(id)
+      if (old?.tags.length) drop(m.locale, pg)
       views.set(id, { tags: [], version: m.version })
       return
     }
@@ -264,9 +273,9 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
       if (pages <= maxPages) break
       const at = id.lastIndexOf(':')
       const [loc, pg] = [id.slice(0, at), id.slice(at + 1)]
-      if (pg === 'index' || !v.tags.length || (loc === locale && (pg === page || pinned.has(pg)))) continue
+      if (pg === 'index' || !v.tags.length || (loc === locale && (pg === page || pg === pending || pinned.has(pg)))) continue
       views.delete(id)
-      i18n.storage.translations.delete(id)
+      drop(loc, pg)
       pages--
     }
     const live = new Set<string>()
@@ -293,8 +302,10 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
   /** Reads the meta of the active locale and `pg`, loads what changed, then shows it. */
   async function show(pg: string, route: boolean, extra: { languages?: string[] } = {}, attempt = 0): Promise<void> {
     let m: Meta
+    const ready = primed
+    primed = undefined
     try {
-      m = await meta(pg === 'index' ? extra : { ...extra, page: pg })
+      m = ready?.page === pg ? ready.meta : await meta(pg === 'index' ? extra : { ...extra, page: pg })
     } catch (e) {
       // a route the catalog has no page for: the root alone answers it
       if (kindOf(e) !== 'UnknownPage') throw e
@@ -303,10 +314,13 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
     let got: Map<string, Chunk>
     try {
       got = await read(m, pg)
+      // a visit run beside this one showed a newer catalog already
+      if (m.version < version) throw new Stale(`i18n-next: version ${m.version} read after ${version}`)
     } catch (e) {
       // ponytail: 3 retries; a catalog that changes faster than a read is a bug elsewhere
-      if (e instanceof Stale && attempt < 3) return show(pg, route, {}, attempt + 1)
-      throw e
+      if (!(e instanceof Stale)) throw e
+      if (attempt < 3) return show(pg, route, {}, attempt + 1)
+      throw new Error(`${e.message} (the catalog kept changing: 3 new reads of meta)`)
     }
     applyMeta(m)
     store(m, got, 'index')
@@ -323,27 +337,50 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
     }
     if (route) {
       page = pg
+      if (pending === pg) pending = undefined
       i18n.setRoute(pg)
     }
     evict()
   }
 
-  /** `show`, without any call while the page's view is checked at the current version (3.4). */
-  async function visit(pg: string, route: boolean) {
+  /** The views of `pg` are checked at the current version: showing it needs no call (3.4). */
+  const fresh = (pg: string) =>
+    views.get(`${locale}:index`)?.version === version && (pg === 'index' || views.get(`${locale}:${pg}`)?.version === version)
+
+  /** Shows a fresh page: the most recently used, the route of the instance. */
+  function route(pg: string) {
     const id = `${locale}:${pg}`
     const v = views.get(id)
-    if (views.get(`${locale}:index`)?.version === version && (pg === 'index' || v?.version === version)) {
+    if (v) {
+      views.delete(id)
+      views.set(id, v)
+    }
+    page = pg
+    if (pending === pg) pending = undefined
+    i18n.setRoute(pg)
+    evict() // the page shown before may be over the limit now
+  }
+
+  /** `show`, without any call while the page's view is fresh. */
+  async function visit(pg: string, showIt: boolean) {
+    if (!fresh(pg)) return show(pg, showIt)
+    if (showIt) route(pg)
+    else {
+      const id = `${locale}:${pg}`
+      const v = views.get(id)
       if (v) {
         views.delete(id)
         views.set(id, v)
       }
-      if (route) {
-        page = pg
-        i18n.setRoute(pg)
-      }
-      return
     }
-    await show(pg, route)
+  }
+
+  /** Visits the preloaded pages (and a `load`ed one) of the shown locale, all at once. */
+  async function follow() {
+    const pages = new Set(pinned)
+    if (pending !== undefined) pages.add(pending)
+    pages.delete(page)
+    await Promise.all([...pages].map((p) => visit(p, false)))
   }
 
   // misses: deduped by (locale, page, key), sent per microtask
@@ -379,7 +416,7 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
     enqueue(async () => {
       if (closed || v <= version) return
       await show(page, true)
-      for (const p of pinned) await visit(p, false)
+      await follow()
     }).catch(() => {})
   })
 
@@ -399,15 +436,26 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
     get fallback() {
       return transport === 'invoke'
     },
-    setPage: (pg) => enqueue(() => visit(pg, true)),
+    // nothing queued and the page loaded (by a guard's `load`): shown at once, in this tick
+    setPage: (pg) => {
+      if (busy > 0 || !fresh(pg)) return enqueue(() => visit(pg, true))
+      route(pg)
+      return Promise.resolve()
+    },
     setLocale: (code) =>
       enqueue(async () => {
         await invoke<number>(cmd('set_locale'), { locale: code })
         await show(page, true)
+        await follow()
       }),
     preload: (pg) =>
       enqueue(async () => {
         pinned.add(pg)
+        await visit(pg, false)
+      }),
+    load: (pg) =>
+      enqueue(async () => {
+        pending = pg
         await visit(pg, false)
       }),
     refresh: () => enqueue(() => show(page, true)),

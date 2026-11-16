@@ -450,10 +450,11 @@ async fn meta(page: &str, first: Option<&Object>) -> Result<Vec<u8>, Error> {
 
 /// Brings the instance to `m`: takes the chunks whose tags it does not hold from the last
 /// connection's instance or reads them, clears the ones of the view that have no data now,
-/// switches to `m.locale`. A newer catalog shown before or during the reads makes `m` stale.
+/// switches to `m.locale`. A newer catalog shown already makes `m` stale.
 async fn step(link: &Link, m: &Meta, page: &str) -> Result<(), Fail> {
-    let stale = || m.version < link.version.get();
-    if stale() {
+    // Only a step sets `link.version` and steps run in turn (`Turn`), so the version shown
+    // cannot move during the reads below: one check here covers the whole step.
+    if m.version < link.version.get() {
         return Err(Fail::Stale); // a newer catalog is shown already
     }
     let i18n = link.i18n()?;
@@ -497,9 +498,6 @@ async fn step(link: &Link, m: &Meta, page: &str) -> Result<(), Fail> {
                 Err(Read::Network) => link.invoke.set(true),
                 Err(Read::Fail(f)) => return Err(f),
             }
-            if stale() {
-                return Err(Fail::Stale);
-            }
         }
         if !wanted.is_empty() && link.invoke.get() {
             let args = Object::new();
@@ -512,7 +510,7 @@ async fn step(link: &Link, m: &Meta, page: &str) -> Result<(), Fail> {
             }
             let raw = bytes(&call("load", &args, page).await?, "load")?;
             let got = Meta::read(&raw)?;
-            if got.version != m.version || got.locale != m.locale || stale() {
+            if got.version != m.version || got.locale != m.locale {
                 return Err(Fail::Stale);
             }
             payload::apply(i18n, &raw)?;

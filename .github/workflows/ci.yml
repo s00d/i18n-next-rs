@@ -187,8 +187,10 @@ jobs:
         run: |
           # Allowed direct runtime dependencies, one name per entry. DESIGN 2.3 allows only
           # `wasm-bindgen` and `js-sys`, for wasm32 with `tz` / `tauri-guest`: `js-sys` is the
-          # browser's zones and clock (wasm32-unknown-unknown with `tz` only).
-          allow=(js-sys)
+          # browser's zones and clock (wasm32-unknown-unknown with `tz` only). The optional
+          # integrations `chrono` / `time` (features of the same names, off by default) are
+          # listed so a run with those features enabled passes too.
+          allow=(js-sys chrono time)
           tree=$(cargo tree -e normal -p i18n-next --depth 1 --target all --locked --prefix none)
           echo "$tree"
           bad=()

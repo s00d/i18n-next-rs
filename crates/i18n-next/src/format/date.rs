@@ -18,7 +18,10 @@ use std::fmt;
 /// (±100 000 000 days). Anything else is an invalid date: it formats as `Invalid Date`.
 ///
 /// From `i64` (milliseconds), `f64` (milliseconds, truncated like `new Date(ms)`; `NaN`
-/// is invalid) and, off `wasm32-unknown-unknown`, `SystemTime`.
+/// is invalid), off `wasm32-unknown-unknown` `SystemTime`; with feature `chrono`
+/// `chrono::DateTime<Tz>` and `NaiveDateTime` (as UTC), with feature `time`
+/// `OffsetDateTime`, `UtcDateTime` and `PrimitiveDateTime` (as UTC). Sub-millisecond
+/// parts are cut toward zero, as for `SystemTime`.
 ///
 /// ```
 /// use i18n_next::Timestamp;
@@ -78,6 +81,54 @@ impl From<std::time::SystemTime> for Timestamp {
             Err(e) => i64::try_from(e.duration().as_millis()).ok().map(|m| -m),
         };
         ms.map_or(Timestamp(None), Timestamp::from)
+    }
+}
+
+/// Whole milliseconds toward zero of nanoseconds since 1970 (as `From<SystemTime>`).
+#[cfg(any(feature = "chrono", feature = "time"))]
+fn from_nanos(ns: i128) -> Timestamp {
+    i64::try_from(ns / 1_000_000).map_or(Timestamp(None), Timestamp::from)
+}
+
+/// The instant of a `chrono` date-time in any zone (feature `chrono`).
+#[cfg(feature = "chrono")]
+impl<Tz: chrono::TimeZone> From<chrono::DateTime<Tz>> for Timestamp {
+    fn from(t: chrono::DateTime<Tz>) -> Self {
+        from_nanos(
+            i128::from(t.timestamp()) * 1_000_000_000 + i128::from(t.timestamp_subsec_nanos()),
+        )
+    }
+}
+
+/// A `chrono` date-time without a zone, read as UTC (feature `chrono`).
+#[cfg(feature = "chrono")]
+impl From<chrono::NaiveDateTime> for Timestamp {
+    fn from(t: chrono::NaiveDateTime) -> Self {
+        Timestamp::from(t.and_utc())
+    }
+}
+
+/// The instant of a `time` date-time with an offset (feature `time`).
+#[cfg(feature = "time")]
+impl From<time::OffsetDateTime> for Timestamp {
+    fn from(t: time::OffsetDateTime) -> Self {
+        from_nanos(t.unix_timestamp_nanos())
+    }
+}
+
+/// The instant of a `time` UTC date-time (feature `time`).
+#[cfg(feature = "time")]
+impl From<time::UtcDateTime> for Timestamp {
+    fn from(t: time::UtcDateTime) -> Self {
+        from_nanos(t.unix_timestamp_nanos())
+    }
+}
+
+/// A `time` date-time without an offset, read as UTC (feature `time`).
+#[cfg(feature = "time")]
+impl From<time::PrimitiveDateTime> for Timestamp {
+    fn from(t: time::PrimitiveDateTime) -> Self {
+        Timestamp::from(t.assume_utc())
     }
 }
 

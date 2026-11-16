@@ -1,6 +1,6 @@
 //! Edge cases `cargo mutants` found unchecked (M10, DESIGN 7.5): each test pins one decision
 //! no story reached. Grouped by the module that makes the decision.
-#![cfg(not(target_arch = "wasm32"))]
+#![cfg(all(feature = "format", not(target_arch = "wasm32")))]
 
 use i18n_next::{Arg, Args, I18n, Timestamp, scope};
 use std::sync::Arc;

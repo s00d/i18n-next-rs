@@ -1,0 +1,657 @@
+# cargo-mutants survivors from the local M10 runs (2026-11-16), before the scenario tests of
+# 3c0e8b7 / 4f38e2d / a1c56aa; some are killed since. Later runs: the heavy/CI mutants jobs.
+crates/i18n-next/src/args.rs:118:9: replace <impl PartialEq for Arg<'_>>::eq -> bool with false
+crates/i18n-next/src/args.rs:118:9: replace <impl PartialEq for Arg<'_>>::eq -> bool with true
+crates/i18n-next/src/args.rs:119:23: replace match guard a.as_str().is_some() || b.as_str().is_some() with false in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:119:23: replace match guard a.as_str().is_some() || b.as_str().is_some() with true in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:119:44: replace || with && in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:119:82: replace == with != in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:120:13: delete match arm (Arg::Int(a), Arg::Int(b)) in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:120:45: replace == with != in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:121:13: delete match arm (Arg::Float(a), Arg::Float(b)) in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:122:49: replace == with != in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:123:13: delete match arm (Arg::Bool(a), Arg::Bool(b)) in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:123:47: replace == with != in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:124:13: delete match arm (Arg::Null, Arg::Null) in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:125:13: delete match arm (Arg::Text(a), Arg::Text(b)) in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:126:13: delete match arm (Arg::Number{value:a, format:fa,}, Arg::Number{value:b, format:fb,},) in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:136:20: replace == with != in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:136:25: replace && with || in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:136:31: replace == with != in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:137:13: delete match arm (Arg::Date(a), Arg::Date(b)) in <impl PartialEq for Arg<'_>>::eq
+crates/i18n-next/src/args.rs:207:9: replace Arg<'_>::as_str -> Option<&str> with Some("xyzzy")
+crates/i18n-next/src/args.rs:284:43: replace < with <= in Arg<'_>::len
+crates/i18n-next/src/args.rs:292:52: replace * with + in Arg<'_>::len
+crates/i18n-next/src/args.rs:292:52: replace * with / in Arg<'_>::len
+crates/i18n-next/src/args.rs:502:36: replace > with >= in Count::whole
+crates/i18n-next/src/args.rs:539:22: replace < with <= in Count::write
+crates/i18n-next/src/args.rs:554:9: replace Count::len -> usize with 1
+crates/i18n-next/src/args.rs:556:41: replace + with * in Count::len
+crates/i18n-next/src/args.rs:556:41: replace + with - in Count::len
+crates/i18n-next/src/args.rs:569:23: replace match guard n.unsigned_abs() <= SAFE with false in <impl From<i64> for Count>::from
+crates/i18n-next/src/args.rs:673:9: replace <impl fmt::Debug for Args<'_>>::fmt -> fmt::Result with Ok(Default::default())
+crates/i18n-next/src/args.rs:742:41: replace && with || in Args<'a>::same
+crates/i18n-next/src/args.rs:742:57: replace == with != in Args<'a>::same
+crates/i18n-next/src/args.rs:742:9: replace Args<'a>::same -> bool with true
+crates/i18n-next/src/args.rs:747:18: replace == with != in Args<'a>::is_empty
+crates/i18n-next/src/args.rs:747:23: replace && with || in Args<'a>::is_empty
+crates/i18n-next/src/args.rs:747:51: replace && with || in Args<'a>::is_empty
+crates/i18n-next/src/args.rs:747:9: replace Args<'a>::is_empty -> bool with false
+crates/i18n-next/src/args.rs:747:9: replace Args<'a>::is_empty -> bool with true
+crates/i18n-next/src/args.rs:757:41: replace * with + in Args<'a>::push
+crates/i18n-next/src/format/api.rs:211:9: replace I18n::set_system_time_zone -> bool with false
+crates/i18n-next/src/format/api.rs:211:9: replace I18n::set_system_time_zone -> bool with true
+crates/i18n-next/src/format/api.rs:513:9: replace <impl fmt::Debug for DateArg<'_>>::fmt -> fmt::Result with Ok(Default::default())
+crates/i18n-next/src/format/api.rs:558:5: replace bare -> fmt::Result with Ok(Default::default())
+crates/i18n-next/src/format/api.rs:559:8: delete ! in bare
+crates/i18n-next/src/format/api.rs:563:9: delete match arm (Some(at), Some(now)) in bare
+crates/i18n-next/src/format/api.rs:56:5: replace missing with ()
+crates/i18n-next/src/format/api.rs:590:5: replace td_as -> String with "xyzzy".into()
+crates/i18n-next/src/format/api.rs:590:5: replace td_as -> String with String::new()
+crates/i18n-next/src/format/api.rs:61:5: replace missing_date with ()
+crates/i18n-next/src/format/api.rs:66:5: replace system_now -> Option<i64> with None
+crates/i18n-next/src/format/api.rs:66:5: replace system_now -> Option<i64> with Some(-1)
+crates/i18n-next/src/format/api.rs:66:5: replace system_now -> Option<i64> with Some(0)
+crates/i18n-next/src/format/api.rs:66:5: replace system_now -> Option<i64> with Some(1)
+crates/i18n-next/src/format/api.rs:86:9: replace <impl fmt::Debug for Clock>::fmt -> fmt::Result with Ok(Default::default())
+crates/i18n-next/src/format/date.rs:151:9: replace Zone::utc -> Zone with Default::default()
+crates/i18n-next/src/format/date.rs:155:9: replace Zone::system -> Zone with Default::default()
+crates/i18n-next/src/format/date.rs:160:9: replace Zone::offset_at -> i32 with -1
+crates/i18n-next/src/format/date.rs:160:9: replace Zone::offset_at -> i32 with 1
+crates/i18n-next/src/format/date.rs:164:9: replace Zone::named -> Option<Zone> with Some(Default::default())
+crates/i18n-next/src/format/date.rs:171:18: replace <= with > in days_from_civil
+crates/i18n-next/src/format/date.rs:171:27: replace - with + in days_from_civil
+crates/i18n-next/src/format/date.rs:171:27: replace - with / in days_from_civil
+crates/i18n-next/src/format/date.rs:171:5: replace days_from_civil -> i64 with -1
+crates/i18n-next/src/format/date.rs:171:5: replace days_from_civil -> i64 with 0
+crates/i18n-next/src/format/date.rs:171:5: replace days_from_civil -> i64 with 1
+crates/i18n-next/src/format/date.rs:173:17: replace - with + in days_from_civil
+crates/i18n-next/src/format/date.rs:173:17: replace - with / in days_from_civil
+crates/i18n-next/src/format/date.rs:173:23: replace * with + in days_from_civil
+crates/i18n-next/src/format/date.rs:173:23: replace * with / in days_from_civil
+crates/i18n-next/src/format/date.rs:174:20: replace * with + in days_from_civil
+crates/i18n-next/src/format/date.rs:174:20: replace * with / in days_from_civil
+crates/i18n-next/src/format/date.rs:174:37: replace + with * in days_from_civil
+crates/i18n-next/src/format/date.rs:174:37: replace + with - in days_from_civil
+crates/i18n-next/src/format/date.rs:174:42: replace % with + in days_from_civil
+crates/i18n-next/src/format/date.rs:174:42: replace % with / in days_from_civil
+crates/i18n-next/src/format/date.rs:174:48: replace + with * in days_from_civil
+crates/i18n-next/src/format/date.rs:174:48: replace + with - in days_from_civil
+crates/i18n-next/src/format/date.rs:174:53: replace / with % in days_from_civil
+crates/i18n-next/src/format/date.rs:174:53: replace / with * in days_from_civil
+crates/i18n-next/src/format/date.rs:174:57: replace + with * in days_from_civil
+crates/i18n-next/src/format/date.rs:174:57: replace + with - in days_from_civil
+crates/i18n-next/src/format/date.rs:174:72: replace - with + in days_from_civil
+crates/i18n-next/src/format/date.rs:174:72: replace - with / in days_from_civil
+crates/i18n-next/src/format/date.rs:175:19: replace + with * in days_from_civil
+crates/i18n-next/src/format/date.rs:175:19: replace + with - in days_from_civil
+crates/i18n-next/src/format/date.rs:175:25: replace * with + in days_from_civil
+crates/i18n-next/src/format/date.rs:175:25: replace * with / in days_from_civil
+crates/i18n-next/src/format/date.rs:175:31: replace + with * in days_from_civil
+crates/i18n-next/src/format/date.rs:175:31: replace + with - in days_from_civil
+crates/i18n-next/src/format/date.rs:175:37: replace / with % in days_from_civil
+crates/i18n-next/src/format/date.rs:175:37: replace / with * in days_from_civil
+crates/i18n-next/src/format/date.rs:175:41: replace - with + in days_from_civil
+crates/i18n-next/src/format/date.rs:175:41: replace - with / in days_from_civil
+crates/i18n-next/src/format/date.rs:175:47: replace / with % in days_from_civil
+crates/i18n-next/src/format/date.rs:175:47: replace / with * in days_from_civil
+crates/i18n-next/src/format/date.rs:175:53: replace + with * in days_from_civil
+crates/i18n-next/src/format/date.rs:175:53: replace + with - in days_from_civil
+crates/i18n-next/src/format/date.rs:175:59: replace - with + in days_from_civil
+crates/i18n-next/src/format/date.rs:175:59: replace - with / in days_from_civil
+crates/i18n-next/src/format/date.rs:175:9: replace * with + in days_from_civil
+crates/i18n-next/src/format/date.rs:175:9: replace * with / in days_from_civil
+crates/i18n-next/src/format/date.rs:199:5: replace civil_from_unix -> Civil with Default::default()
+crates/i18n-next/src/format/date.rs:206:21: replace / with % in civil_from_unix
+crates/i18n-next/src/format/date.rs:206:21: replace / with * in civil_from_unix
+crates/i18n-next/src/format/date.rs:207:23: replace / with % in civil_from_unix
+crates/i18n-next/src/format/date.rs:207:23: replace / with * in civil_from_unix
+crates/i18n-next/src/format/date.rs:207:28: replace % with + in civil_from_unix
+crates/i18n-next/src/format/date.rs:207:28: replace % with / in civil_from_unix
+crates/i18n-next/src/format/date.rs:208:23: replace % with + in civil_from_unix
+crates/i18n-next/src/format/date.rs:208:23: replace % with / in civil_from_unix
+crates/i18n-next/src/format/date.rs:210:24: replace + with * in civil_from_unix
+crates/i18n-next/src/format/date.rs:210:24: replace + with - in civil_from_unix
+crates/i18n-next/src/format/date.rs:221:15: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:221:15: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (-1, 0, 0)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (-1, 0, 1)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (-1, 1, 0)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (-1, 1, 1)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (0, 0, 0)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (0, 0, 1)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (0, 1, 0)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (0, 1, 1)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (1, 0, 0)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (1, 0, 1)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (1, 1, 0)
+crates/i18n-next/src/format/date.rs:221:5: replace civil_from_days -> (i64, u8, u8) with (1, 1, 1)
+crates/i18n-next/src/format/date.rs:223:17: replace - with + in civil_from_days
+crates/i18n-next/src/format/date.rs:223:17: replace - with / in civil_from_days
+crates/i18n-next/src/format/date.rs:223:23: replace * with + in civil_from_days
+crates/i18n-next/src/format/date.rs:223:23: replace * with / in civil_from_days
+crates/i18n-next/src/format/date.rs:224:20: replace - with + in civil_from_days
+crates/i18n-next/src/format/date.rs:224:20: replace - with / in civil_from_days
+crates/i18n-next/src/format/date.rs:224:26: replace / with % in civil_from_days
+crates/i18n-next/src/format/date.rs:224:26: replace / with * in civil_from_days
+crates/i18n-next/src/format/date.rs:224:33: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:224:33: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:224:39: replace / with % in civil_from_days
+crates/i18n-next/src/format/date.rs:224:39: replace / with * in civil_from_days
+crates/i18n-next/src/format/date.rs:224:48: replace - with + in civil_from_days
+crates/i18n-next/src/format/date.rs:224:48: replace - with / in civil_from_days
+crates/i18n-next/src/format/date.rs:224:54: replace / with % in civil_from_days
+crates/i18n-next/src/format/date.rs:224:54: replace / with * in civil_from_days
+crates/i18n-next/src/format/date.rs:224:65: replace / with % in civil_from_days
+crates/i18n-next/src/format/date.rs:224:65: replace / with * in civil_from_days
+crates/i18n-next/src/format/date.rs:225:19: replace - with + in civil_from_days
+crates/i18n-next/src/format/date.rs:225:19: replace - with / in civil_from_days
+crates/i18n-next/src/format/date.rs:225:26: replace * with + in civil_from_days
+crates/i18n-next/src/format/date.rs:225:26: replace * with / in civil_from_days
+crates/i18n-next/src/format/date.rs:225:32: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:225:32: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:225:38: replace / with % in civil_from_days
+crates/i18n-next/src/format/date.rs:225:38: replace / with * in civil_from_days
+crates/i18n-next/src/format/date.rs:225:42: replace - with + in civil_from_days
+crates/i18n-next/src/format/date.rs:225:42: replace - with / in civil_from_days
+crates/i18n-next/src/format/date.rs:225:48: replace / with % in civil_from_days
+crates/i18n-next/src/format/date.rs:225:48: replace / with * in civil_from_days
+crates/i18n-next/src/format/date.rs:226:17: replace * with + in civil_from_days
+crates/i18n-next/src/format/date.rs:226:17: replace * with / in civil_from_days
+crates/i18n-next/src/format/date.rs:226:23: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:226:23: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:226:28: replace / with % in civil_from_days
+crates/i18n-next/src/format/date.rs:226:28: replace / with * in civil_from_days
+crates/i18n-next/src/format/date.rs:227:18: replace - with + in civil_from_days
+crates/i18n-next/src/format/date.rs:227:18: replace - with / in civil_from_days
+crates/i18n-next/src/format/date.rs:227:25: replace * with + in civil_from_days
+crates/i18n-next/src/format/date.rs:227:25: replace * with / in civil_from_days
+crates/i18n-next/src/format/date.rs:227:30: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:227:30: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:227:35: replace / with % in civil_from_days
+crates/i18n-next/src/format/date.rs:227:35: replace / with * in civil_from_days
+crates/i18n-next/src/format/date.rs:227:39: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:227:39: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:228:19: replace < with <= in civil_from_days
+crates/i18n-next/src/format/date.rs:228:19: replace < with == in civil_from_days
+crates/i18n-next/src/format/date.rs:228:19: replace < with > in civil_from_days
+crates/i18n-next/src/format/date.rs:228:29: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:228:29: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:228:45: replace - with + in civil_from_days
+crates/i18n-next/src/format/date.rs:228:45: replace - with / in civil_from_days
+crates/i18n-next/src/format/date.rs:229:10: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:229:10: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:229:16: replace * with + in civil_from_days
+crates/i18n-next/src/format/date.rs:229:16: replace * with / in civil_from_days
+crates/i18n-next/src/format/date.rs:229:22: replace + with * in civil_from_days
+crates/i18n-next/src/format/date.rs:229:22: replace + with - in civil_from_days
+crates/i18n-next/src/format/date.rs:229:36: replace <= with > in civil_from_days
+crates/i18n-next/src/format/date.rs:337:28: replace | with ^ in override_of
+crates/i18n-next/src/format/date.rs:337:51: replace | with ^ in override_of
+crates/i18n-next/src/format/date.rs:337:73: replace | with ^ in override_of
+crates/i18n-next/src/format/date.rs:449:13: replace < with <= in render
+crates/i18n-next/src/format/date.rs:454:17: replace < with <= in render
+crates/i18n-next/src/format/date.rs:468:23: replace match guard !rest.is_empty() with true in render
+crates/i18n-next/src/format/date.rs:491:40: replace <= with > in number
+crates/i18n-next/src/format/date.rs:50:9: replace Timestamp::is_valid -> bool with true
+crates/i18n-next/src/format/date.rs:519:61: replace < with <= in number
+crates/i18n-next/src/format/date.rs:573:18: replace < with <= in field
+crates/i18n-next/src/format/date.rs:573:18: replace < with == in field
+crates/i18n-next/src/format/date.rs:588:9: delete match arm b'r' in field
+crates/i18n-next/src/format/date.rs:632:16: replace + with - in field
+crates/i18n-next/src/format/date.rs:633:32: replace > with >= in field
+crates/i18n-next/src/format/date.rs:643:48: replace >= with < in flexible
+crates/i18n-next/src/format/date.rs:645:42: replace * with + in flexible
+crates/i18n-next/src/format/date.rs:645:42: replace * with / in flexible
+crates/i18n-next/src/format/date.rs:646:59: replace == with != in flexible
+crates/i18n-next/src/format/date.rs:648:18: delete ! in flexible
+crates/i18n-next/src/format/date.rs:648:31: replace || with && in flexible
+crates/i18n-next/src/format/date.rs:648:43: replace == with != in flexible
+crates/i18n-next/src/format/date.rs:648:49: replace && with || in flexible
+crates/i18n-next/src/format/date.rs:648:53: delete ! in flexible
+crates/i18n-next/src/format/date.rs:648:66: replace || with && in flexible
+crates/i18n-next/src/format/date.rs:648:78: replace == with != in flexible
+crates/i18n-next/src/format/date.rs:649:23: replace == with != in flexible
+crates/i18n-next/src/format/date.rs:81:76: delete - in <impl From<std::time::SystemTime> for Timestamp>::from
+crates/i18n-next/src/format/number.rs:116:9: replace Decimal::value -> f64 with -1.0
+crates/i18n-next/src/format/number.rs:122:30: replace - with + in Decimal::value
+crates/i18n-next/src/format/number.rs:122:30: replace - with / in Decimal::value
+crates/i18n-next/src/format/number.rs:127:16: replace < with <= in Decimal::value
+crates/i18n-next/src/format/number.rs:127:16: replace < with == in Decimal::value
+crates/i18n-next/src/format/number.rs:131:16: replace += with *= in Decimal::value
+crates/i18n-next/src/format/number.rs:131:16: replace += with -= in Decimal::value
+crates/i18n-next/src/format/number.rs:132:19: delete - in Decimal::value
+crates/i18n-next/src/format/number.rs:137:34: replace % with / in Decimal::value
+crates/i18n-next/src/format/number.rs:165:18: replace != with == in Decimal::operands
+crates/i18n-next/src/format/number.rs:170:19: replace * with + in Decimal::operands
+crates/i18n-next/src/format/number.rs:170:19: replace * with / in Decimal::operands
+crates/i18n-next/src/format/number.rs:170:24: replace + with * in Decimal::operands
+crates/i18n-next/src/format/number.rs:170:47: delete - in Decimal::operands
+crates/i18n-next/src/format/number.rs:170:51: replace - with + in Decimal::operands
+crates/i18n-next/src/format/number.rs:170:51: replace - with / in Decimal::operands
+crates/i18n-next/src/format/number.rs:175:27: replace > with >= in Decimal::operands
+crates/i18n-next/src/format/number.rs:178:22: replace + with - in Decimal::operands
+crates/i18n-next/src/format/number.rs:226:18: replace match guard b.is_ascii() with false in spaced
+crates/i18n-next/src/format/number.rs:226:18: replace match guard b.is_ascii() with true in spaced
+crates/i18n-next/src/format/number.rs:228:17: replace || with && in spaced
+crates/i18n-next/src/format/number.rs:228:46: replace || with && in spaced
+crates/i18n-next/src/format/number.rs:228:51: replace == with != in spaced
+crates/i18n-next/src/format/number.rs:230:14: delete ! in spaced
+crates/i18n-next/src/format/number.rs:324:12: replace < with <= in multiplier
+crates/i18n-next/src/format/number.rs:324:12: replace < with == in multiplier
+crates/i18n-next/src/format/number.rs:341:12: replace < with <= in compact_pattern
+crates/i18n-next/src/format/number.rs:341:12: replace < with == in compact_pattern
+crates/i18n-next/src/format/number.rs:348:29: replace > with >= in compact_pattern
+crates/i18n-next/src/format/number.rs:543:24: replace > with >= in emit
+crates/i18n-next/src/format/number.rs:550:39: replace - with + in emit
+crates/i18n-next/src/format/options.rs:141:9: delete match arm Some("0o" | "0O") in js_number
+crates/i18n-next/src/format/options.rs:169:9: replace || with && in js_number
+crates/i18n-next/src/format/options.rs:194:13: delete match arm Event::Bool(b) in array_string
+crates/i18n-next/src/format/options.rs:196:13: delete match arm Event::ObjectStart in array_string
+crates/i18n-next/src/format/options.rs:208:5: replace skip_object -> Result<(), Error> with Ok(())
+crates/i18n-next/src/format/options.rs:209:17: replace > with < in skip_object
+crates/i18n-next/src/format/options.rs:209:17: replace > with == in skip_object
+crates/i18n-next/src/format/options.rs:209:17: replace > with >= in skip_object
+crates/i18n-next/src/format/options.rs:211:13: delete match arm Event::ObjectStart | Event::ArrayStart in skip_object
+crates/i18n-next/src/format/options.rs:211:61: replace += with *= in skip_object
+crates/i18n-next/src/format/options.rs:211:61: replace += with -= in skip_object
+crates/i18n-next/src/format/options.rs:282:28: replace && with || in store
+crates/i18n-next/src/format/options.rs:362:56: replace < with <= in check_numbering
+crates/i18n-next/src/format/options.rs:362:56: replace < with == in check_numbering
+crates/i18n-next/src/format/options.rs:362:56: replace < with > in check_numbering
+crates/i18n-next/src/format/options.rs:404:36: replace || with && in numbering_system
+crates/i18n-next/src/format/options.rs:439:36: replace match guard (1.0..2.0).contains(&v.number()) with true in resolve
+crates/i18n-next/src/format/options.rs:440:13: delete match arm "roundingIncrement" in resolve
+crates/i18n-next/src/format/options.rs:442:13: delete match arm "unitDisplay" in resolve
+crates/i18n-next/src/format/options.rs:443:13: delete match arm "minimumSignificantDigits" in resolve
+crates/i18n-next/src/format/options.rs:570:32: replace match guard matches!(&*v.string(), "best fit" | "lookup") with true in resolve_date
+crates/i18n-next/src/format/options.rs:571:13: delete match arm "localeMatcher" in resolve_date
+crates/i18n-next/src/format/options.rs:572:32: replace match guard matches!(&*v.string(), "best fit" | "basic") with true in resolve_date
+crates/i18n-next/src/format/options.rs:573:13: delete match arm "formatMatcher" in resolve_date
+crates/i18n-next/src/format/relative.rs:96:22: replace + with * in write
+crates/i18n-next/src/format/relative.rs:96:22: replace + with - in write
+crates/i18n-next/src/i18n.rs:1053:9: replace I18n::has_locale -> bool with false
+crates/i18n-next/src/i18n.rs:1053:9: replace I18n::has_locale -> bool with true
+crates/i18n-next/src/i18n.rs:1055:58: replace == with != in I18n::has_locale
+crates/i18n-next/src/i18n.rs:1056:28: delete ! in I18n::has_locale
+crates/i18n-next/src/i18n.rs:1057:51: replace || with && in I18n::has_locale
+crates/i18n-next/src/i18n.rs:1057:88: replace == with != in I18n::has_locale
+crates/i18n-next/src/i18n.rs:1075:9: replace I18n::has_page -> bool with false
+crates/i18n-next/src/i18n.rs:1075:9: replace I18n::has_page -> bool with true
+crates/i18n-next/src/i18n.rs:1076:47: replace || with && in I18n::has_page
+crates/i18n-next/src/i18n.rs:1106:27: replace + with * in I18n::add_messages
+crates/i18n-next/src/i18n.rs:1147:27: replace + with * in I18n::reload
+crates/i18n-next/src/i18n.rs:1173:9: replace I18n::ready_chunk -> Option<Arc<Tree>> with None
+crates/i18n-next/src/i18n.rs:1173:9: replace I18n::ready_chunk -> Option<Arc<Tree>> with Some(Arc::new(Default::default()))
+crates/i18n-next/src/i18n.rs:1185:9: replace I18n::replace_chunks -> Result<(), Error> with Ok(())
+crates/i18n-next/src/i18n.rs:1190:65: replace == with != in I18n::replace_chunks
+crates/i18n-next/src/i18n.rs:1195:37: replace - with + in I18n::replace_chunks
+crates/i18n-next/src/i18n.rs:1195:37: replace - with / in I18n::replace_chunks
+crates/i18n-next/src/i18n.rs:1208:28: delete ! in I18n::replace_chunks
+crates/i18n-next/src/i18n.rs:1208:28: replace match guard !s.meta.disabled(l) with false in I18n::replace_chunks
+crates/i18n-next/src/i18n.rs:1208:28: replace match guard !s.meta.disabled(l) with true in I18n::replace_chunks
+crates/i18n-next/src/i18n.rs:120:9: replace Meta::linked -> bool with false
+crates/i18n-next/src/i18n.rs:120:9: replace Meta::linked -> bool with true
+crates/i18n-next/src/i18n.rs:1215:27: replace + with * in I18n::replace_chunks
+crates/i18n-next/src/i18n.rs:1215:27: replace + with - in I18n::replace_chunks
+crates/i18n-next/src/i18n.rs:1296:9: replace <impl fmt::Debug for View>::fmt -> fmt::Result with Ok(Default::default())
+crates/i18n-next/src/i18n.rs:1370:13: delete field locale from struct View expression in View::with_locale
+crates/i18n-next/src/i18n.rs:1469:9: replace <impl fmt::Debug for Builder>::fmt -> fmt::Result with Ok(Default::default())
+crates/i18n-next/src/i18n.rs:166:9: replace Meta::fallback -> Option<&str> with None
+crates/i18n-next/src/i18n.rs:166:9: replace Meta::fallback -> Option<&str> with Some("")
+crates/i18n-next/src/i18n.rs:166:9: replace Meta::fallback -> Option<&str> with Some("xyzzy")
+crates/i18n-next/src/i18n.rs:1717:9: replace Builder::extend -> Self with Default::default()
+crates/i18n-next/src/i18n.rs:1817:9: replace Builder::linked_messages -> Self with Default::default()
+crates/i18n-next/src/i18n.rs:1824:9: replace Builder::config_path -> String with "xyzzy".into()
+crates/i18n-next/src/i18n.rs:1824:9: replace Builder::config_path -> String with String::new()
+crates/i18n-next/src/i18n.rs:1825:13: delete match arm Some(ConfigSource::Path(path)) in Builder::config_path
+crates/i18n-next/src/i18n.rs:2000:5: replace report_broken with ()
+crates/i18n-next/src/i18n.rs:2004:17: replace != with == in report_broken
+crates/i18n-next/src/i18n.rs:2018:5: replace resolve_linked -> Vec<crate::linked::Broken> with vec![]
+crates/i18n-next/src/i18n.rs:2047:21: replace match guard matches!(d.root, Some(Layer::Lazy(_))) with false in resolve_linked
+crates/i18n-next/src/i18n.rs:2047:21: replace match guard matches!(d.root, Some(Layer::Lazy(_))) with true in resolve_linked
+crates/i18n-next/src/i18n.rs:2049:24: replace match guard matches!(d.pages.get(&p), Some(Layer::Lazy(_))) with false in resolve_linked
+crates/i18n-next/src/i18n.rs:2049:24: replace match guard matches!(d.pages.get(&p), Some(Layer::Lazy(_))) with true in resolve_linked
+crates/i18n-next/src/i18n.rs:2068:9: replace I18n::check -> CheckReport with Default::default()
+crates/i18n-next/src/i18n.rs:2073:37: delete ! in I18n::check
+crates/i18n-next/src/i18n.rs:225:35: replace match guard **c == *code with false in Meta::cold_number
+crates/i18n-next/src/i18n.rs:225:35: replace match guard **c == *code with true in Meta::cold_number
+crates/i18n-next/src/i18n.rs:225:39: replace == with != in Meta::cold_number
+crates/i18n-next/src/i18n.rs:274:9: replace Meta::zone_name -> Option<&str> with None
+crates/i18n-next/src/i18n.rs:274:9: replace Meta::zone_name -> Option<&str> with Some("")
+crates/i18n-next/src/i18n.rs:274:9: replace Meta::zone_name -> Option<&str> with Some("xyzzy")
+crates/i18n-next/src/i18n.rs:283:32: replace || with && in Meta::set_system_zone
+crates/i18n-next/src/i18n.rs:410:27: replace match guard self.chains.contains_key(code) with true in Snapshot::has
+crates/i18n-next/src/i18n.rs:502:9: replace <impl Drop for Inner>::drop with ()
+crates/i18n-next/src/i18n.rs:529:28: replace != with == in Inner::read
+crates/i18n-next/src/i18n.rs:565:28: replace != with == in Inner::refresh
+crates/i18n-next/src/i18n.rs:569:42: delete ! in Inner::refresh
+crates/i18n-next/src/i18n.rs:579:63: replace == with != in Inner::refresh
+crates/i18n-next/src/i18n.rs:583:38: replace + with * in Inner::refresh
+crates/i18n-next/src/i18n.rs:583:43: replace % with / in Inner::refresh
+crates/i18n-next/src/i18n.rs:641:9: replace Inner::try_evict with ()
+crates/i18n-next/src/i18n.rs:655:33: replace + with * in Inner::try_evict
+crates/i18n-next/src/i18n.rs:752:9: replace I18n::builder -> Builder with Default::default()
+crates/i18n-next/src/i18n.rs:765:51: replace || with && in I18n::resolve
+crates/i18n-next/src/i18n.rs:778:41: replace && with || in I18n::resolve
+crates/i18n-next/src/i18n.rs:813:51: replace || with && in I18n::resolve_count
+crates/i18n-next/src/i18n.rs:828:45: replace && with || in I18n::resolve_count
+crates/i18n-next/src/i18n.rs:879:9: replace I18n::try_t -> Option<String> with None
+crates/i18n-next/src/i18n.rs:990:36: replace + with * in I18n::set_locale
+crates/i18n-next/src/i18n.rs:991:34: replace + with * in I18n::set_locale
+crates/i18n-next/src/json.rs:141:26: replace - with + in Reader<'a>::rest
+crates/i18n-next/src/json.rs:141:26: replace - with / in Reader<'a>::rest
+crates/i18n-next/src/json.rs:141:9: replace Reader<'a>::rest -> usize with 0
+crates/i18n-next/src/json.rs:141:9: replace Reader<'a>::rest -> usize with 1
+crates/i18n-next/src/json.rs:455:25: replace + with * in write_str
+crates/i18n-next/src/json.rs:513:9: delete - in number_to_js_string
+crates/i18n-next/src/json.rs:517:71: delete - in number_to_js_string
+crates/i18n-next/src/json.rs:518:37: replace > with < in number_to_js_string
+crates/i18n-next/src/json.rs:518:37: replace > with == in number_to_js_string
+crates/i18n-next/src/json.rs:518:37: replace > with >= in number_to_js_string
+crates/i18n-next/src/json.rs:518:39: delete - in number_to_js_string
+crates/i18n-next/src/json.rs:518:49: replace < with <= in number_to_js_string
+crates/i18n-next/src/json.rs:518:49: replace < with == in number_to_js_string
+crates/i18n-next/src/json.rs:561:23: replace < with <= in layout
+crates/i18n-next/src/json.rs:593:27: replace != with == in push_js_number
+crates/i18n-next/src/json.rs:597:23: replace < with <= in push_js_number
+crates/i18n-next/src/json.rs:643:5: replace short_decimal -> Option<(u64, usize)> with None
+crates/i18n-next/src/json.rs:644:30: replace << with >> in short_decimal
+crates/i18n-next/src/json.rs:646:24: replace * with + in short_decimal
+crates/i18n-next/src/json.rs:646:24: replace * with / in short_decimal
+crates/i18n-next/src/json.rs:652:14: replace / with % in short_decimal
+crates/i18n-next/src/json.rs:652:14: replace / with * in short_decimal
+crates/i18n-next/src/json.rs:672:27: replace < with <= in push_js_number_exact
+crates/i18n-next/src/json.rs:679:11: replace < with <= in push_js_number_exact
+crates/i18n-next/src/json.rs:702:10: replace > with >= in exp_digits
+crates/i18n-next/src/json.rs:723:24: replace || with && in even_tie
+crates/i18n-next/src/json.rs:729:17: replace == with != in even_tie
+crates/i18n-next/src/json.rs:730:15: replace + with * in even_tie
+crates/i18n-next/src/json.rs:730:15: replace + with - in even_tie
+crates/i18n-next/src/json.rs:735:12: replace % with + in even_tie
+crates/i18n-next/src/json.rs:735:12: replace % with / in even_tie
+crates/i18n-next/src/json.rs:735:22: replace || with && in even_tie
+crates/i18n-next/src/json.rs:767:20: delete - in exact_digits
+crates/i18n-next/src/json.rs:769:19: replace | with ^ in exact_digits
+crates/i18n-next/src/json.rs:776:23: replace < with <= in exact_digits
+crates/i18n-next/src/json.rs:782:17: replace < with <= in exact_digits
+crates/i18n-next/src/json.rs:782:17: replace < with == in exact_digits
+crates/i18n-next/src/json.rs:782:17: replace < with > in exact_digits
+crates/i18n-next/src/json.rs:782:26: replace % with + in exact_digits
+crates/i18n-next/src/json.rs:782:26: replace % with / in exact_digits
+crates/i18n-next/src/json.rs:782:30: replace == with != in exact_digits
+crates/i18n-next/src/json.rs:783:15: replace /= with %= in exact_digits
+crates/i18n-next/src/json.rs:784:15: replace += with *= in exact_digits
+crates/i18n-next/src/json.rs:784:15: replace += with -= in exact_digits
+crates/i18n-next/src/json.rs:787:37: replace - with + in exact_digits
+crates/i18n-next/src/json.rs:788:23: replace << with >> in exact_digits
+crates/i18n-next/src/json.rs:806:5: replace u64_len -> usize with 0
+crates/i18n-next/src/json.rs:806:5: replace u64_len -> usize with 1
+crates/i18n-next/src/json.rs:807:13: replace >= with < in u64_len
+crates/i18n-next/src/json.rs:808:11: replace /= with %= in u64_len
+crates/i18n-next/src/json.rs:808:11: replace /= with *= in u64_len
+crates/i18n-next/src/json.rs:809:13: replace += with *= in u64_len
+crates/i18n-next/src/json.rs:809:13: replace += with -= in u64_len
+crates/i18n-next/src/lazy.rs:183:9: replace Loading::has -> bool with false
+crates/i18n-next/src/lazy.rs:183:9: replace Loading::has -> bool with true
+crates/i18n-next/src/lazy.rs:202:9: replace <impl Drop for Loading>::drop with ()
+crates/i18n-next/src/lazy.rs:204:60: replace == with != in <impl Drop for Loading>::drop
+crates/i18n-next/src/lazy.rs:215:9: replace LinkCtx::deps -> Vec<Layer> with vec![]
+crates/i18n-next/src/lazy.rs:228:9: replace LinkCtx::apply with ()
+crates/i18n-next/src/lazy.rs:243:9: replace <impl std::fmt::Debug for LazyChunk>::fmt -> std::fmt::Result with Ok(Default::default())
+crates/i18n-next/src/lazy.rs:334:9: replace LazyChunk::has_partial -> bool with false
+crates/i18n-next/src/lazy.rs:334:9: replace LazyChunk::has_partial -> bool with true
+crates/i18n-next/src/lazy.rs:357:9: replace LazyChunk::stamp -> u64 with 0
+crates/i18n-next/src/lazy.rs:357:9: replace LazyChunk::stamp -> u64 with 1
+crates/i18n-next/src/lazy.rs:368:59: replace != with == in LazyChunk::get
+crates/i18n-next/src/lazy.rs:383:9: replace LazyChunk::prepare -> Vec<Layer> with vec![]
+crates/i18n-next/src/lazy.rs:390:20: delete ! in LazyChunk::prepare
+crates/i18n-next/src/lazy.rs:426:9: replace LazyChunk::partial -> Option<&Tree> with None
+crates/i18n-next/src/lazy.rs:426:9: replace LazyChunk::partial -> Option<&Tree> with Some(Box::leak(Box::new(Default::default())))
+crates/i18n-next/src/lazy.rs:433:34: replace && with || in LazyChunk::partial
+crates/i18n-next/src/lazy.rs:433:58: replace && with || in LazyChunk::partial
+crates/i18n-next/src/lazy.rs:457:56: replace + with * in LazyChunk::mark_loaded
+crates/i18n-next/src/lazy.rs:457:56: replace + with - in LazyChunk::mark_loaded
+crates/i18n-next/src/linked.rs:119:5: replace parse_link -> Option<Link<'_>> with None
+crates/i18n-next/src/linked.rs:123:46: delete ! in parse_link
+crates/i18n-next/src/linked.rs:128:24: replace - with + in parse_link
+crates/i18n-next/src/linked.rs:128:24: replace - with / in parse_link
+crates/i18n-next/src/linked.rs:132:23: replace + with * in parse_link
+crates/i18n-next/src/linked.rs:132:23: replace + with - in parse_link
+crates/i18n-next/src/linked.rs:133:33: replace + with * in parse_link
+crates/i18n-next/src/linked.rs:133:33: replace + with - in parse_link
+crates/i18n-next/src/linked.rs:138:36: replace || with && in parse_link
+crates/i18n-next/src/linked.rs:141:41: delete ! in parse_link
+crates/i18n-next/src/linked.rs:145:19: replace + with * in parse_link
+crates/i18n-next/src/linked.rs:145:19: replace + with - in parse_link
+crates/i18n-next/src/linked.rs:153:5: replace modify with ()
+crates/i18n-next/src/linked.rs:157:13: delete match arm "upper" in modify
+crates/i18n-next/src/linked.rs:158:13: delete match arm "lower" in modify
+crates/i18n-next/src/linked.rs:160:18: replace match guard first with false in modify
+crates/i18n-next/src/linked.rs:160:18: replace match guard first with true in modify
+crates/i18n-next/src/linked.rs:170:29: replace - with + in modify
+crates/i18n-next/src/linked.rs:170:29: replace - with / in modify
+crates/i18n-next/src/linked.rs:171:33: replace - with + in modify
+crates/i18n-next/src/linked.rs:171:33: replace - with / in modify
+crates/i18n-next/src/linked.rs:171:40: replace + with * in modify
+crates/i18n-next/src/linked.rs:171:40: replace + with - in modify
+crates/i18n-next/src/linked.rs:172:16: replace + with * in modify
+crates/i18n-next/src/linked.rs:172:16: replace + with - in modify
+crates/i18n-next/src/linked.rs:199:9: replace Resolver<'a>::text_at -> Option<Arc<str>> with None
+crates/i18n-next/src/linked.rs:200:32: replace match guard &**v == "true" || &**v == "false" with false in Resolver<'a>::text_at
+crates/i18n-next/src/linked.rs:200:32: replace match guard &**v == "true" || &**v == "false" with true in Resolver<'a>::text_at
+crates/i18n-next/src/linked.rs:200:37: replace == with != in Resolver<'a>::text_at
+crates/i18n-next/src/linked.rs:200:47: replace || with && in Resolver<'a>::text_at
+crates/i18n-next/src/linked.rs:200:55: replace == with != in Resolver<'a>::text_at
+crates/i18n-next/src/linked.rs:207:44: replace == with != in Resolver<'a>::target
+crates/i18n-next/src/linked.rs:210:12: delete ! in Resolver<'a>::target
+crates/i18n-next/src/linked.rs:235:12: delete ! in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:243:30: replace + with * in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:243:30: replace + with - in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:245:30: replace + with * in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:245:30: replace + with - in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:248:49: replace + with * in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:248:49: replace + with - in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:250:28: replace + with * in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:250:28: replace + with - in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:253:28: delete ! in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:253:28: replace match guard !MODIFIERS.contains(&m) with false in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:253:28: replace match guard !MODIFIERS.contains(&m) with true in Resolver<'a>::message
+crates/i18n-next/src/linked.rs:294:5: replace chain -> Vec<&'a str> with vec![""]
+crates/i18n-next/src/linked.rs:294:5: replace chain -> Vec<&'a str> with vec!["xyzzy"]
+crates/i18n-next/src/linked.rs:294:5: replace chain -> Vec<&'a str> with vec![]
+crates/i18n-next/src/linked.rs:304:12: delete ! in chain
+crates/i18n-next/src/linked.rs:319:9: delete match arm Outcome::Text(s) in final_text
+crates/i18n-next/src/linked.rs:335:9: replace Answer<'_>::shape -> (u8, Option<&str>) with (0, None)
+crates/i18n-next/src/linked.rs:335:9: replace Answer<'_>::shape -> (u8, Option<&str>) with (0, Some(""))
+crates/i18n-next/src/linked.rs:335:9: replace Answer<'_>::shape -> (u8, Option<&str>) with (0, Some("xyzzy"))
+crates/i18n-next/src/linked.rs:335:9: replace Answer<'_>::shape -> (u8, Option<&str>) with (1, None)
+crates/i18n-next/src/linked.rs:335:9: replace Answer<'_>::shape -> (u8, Option<&str>) with (1, Some(""))
+crates/i18n-next/src/linked.rs:335:9: replace Answer<'_>::shape -> (u8, Option<&str>) with (1, Some("xyzzy"))
+crates/i18n-next/src/linked.rs:352:5: replace report with ()
+crates/i18n-next/src/linked.rs:365:5: replace links -> impl Iterator<Item = Link<'_>> with ::std::iter::empty()
+crates/i18n-next/src/linked.rs:368:30: replace + with * in links
+crates/i18n-next/src/linked.rs:368:30: replace + with - in links
+crates/i18n-next/src/linked.rs:371:34: replace + with * in links
+crates/i18n-next/src/linked.rs:371:34: replace + with - in links
+crates/i18n-next/src/linked.rs:374:38: replace + with * in links
+crates/i18n-next/src/linked.rs:374:38: replace + with - in links
+crates/i18n-next/src/linked.rs:445:9: replace Views<'c>::layers -> Vec<(usize, &'c Chunk)> with vec![(0, Box::leak(Box::new(Default::default())))]
+crates/i18n-next/src/linked.rs:445:9: replace Views<'c>::layers -> Vec<(usize, &'c Chunk)> with vec![(1, Box::leak(Box::new(Default::default())))]
+crates/i18n-next/src/linked.rs:445:9: replace Views<'c>::layers -> Vec<(usize, &'c Chunk)> with vec![]
+crates/i18n-next/src/linked.rs:456:5: replace reach -> Deps with Default::default()
+crates/i18n-next/src/linked.rs:459:40: replace == with != in reach
+crates/i18n-next/src/linked.rs:476:5: replace own_messages -> Vec<Vec<OwnMsg>> with vec![]
+crates/i18n-next/src/linked.rs:476:5: replace own_messages -> Vec<Vec<OwnMsg>> with vec![vec![]]
+crates/i18n-next/src/linked.rs:519:5: replace own_at -> Option<&'o OwnMsg> with None
+crates/i18n-next/src/linked.rs:520:44: delete ! in own_at
+crates/i18n-next/src/linked.rs:532:5: replace stored_at -> Option<&'s Answer<'c>> with None
+crates/i18n-next/src/linked.rs:545:5: replace view_answers -> Vec<Stored<'c>> with vec![Default::default()]
+crates/i18n-next/src/linked.rs:545:5: replace view_answers -> Vec<Stored<'c>> with vec![]
+crates/i18n-next/src/linked.rs:568:33: replace != with == in view_answers
+crates/i18n-next/src/linked.rs:573:52: replace != with == in view_answers
+crates/i18n-next/src/linked.rs:574:50: delete ! in view_answers
+crates/i18n-next/src/linked.rs:593:29: replace == with != in view_answers
+crates/i18n-next/src/linked.rs:600:28: replace match guard lang(setup, &views.keys[v].0) == lang(setup, &views.keys[provider].0) && m.deps.iter().all(|(d, at)| { let here = raw.iter().find(|(_, c)| c.link_target(d).is_some()); here.map(|&(w, _)| w) == *at }) with false in view_answers
+crates/i18n-next/src/linked.rs:600:28: replace match guard lang(setup, &views.keys[v].0) == lang(setup, &views.keys[provider].0) && m.deps.iter().all(|(d, at)| { let here = raw.iter().find(|(_, c)| c.link_target(d).is_some()); here.map(|&(w, _)| w) == *at }) with true in view_answers
+crates/i18n-next/src/linked.rs:601:29: replace == with != in view_answers
+crates/i18n-next/src/linked.rs:602:29: replace && with || in view_answers
+crates/i18n-next/src/linked.rs:604:55: replace == with != in view_answers
+crates/i18n-next/src/linked.rs:630:20: delete ! in view_answers
+crates/i18n-next/src/linked.rs:630:55: replace == with != in view_answers
+crates/i18n-next/src/linked.rs:656:5: replace resolve -> Vec<Broken> with vec![]
+crates/i18n-next/src/linked.rs:672:28: replace && with || in resolve
+crates/i18n-next/src/linked.rs:689:37: replace match guard *t != m.s.raw with false in resolve
+crates/i18n-next/src/linked.rs:689:37: replace match guard *t != m.s.raw with true in resolve
+crates/i18n-next/src/linked.rs:689:40: replace != with == in resolve
+crates/i18n-next/src/linked.rs:690:39: delete ! in resolve
+crates/i18n-next/src/linked.rs:690:39: replace match guard !m.s.hidden with false in resolve
+crates/i18n-next/src/linked.rs:690:39: replace match guard !m.s.hidden with true in resolve
+crates/i18n-next/src/linked.rs:710:5: replace lazy_contexts with ()
+crates/i18n-next/src/linked.rs:723:26: replace == with != in lazy_contexts
+crates/i18n-next/src/linked.rs:723:35: replace && with || in lazy_contexts
+crates/i18n-next/src/linked.rs:723:49: replace == with != in lazy_contexts
+crates/i18n-next/src/linked.rs:732:29: delete ! in lazy_contexts
+crates/i18n-next/src/linked.rs:750:52: replace == with != in mark_lazy
+crates/i18n-next/src/linked.rs:750:5: replace mark_lazy with ()
+crates/i18n-next/src/linked.rs:770:5: replace resolve_tree with ()
+crates/i18n-next/src/linked.rs:787:25: delete match arm Outcome::Text(t) in resolve_tree
+crates/i18n-next/src/linked.rs:796:45: replace != with == in resolve_tree
+crates/i18n-next/src/loader.rs:29:26: replace || with && in classify
+crates/i18n-next/src/loader.rs:34:29: replace match guard !page.is_empty() with true in classify
+crates/i18n-next/src/loader.rs:88:38: replace && with || in list_dir::walk
+crates/i18n-next/src/plural/mod.rs:135:5: replace digits_of_huge -> u64 with 0
+crates/i18n-next/src/plural/mod.rs:138:13: replace digits_of_huge::<impl std::fmt::Write for Digits>::write_str -> std::fmt::Result with Ok(Default::default())
+crates/i18n-next/src/plural/mod.rs:139:34: replace % with / in digits_of_huge::<impl std::fmt::Write for Digits>::write_str
+crates/i18n-next/src/plural/mod.rs:139:50: replace * with / in digits_of_huge::<impl std::fmt::Write for Digits>::write_str
+crates/i18n-next/src/plural/mod.rs:139:55: replace + with * in digits_of_huge::<impl std::fmt::Write for Digits>::write_str
+crates/i18n-next/src/plural/mod.rs:152:5: replace digits_of_huge -> u64 with 1
+crates/i18n-next/src/plural/mod.rs:166:51: replace || with && in shortest_whole
+crates/i18n-next/src/plural/mod.rs:166:56: replace < with <= in shortest_whole
+crates/i18n-next/src/plural/mod.rs:166:56: replace < with == in shortest_whole
+crates/i18n-next/src/plural/mod.rs:169:10: replace < with <= in shortest_whole
+crates/i18n-next/src/plural/mod.rs:202:46: replace match guard (below / next).is_multiple_of(2) with false in shortest_whole
+crates/i18n-next/src/plural/mod.rs:202:46: replace match guard (below / next).is_multiple_of(2) with true in shortest_whole
+crates/i18n-next/src/plural/mod.rs:202:53: replace / with % in shortest_whole
+crates/i18n-next/src/plural/mod.rs:202:53: replace / with * in shortest_whole
+crates/i18n-next/src/plural/mod.rs:300:9: replace Plural::named_names -> Vec<&'static str> with vec![""]
+crates/i18n-next/src/plural/mod.rs:300:9: replace Plural::named_names -> Vec<&'static str> with vec!["xyzzy"]
+crates/i18n-next/src/plural/mod.rs:300:9: replace Plural::named_names -> Vec<&'static str> with vec![]
+crates/i18n-next/src/plural/mod.rs:319:29: replace match guard n < PROBE as u64 with false in Plural::category
+crates/i18n-next/src/plural/mod.rs:319:29: replace match guard n < PROBE as u64 with true in Plural::category
+crates/i18n-next/src/plural/mod.rs:319:31: replace < with <= in Plural::category
+crates/i18n-next/src/plural/mod.rs:319:31: replace < with == in Plural::category
+crates/i18n-next/src/plural/mod.rs:319:31: replace < with > in Plural::category
+crates/i18n-next/src/plural/mod.rs:395:5: replace alnum -> bool with true
+crates/i18n-next/src/plural/mod.rs:504:26: replace && with || in parse
+crates/i18n-next/src/plural/mod.rs:534:46: replace + with * in parse
+crates/i18n-next/src/plural/mod.rs:550:25: replace || with && in parse
+crates/i18n-next/src/plural/mod.rs:557:44: replace > with == in parse
+crates/i18n-next/src/plural/mod.rs:557:44: replace > with >= in parse
+crates/i18n-next/src/plural/mod.rs:557:48: replace || with && in parse
+crates/i18n-next/src/plural/mod.rs:565:15: replace - with / in parse
+crates/i18n-next/src/plural/mod.rs:580:43: replace && with || in parse
+crates/i18n-next/src/plural/mod.rs:612:19: delete ! in unicode_extension
+crates/i18n-next/src/plural/mod.rs:612:25: replace && with || in unicode_extension
+crates/i18n-next/src/plural/mod.rs:612:28: delete ! in unicode_extension
+crates/i18n-next/src/plural/mod.rs:634:59: replace || with && in transformed_extension
+crates/i18n-next/src/plural/mod.rs:647:27: replace && with || in transformed_extension
+crates/i18n-next/src/plural/mod.rs:647:57: replace && with || in transformed_extension
+crates/i18n-next/src/plural/mod.rs:652:20: replace += with -= in transformed_extension
+crates/i18n-next/src/plural/mod.rs:681:5: replace canonical_language -> Option<R> with None
+crates/i18n-next/src/plural/mod.rs:743:24: replace == with != in rule_index
+crates/i18n-next/src/plural/mod.rs:743:29: replace && with || in rule_index
+crates/i18n-next/src/plural/mod.rs:743:41: replace && with || in rule_index
+crates/i18n-next/src/plural/mod.rs:745:32: replace == with != in rule_index
+crates/i18n-next/src/plural/mod.rs:745:37: replace || with && in rule_index
+crates/i18n-next/src/plural/mod.rs:745:48: replace == with != in rule_index
+crates/i18n-next/src/plural/mod.rs:745:54: replace && with || in rule_index
+crates/i18n-next/src/plural/mod.rs:771:20: replace > with < in rule_index
+crates/i18n-next/src/plural/mod.rs:771:20: replace > with == in rule_index
+crates/i18n-next/src/plural/mod.rs:771:20: replace > with >= in rule_index
+crates/i18n-next/src/plural/mod.rs:867:9: replace Shape::check -> Option<(Vec<usize>, bool)> with None
+crates/i18n-next/src/plural/mod.rs:867:9: replace Shape::check -> Option<(Vec<usize>, bool)> with Some((vec![0], false))
+crates/i18n-next/src/plural/mod.rs:867:9: replace Shape::check -> Option<(Vec<usize>, bool)> with Some((vec![0], true))
+crates/i18n-next/src/plural/mod.rs:867:9: replace Shape::check -> Option<(Vec<usize>, bool)> with Some((vec![1], false))
+crates/i18n-next/src/plural/mod.rs:867:9: replace Shape::check -> Option<(Vec<usize>, bool)> with Some((vec![1], true))
+crates/i18n-next/src/plural/mod.rs:867:9: replace Shape::check -> Option<(Vec<usize>, bool)> with Some((vec![], false))
+crates/i18n-next/src/plural/mod.rs:867:9: replace Shape::check -> Option<(Vec<usize>, bool)> with Some((vec![], true))
+crates/i18n-next/src/plural/mod.rs:868:33: replace + with * in Shape::check
+crates/i18n-next/src/plural/mod.rs:868:33: replace + with - in Shape::check
+crates/i18n-next/src/plural/mod.rs:870:19: replace && with || in Shape::check
+crates/i18n-next/src/plural/mod.rs:870:32: replace + with * in Shape::check
+crates/i18n-next/src/plural/mod.rs:870:32: replace + with - in Shape::check
+crates/i18n-next/src/plural/mod.rs:870:36: replace != with == in Shape::check
+crates/i18n-next/src/plural/mod.rs:871:37: replace + with * in Shape::check
+crates/i18n-next/src/plural/mod.rs:871:37: replace + with - in Shape::check
+crates/i18n-next/src/plural/mod.rs:873:12: delete ! in Shape::check
+crates/i18n-next/src/plural/mod.rs:876:25: delete ! in Shape::check
+crates/i18n-next/src/plural/mod.rs:876:33: replace && with || in Shape::check
+crates/i18n-next/src/plural/mod.rs:876:48: replace >= with < in Shape::check
+crates/i18n-next/src/plural/mod.rs:876:53: replace && with || in Shape::check
+crates/i18n-next/src/plural/mod.rs:876:56: delete ! in Shape::check
+crates/i18n-next/src/plural/mod.rs:96:34: replace < with <= in Operands::whole_f64
+crates/i18n-next/src/plural/rules.rs:380:197: replace % with + in r_kw
+crates/i18n-next/src/plural/rules.rs:380:197: replace % with / in r_kw
+crates/i18n-next/src/plural/rules.rs:380:219: replace || with && in r_kw
+crates/i18n-next/src/plural/rules.rs:380:226: replace % with + in r_kw
+crates/i18n-next/src/plural/rules.rs:380:226: replace % with / in r_kw
+crates/i18n-next/src/plural/rules.rs:380:248: replace || with && in r_kw
+crates/i18n-next/src/plural/rules.rs:380:255: replace % with + in r_kw
+crates/i18n-next/src/plural/rules.rs:380:255: replace % with / in r_kw
+crates/i18n-next/src/plural/rules.rs:380:281: delete ! in r_kw
+crates/i18n-next/src/plural/rules.rs:380:287: replace == with != in r_kw
+crates/i18n-next/src/plural/rules.rs:380:302: replace % with + in r_kw
+crates/i18n-next/src/plural/rules.rs:380:302: replace % with / in r_kw
+crates/i18n-next/src/plural/rules.rs:429:35: replace % with + in r_lv
+crates/i18n-next/src/plural/rules.rs:429:35: replace % with / in r_lv
+crates/i18n-next/src/tz/mod.rs:140:37: replace < with <= in Zone::fixed
+crates/i18n-next/src/tz/mod.rs:302:5: replace load -> Option<Zone> with None
+crates/i18n-next/src/tz/posix.rs:169:43: replace < with <= in Day::to_days
+crates/i18n-next/src/tz/posix.rs:202:14: replace < with <= in DayTime::to_utc
+crates/i18n-next/src/tz/posix.rs:281:41: replace > with >= in Parser<'_>::hms
+crates/i18n-next/src/tz/posix.rs:84:27: replace - with + in Posix::year_dst
+crates/i18n-next/src/tz/posix.rs:85:18: replace < with <= in Posix::year_dst
+crates/i18n-next/src/tz/posix.rs:85:18: replace < with == in Posix::year_dst
+crates/i18n-next/src/tz/tzif.rs:116:14: replace < with <= in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:116:14: replace < with == in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:116:14: replace < with > in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:120:40: replace - with + in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:120:55: replace / with % in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:120:55: replace / with * in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:122:17: replace > with < in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:122:17: replace > with == in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:122:17: replace > with >= in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:122:21: replace && with || in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:122:44: replace > with < in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:122:44: replace > with == in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:122:44: replace > with >= in Table::rule_at
+crates/i18n-next/src/tz/tzif.rs:133:35: replace - with +
+crates/i18n-next/src/tz/tzif.rs:133:35: replace - with /
+crates/i18n-next/src/tz/tzif.rs:159:45: replace + with * in block_len
+crates/i18n-next/src/tz/tzif.rs:159:45: replace + with - in block_len
+crates/i18n-next/src/tz/tzif.rs:49:9: replace <impl PartialEq for Table>::eq -> bool with false
+crates/i18n-next/src/tz/tzif.rs:49:9: replace <impl PartialEq for Table>::eq -> bool with true
+crates/i18n-next/src/tz/tzif.rs:50:13: replace == with != in <impl PartialEq for Table>::eq
+crates/i18n-next/src/tz/tzif.rs:90:33: replace + with * in Table::offset_at
+crates/i18n-next/src/tz/tzif.rs:95:18: replace > with < in Table::offset_at
+crates/i18n-next/src/tz/tzif.rs:96:35: replace - with + in Table::offset_at
+crates/i18n-next/src/tz/tzif.rs:96:35: replace - with / in Table::offset_at
+crates/tauri-plugin-i18n-next/src/bind.rs:20:9: replace Relabel::window -> Option<String> with Some("xyzzy".into())
+crates/tauri-plugin-i18n-next/src/bind.rs:20:9: replace Relabel::window -> Option<String> with Some(String::new())
+crates/tauri-plugin-i18n-next/src/bind.rs:44:9: replace <impl Relabel for tauri::tray::TrayIcon<R>>::relabel -> tauri::Result<()> with Ok(())
+crates/tauri-plugin-i18n-next/src/bind.rs:50:9: replace <impl Relabel for tauri::WebviewWindow<R>>::relabel -> tauri::Result<()> with Ok(())
+crates/tauri-plugin-i18n-next/src/bind.rs:54:9: replace <impl Relabel for tauri::WebviewWindow<R>>::window -> Option<String> with None
+crates/tauri-plugin-i18n-next/src/bind.rs:54:9: replace <impl Relabel for tauri::WebviewWindow<R>>::window -> Option<String> with Some("xyzzy".into())
+crates/tauri-plugin-i18n-next/src/bind.rs:54:9: replace <impl Relabel for tauri::WebviewWindow<R>>::window -> Option<String> with Some(String::new())
+crates/tauri-plugin-i18n-next/src/bind.rs:60:9: replace <impl Relabel for tauri::Window<R>>::relabel -> tauri::Result<()> with Ok(())
+crates/tauri-plugin-i18n-next/src/bind.rs:64:9: replace <impl Relabel for tauri::Window<R>>::window -> Option<String> with None
+crates/tauri-plugin-i18n-next/src/bind.rs:64:9: replace <impl Relabel for tauri::Window<R>>::window -> Option<String> with Some("xyzzy".into())
+crates/tauri-plugin-i18n-next/src/bind.rs:64:9: replace <impl Relabel for tauri::Window<R>>::window -> Option<String> with Some(String::new())
+crates/tauri-plugin-i18n-next/src/lib.rs:400:53: replace == with != in Builder::setup
+crates/tauri-plugin-i18n-next/src/missing.rs:66:59: replace > with >= in record
+crates/tauri-plugin-i18n-next/src/persist.rs:40:39: delete ! in write
+crates/tauri-plugin-i18n-next/src/protocol.rs:219:20: replace && with || in parse_tag
+crates/tauri-plugin-i18n-next/src/protocol.rs:226:5: replace unavailable -> Response<Vec<u8>> with Response::new(vec![0])
+crates/tauri-plugin-i18n-next/src/protocol.rs:226:5: replace unavailable -> Response<Vec<u8>> with Response::new(vec![1])
+crates/tauri-plugin-i18n-next/src/protocol.rs:226:5: replace unavailable -> Response<Vec<u8>> with Response::new(vec![])

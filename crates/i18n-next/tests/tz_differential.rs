@@ -119,11 +119,16 @@ fn every_system_zone_matches_jiff() {
     for (name, bytes) in &files {
         let oracle =
             TimeZone::tzif(name, bytes).unwrap_or_else(|e| panic!("jiff rejects {name}: {e}"));
-        let zone = match tz::Zone::named(name) {
-            Some(z) => z,
-            None if !tz::valid_name(name) => continue,
-            None => panic!("own lookup misses {name}"),
+        // only names `Intl` takes (posixrules, Factory, posix/…, right/… are files, not zones)
+        let Some((canon, file)) = tz::canonical(name) else {
+            assert!(tz::Zone::named(name).is_none(), "{name} is no Intl zone");
+            continue;
         };
+        if file != canon {
+            // an ICU alias: it reads another zone's file, compared there
+            continue;
+        }
+        let zone = tz::Zone::named(name).unwrap_or_else(|| panic!("own lookup misses {name}"));
         assert_eq!(zone.name(), name);
         let ms = moments(&oracle, FROM, TO, 1000, &mut rng);
         checked += ms.len();

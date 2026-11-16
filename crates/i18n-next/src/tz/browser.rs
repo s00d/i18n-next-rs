@@ -97,11 +97,9 @@ fn intl_offset(fmt: &Intl::DateTimeFormat, t: i64) -> Option<i32> {
 /// (one JS reference) comes out, so no JS call runs while `FORMATS` is borrowed: an
 /// exception thrown through wasm runs no destructor and would leave the borrow taken.
 fn formatter_of(id: u32, name: &str) -> Option<Intl::DateTimeFormat> {
-    if let Some(fmt) = FORMATS.with_borrow(|list| {
-        list.iter()
-            .find(|(i, _)| *i == id)
-            .map(|(_, f)| f.clone())
-    }) {
+    if let Some(fmt) =
+        FORMATS.with_borrow(|list| list.iter().find(|(i, _)| *i == id).map(|(_, f)| f.clone()))
+    {
         return Some(fmt);
     }
     let fmt = formatter(Some(name))?;
@@ -138,6 +136,12 @@ impl JsZone {
             intl_offset(&fmt, t).unwrap_or(0)
         }
     }
+}
+
+/// The name `Intl` resolves `name` to (`europe/berlin` → `Europe/Berlin`), `None` if it
+/// throws on it: the key of the zone cache, so spellings of one zone share one entry.
+pub(crate) fn canonical(name: &str) -> Option<String> {
+    get(&formatter(Some(name))?.resolved_options(), "timeZone")?.as_string()
 }
 
 /// The zone `name` if this engine's `Intl` knows it.

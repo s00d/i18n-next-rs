@@ -135,6 +135,11 @@ fn relative_dates_follow_the_injected_clock() {
             .tdr_with(AT - 5 * DAY, RelativeOptions::default().short()),
         "6 days ago"
     );
+    // a clock past a JS `Date` (±8.64e15 ms) is no now: `Invalid Date`, the edge still works
+    now.store(8_640_000_000_000_001, Ordering::SeqCst);
+    assert_eq!(i18n.tdr(AT), "Invalid Date");
+    now.store(8_640_000_000_000_000, Ordering::SeqCst);
+    assert_ne!(i18n.tdr(AT), "Invalid Date");
 }
 
 /// Given named date formats under `zh`, `zh-Hant` and `de`, when a longer code formats with
@@ -193,6 +198,80 @@ fn zones_of_the_instance_and_of_a_format() {
     assert_eq!(i18n.td_as(spring, "berlin"), "3:00 AM");
     assert_eq!(i18n.td_as(spring - 1000, "berlin"), "1:59 AM");
     assert_eq!(i18n.td_as(spring, "here"), "9:00 PM");
+}
+
+/// Given zone names spelled as `Intl` takes them (any ASCII case, an offset, ICU's legacy
+/// aliases), when used on the instance or in a named format, then they resolve as in JS;
+/// names `Intl` rejects (`posixrules`, `Factory`, `posix/…`, `right/…`, `localtime`, bad
+/// offsets) fail the build; an empty instance zone is no zone (the system's), as in
+/// `FormatService`, while an empty format `timeZone` is an error, as in `Intl`.
+#[test]
+fn zone_names_as_intl_takes_them() {
+    // 2024-07-01 12:00 UTC
+    let summer = 1_719_835_200_000i64;
+    let formats = r#"{"en": {"t": {"timeStyle": "short", "hourCycle": "h23"},
+        "kolkata": {"timeStyle": "short", "hourCycle": "h23", "timeZone": "+0530"},
+        "west": {"timeStyle": "short", "hourCycle": "h23", "timeZone": "-08:00"},
+        "five": {"timeStyle": "short", "hourCycle": "h23", "timeZone": "+05"},
+        "lower": {"timeStyle": "short", "hourCycle": "h23", "timeZone": "etc/gmt+3"},
+        "ast4": {"timeStyle": "short", "hourCycle": "h23", "timeZone": "systemv/ast4"}}}"#;
+    for zone in [
+        "Europe/Berlin",
+        "europe/berlin",
+        "EUROPE/BERLIN",
+        "eUrOpE/bErLiN",
+    ] {
+        let i18n = I18n::builder()
+            .time_zone(zone)
+            .datetime_formats(formats)
+            .build()
+            .unwrap_or_else(|e| panic!("{zone}: {e}"));
+        assert_eq!(i18n.td_as(summer, "t"), "14:00", "{zone}");
+        assert_eq!(i18n.td_as(summer, "kolkata"), "17:30");
+        assert_eq!(i18n.td_as(summer, "west"), "04:00");
+        assert_eq!(i18n.td_as(summer, "five"), "17:00");
+        assert_eq!(i18n.td_as(summer, "lower"), "09:00");
+        assert_eq!(i18n.td_as(summer, "ast4"), "08:00");
+    }
+    let pacific = I18n::builder()
+        .time_zone("US/Pacific-New")
+        .datetime_formats(formats)
+        .build()
+        .unwrap();
+    assert_eq!(pacific.td_as(summer, "t"), "05:00");
+    for bad in [
+        "posixrules",
+        "Factory",
+        "posix/Europe/Berlin",
+        "right/Europe/Berlin",
+        "localtime",
+        "+5",
+        "+24:00",
+        "+05:3",
+        "+05:30:00",
+        "05:30",
+        "Etc/Unknown",
+    ] {
+        assert!(
+            matches!(I18n::builder().time_zone(bad).build(), Err(Error::UnknownTimeZone(z)) if z == bad),
+            "{bad}"
+        );
+        let json = format!(r#"{{"en": {{"x": {{"timeZone": "{bad}"}}}}}}"#);
+        assert!(
+            I18n::builder().datetime_formats(&json).build().is_err(),
+            "{bad}"
+        );
+    }
+    let unset = I18n::builder().time_zone("").build().unwrap();
+    let system = I18n::builder().build().unwrap();
+    assert_eq!(unset.td(summer), system.td(summer));
+    let empty_format = r#"{"en": {"x": {"timeZone": ""}}}"#;
+    assert!(
+        I18n::builder()
+            .datetime_formats(empty_format)
+            .build()
+            .is_err()
+    );
 }
 
 /// Given a `Text` with a number, a date and a relative date, when it is shown, then the

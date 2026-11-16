@@ -12,12 +12,17 @@
 //! - the bundled tzdb (`tzdb.rs`): with feature `tzdb`, and always on Windows when `tz` is on
 //!   (a Cargo feature cannot default to on for one target, so `cfg(windows)` includes it).
 //!
-//! Parsed zones are cached per name for the process; `offset_at` is a binary search plus the
-//! POSIX rule past the last transition, without allocation. The module uses nothing else of
+//! Parsed zones are cached per canonical name for the process (`Zone::named`); `offset_at`
+//! is a binary search plus the POSIX rule past the last transition, without allocation. The module uses nothing else of
 //! the crate, so tests, benches and the fuzz target include it with `#[path]`.
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 mod browser;
+#[cfg(any(
+    not(all(target_arch = "wasm32", target_os = "unknown")),
+    feature = "tzdb"
+))]
+pub(crate) mod names;
 pub(crate) mod posix;
 #[cfg_attr(
     not(any(feature = "tzdb", windows)),
@@ -150,18 +155,29 @@ impl Zone {
         Zone::new(name, Rules::Table(table))
     }
 
-    /// The IANA zone `iana` from the platform (module doc), `None` if it has no such zone.
-    /// Found zones are cached for the process; misses are not (a name from outside cannot
-    /// grow the cache).
-    pub(crate) fn named(iana: &str) -> Option<Zone> {
-        static CACHE: OnceLock<RwLock<HashMap<Box<str>, Zone>>> = OnceLock::new();
-        let cache = CACHE.get_or_init(Default::default);
-        if let Some(z) = cache.read().unwrap_or_else(|e| e.into_inner()).get(iana) {
-            return Some(z.clone());
+    /// The zone `name` as `Intl` takes it, `None` if it has no such zone: an offset
+    /// `[+-]HH(:?MM)?` is a fixed zone; any other name is looked up ASCII case-insensitively
+    /// (`europe/berlin` is `Europe/Berlin`) among the IANA zones and links and ICU's legacy
+    /// aliases (`names.rs`; in the browser `Intl` itself decides), so `posixrules`,
+    /// `Factory`, `posix/…`, `right/…` and `localtime` are not zones. Found zones are cached
+    /// for the process by their canonical name, so the cache holds at most one entry per real
+    /// zone however a name is spelled; misses are not cached.
+    pub(crate) fn named(name: &str) -> Option<Zone> {
+        if let Some(offset) = offset_name(name) {
+            return Some(Zone::fixed(offset));
         }
-        let zone = load(iana)?;
-        let mut map = cache.write().unwrap_or_else(|e| e.into_inner());
-        Some(map.entry(iana.into()).or_insert(zone).clone())
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        if let Some(canon) = browser::canonical(name) {
+            return cached(&canon, || browser::named(&canon));
+        }
+        #[cfg(any(
+            not(all(target_arch = "wasm32", target_os = "unknown")),
+            feature = "tzdb"
+        ))]
+        if let Some((canon, file)) = canonical(name) {
+            return cached(canon, || read(canon, file));
+        }
+        None
     }
 
     /// The zone of the process: `TZ`, then `/etc/localtime`; in the browser the zone of
@@ -206,8 +222,61 @@ fn push_2(s: &mut String, v: u32) {
     s.push(char::from(b'0' + (v % 10) as u8));
 }
 
-/// IANA names only: ASCII letters, digits, `_+-`, components separated by `/`, none empty
-/// or starting with `.`; so a name can never leave the zoneinfo directory.
+/// Named zones by canonical name ([`Zone::named`]).
+pub(crate) static CACHE: OnceLock<RwLock<HashMap<Box<str>, Zone>>> = OnceLock::new();
+
+/// The zone cached under the canonical name `canon`, else `load()` of it, cached.
+fn cached(canon: &str, load: impl FnOnce() -> Option<Zone>) -> Option<Zone> {
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(z) = cache.read().unwrap_or_else(|e| e.into_inner()).get(canon) {
+        return Some(z.clone());
+    }
+    let zone = load()?;
+    let mut map = cache.write().unwrap_or_else(|e| e.into_inner());
+    Some(map.entry(canon.into()).or_insert(zone).clone())
+}
+
+/// Seconds east of UTC of an offset name as `Intl` takes it: `+HH`, `+HHMM`, `+HH:MM` (or
+/// `-`), hours to 23, minutes to 59.
+pub(crate) fn offset_name(name: &str) -> Option<i32> {
+    let b = name.as_bytes();
+    let sign = match b.first()? {
+        b'+' => 1,
+        b'-' => -1,
+        _ => return None,
+    };
+    let digits = match b.len() {
+        3 => [b[1], b[2], b'0', b'0'],
+        5 => [b[1], b[2], b[3], b[4]],
+        6 if b[3] == b':' => [b[1], b[2], b[4], b[5]],
+        _ => return None,
+    };
+    if !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let n = |i: usize| i32::from(digits[i] - b'0') * 10 + i32::from(digits[i + 1] - b'0');
+    let (h, m) = (n(0), n(2));
+    (h <= 23 && m <= 59).then_some(sign * (h * 3600 + m * 60))
+}
+
+/// The spelling `names.rs` has for `name` (ASCII case-insensitive) and the zone it reads.
+#[cfg(any(
+    not(all(target_arch = "wasm32", target_os = "unknown")),
+    feature = "tzdb"
+))]
+pub(crate) fn canonical(name: &str) -> Option<(&'static str, &'static str)> {
+    fn lower(s: &str) -> impl Iterator<Item = u8> + '_ {
+        s.bytes().map(|b| b.to_ascii_lowercase())
+    }
+    let i = names::NAMES
+        .binary_search_by(|(n, _)| lower(n).cmp(lower(name)))
+        .ok()?;
+    let (canon, file) = names::NAMES[i];
+    Some((canon, if file.is_empty() { canon } else { file }))
+}
+
+/// Path components of a zone name: ASCII letters, digits, `_+-.`, separated by `/`, none
+/// empty or starting with `.`; so a name can never leave the zoneinfo directory.
 pub(crate) fn valid_name(name: &str) -> bool {
     name.len() <= 255
         && name.split('/').all(|c| {
@@ -218,15 +287,29 @@ pub(crate) fn valid_name(name: &str) -> bool {
         })
 }
 
-/// The platform lookup behind [`Zone::named`], uncached.
+/// The platform lookup behind [`Zone::named`], uncached: the zone `name` is (its canonical
+/// spelling), `None` when it is none or the platform lacks it.
 pub(crate) fn load(name: &str) -> Option<Zone> {
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     if let Some(z) = browser::named(name) {
         return Some(z);
     }
-    if !valid_name(name) {
-        return None;
+    #[cfg(any(
+        not(all(target_arch = "wasm32", target_os = "unknown")),
+        feature = "tzdb"
+    ))]
+    if let Some((canon, file)) = canonical(name) {
+        return read(canon, file);
     }
+    None
+}
+
+/// The zone data of `file` (an IANA name of `names.rs`) from the platform, named `name`.
+#[cfg(any(
+    not(all(target_arch = "wasm32", target_os = "unknown")),
+    feature = "tzdb"
+))]
+fn read(name: &str, file: &str) -> Option<Zone> {
     #[cfg(target_os = "android")]
     for path in [
         "/apex/com.android.tzdata/etc/tz/tzdata",
@@ -235,7 +318,7 @@ pub(crate) fn load(name: &str) -> Option<Zone> {
         // ponytail: reads the whole container (~500 KB) per cold name; seek + read the index
         // if apps look up many zones
         if let Ok(d) = std::fs::read(path)
-            && let Some(t) = tzif::android_find(&d, name).and_then(tzif::parse)
+            && let Some(t) = tzif::android_find(&d, file).and_then(tzif::parse)
         {
             return Some(Zone::from_table(name, t));
         }
@@ -249,7 +332,7 @@ pub(crate) fn load(name: &str) -> Option<Zone> {
         let tzdir = std::env::var("TZDIR").ok();
         let dirs = tzdir.iter().map(String::as_str).chain(ZONEINFO);
         for dir in dirs {
-            if let Ok(d) = std::fs::read(format!("{dir}/{name}"))
+            if let Ok(d) = std::fs::read(format!("{dir}/{file}"))
                 && let Some(t) = tzif::parse(&d)
             {
                 return Some(Zone::from_table(name, t));
@@ -257,9 +340,10 @@ pub(crate) fn load(name: &str) -> Option<Zone> {
         }
     }
     #[cfg(any(feature = "tzdb", windows))]
-    if let Some(t) = tzdb::find(tzdb::DATA, name) {
+    if let Some(t) = tzdb::find(tzdb::DATA, file) {
         return Some(Zone::from_table(name, t));
     }
+    let _ = (name, file);
     None
 }
 

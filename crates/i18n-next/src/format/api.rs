@@ -218,7 +218,7 @@ impl I18n {
     /// options): the largest unit that fits at least once (a year is 365 days, a month 30),
     /// rounded down: `3 days ago`, `in 2 hours`, `0 seconds ago` under a second in the past.
     /// Now is [`Builder::clock`](crate::Builder::clock), else the system clock. An invalid
-    /// date (or no clock) is `Invalid Date`.
+    /// date (or no clock, or a clock outside a JS `Date`'s ±8.64e15 ms) is `Invalid Date`.
     ///
     /// ```
     /// use i18n_next::I18n;

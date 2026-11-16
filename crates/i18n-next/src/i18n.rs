@@ -1262,7 +1262,8 @@ fn setup_dates(
     for json in &b.datetime_formats {
         crate::format::parse_date_formats(json, "datetime_formats", &mut meta.dates, numbering)?;
     }
-    if let Some(name) = &b.time_zone {
+    // an empty zone is none, as `FormatService({ timeZone: "" })` (the system's)
+    if let Some(name) = b.time_zone.as_ref().filter(|n| !n.is_empty()) {
         let zone = crate::format::date::zone_named(name)
             .ok_or_else(|| Error::UnknownTimeZone(name.clone()))?;
         meta.zone = Some(zone);
@@ -1354,9 +1355,11 @@ impl Builder {
     }
 
     /// The IANA time zone of dates (JS `FormatService({ timeZone })`); a named format's own
-    /// `timeZone` wins. Default: the system's (`TZ`, `/etc/localtime`, the browser's).
-    /// Without the `tz` feature only UTC is known. An unknown zone fails `build` with
-    /// [`Error::UnknownTimeZone`]. Feature `format`.
+    /// `timeZone` wins. Default: the system's (`TZ`, `/etc/localtime`, the browser's); an
+    /// empty name is the default too, as in JS. Names are taken as `Intl` takes them: in any
+    /// ASCII case (`europe/berlin`), IANA links and ICU's legacy aliases (`US/Pacific-New`),
+    /// offsets `+05:30` / `-0800` / `+05`. Without the `tz` feature only UTC is known. An
+    /// unknown zone fails `build` with [`Error::UnknownTimeZone`]. Feature `format`.
     ///
     /// ```
     /// use i18n_next::I18n;
@@ -1375,7 +1378,9 @@ impl Builder {
 
     /// The clock of [`I18n::tdr`] in milliseconds since 1970 (JS `FormatService({ now })`):
     /// a test pins it, a server hands the client its time. Default: the system clock
-    /// (`SystemTime`; in the browser `Date.now()` with the `tz` feature). Feature `format`.
+    /// (`SystemTime`; in the browser `Date.now()` with the `tz` feature). Its range is a JS
+    /// `Date`'s, ±8.64e15 ms: outside it there is no now, and [`I18n::tdr`] shows
+    /// `Invalid Date`, as JS does with an `Invalid Date` clock. Feature `format`.
     ///
     /// ```
     /// use i18n_next::I18n;

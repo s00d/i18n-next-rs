@@ -32,6 +32,22 @@ const ZONES: &[&str] = &[
     "UTC",
 ];
 
+/// `new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone`.
+fn intl_name(time_zone: &str) -> String {
+    let opts = Object::new();
+    Reflect::set(
+        &opts,
+        &JsValue::from_str("timeZone"),
+        &JsValue::from_str(time_zone),
+    )
+    .unwrap();
+    let fmt = Intl::DateTimeFormat::new(&js_sys::Array::of1(&JsValue::from_str("en")), &opts);
+    Reflect::get(&fmt.resolved_options(), &JsValue::from_str("timeZone"))
+        .unwrap()
+        .as_string()
+        .unwrap()
+}
+
 /// 2037-01-01: transitions after this are the POSIX rule on both sides anyway.
 const TO: i64 = 2_114_380_800;
 
@@ -40,7 +56,10 @@ fn named_zones_match_the_bundled_tzdb() {
     let mut seed = 0x1970u64;
     for name in ZONES {
         let zone = Zone::named(name).unwrap_or_else(|| panic!("Intl does not know {name}"));
-        assert_eq!(zone.name(), *name);
+        // named as `Intl` resolves it (`Asia/Kolkata` is `Asia/Calcutta` in ICU), in any case
+        assert_eq!(zone.name(), intl_name(name));
+        let upper = Zone::named(&name.to_ascii_uppercase()).unwrap();
+        assert_eq!(upper.name(), zone.name());
         let table = tz::tzdb::find(DATA, name).unwrap();
         let mut ts: Vec<i64> = table
             .times
@@ -91,7 +110,13 @@ fn last_second_of_date() {
 
 #[wasm_bindgen_test]
 fn unknown_names_are_none() {
-    for bad in ["Nowhere/Zone", "", "Europe/Berlin/X"] {
+    for bad in [
+        "Nowhere/Zone",
+        "",
+        "Europe/Berlin/X",
+        "posixrules",
+        "Factory",
+    ] {
         assert!(Zone::named(bad).is_none(), "{bad:?}");
     }
 }

@@ -485,6 +485,16 @@ fn named_rejects_paths() {
         assert!(!tz::valid_name(bad), "{bad:?}");
         assert!(Zone::named(bad).is_none(), "{bad:?}");
     }
+    // files under zoneinfo that are no zones for `Intl`
+    for file in [
+        "posixrules",
+        "Factory",
+        "posix/Europe/Berlin",
+        "right/Europe/Berlin",
+        "localtime",
+    ] {
+        assert!(Zone::named(file).is_none(), "{file:?}");
+    }
     for good in [
         "UTC",
         "Europe/Berlin",
@@ -499,4 +509,123 @@ fn named_rejects_paths() {
         Some("Asia/Tokyo")
     );
     assert_eq!(tz::zone_name_of("/etc/zoneinfo-backup"), None);
+}
+
+/// Given the generated name list, then it is strictly sorted by ASCII lowercase (the
+/// binary search of `canonical` relies on it, and no two names differ by case only),
+/// every alias reads an IANA name of the list, and names `Intl` rejects are absent.
+#[test]
+fn name_list_is_searchable() {
+    let lower = |s: &str| s.to_ascii_lowercase();
+    assert!(
+        tz::names::NAMES
+            .windows(2)
+            .all(|w| lower(w[0].0) < lower(w[1].0))
+    );
+    for (name, file) in tz::names::NAMES {
+        assert!(tz::valid_name(name), "{name}");
+        if !file.is_empty() {
+            assert_eq!(tz::canonical(file), Some((file, file)), "{name} → {file}");
+        }
+    }
+    for bad in [
+        "posixrules",
+        "Factory",
+        "posix/Europe/Berlin",
+        "right/Europe/Berlin",
+        "localtime",
+        "Etc/Unknown",
+        "SystemV/EST5EDT",
+        "",
+        "Europe/Berlin\0",
+    ] {
+        assert_eq!(tz::canonical(bad), None, "{bad:?}");
+    }
+}
+
+/// Given a name in any ASCII case, an IANA link or an ICU legacy alias, when made
+/// canonical, then it is the list's spelling and the IANA zone it reads.
+#[test]
+fn canonical_spelling() {
+    for (name, want) in [
+        ("Europe/Berlin", ("Europe/Berlin", "Europe/Berlin")),
+        ("EUROPE/BERLIN", ("Europe/Berlin", "Europe/Berlin")),
+        ("etc/gmt+3", ("Etc/GMT+3", "Etc/GMT+3")),
+        ("asia/calcutta", ("Asia/Calcutta", "Asia/Calcutta")),
+        ("systemv/ast4", ("SystemV/AST4", "Etc/GMT+4")),
+        ("US/Pacific-New", ("US/Pacific-New", "America/Los_Angeles")),
+        ("ist", ("IST", "Asia/Calcutta")),
+    ] {
+        assert_eq!(tz::canonical(name), Some(want), "{name}");
+    }
+}
+
+/// Given offset names, then the ones `Intl` takes are fixed offsets and the rest are not
+/// (Node 22: `+05`, `+0530`, `+05:30`, `-23:59`; not `+5`, `+24:00`, `+05:30:00`).
+#[test]
+fn offset_names() {
+    for (name, want) in [
+        ("+05:30", Some(19_800)),
+        ("+0530", Some(19_800)),
+        ("+05", Some(18_000)),
+        ("-08:00", Some(-28_800)),
+        ("-23:59", Some(-86_340)),
+        ("+23:59", Some(86_340)),
+        ("-00:00", Some(0)),
+        ("+0000", Some(0)),
+        ("+5", None),
+        ("+05:3", None),
+        ("+24:00", None),
+        ("+05:60", None),
+        ("+05:30:00", None),
+        ("05:30", None),
+        ("+05-30", None),
+        ("+1", None),
+        ("+ab", None),
+        ("", None),
+    ] {
+        assert_eq!(tz::offset_name(name), want, "{name:?}");
+    }
+    assert_eq!(Zone::named("+0530").map(|z| z.offset_at(0)), Some(19_800));
+    assert_eq!(
+        Zone::named("+05:30")
+            .map(|z| z.name().to_owned())
+            .as_deref(),
+        Some("+05:30")
+    );
+}
+
+/// Given 20 000 spellings of one zone, when each is looked up, then all are that zone and
+/// the cache holds one entry for it (it used to keep one per spelling: 1.9 → 22.7 MB).
+#[test]
+fn cache_is_bounded_by_real_zones() {
+    let Some(berlin) = Zone::named("Europe/Berlin") else {
+        eprintln!("no Europe/Berlin on this platform: skipped");
+        return;
+    };
+    let base: Vec<u8> = b"europe/berlin".to_vec();
+    for i in 0u32..20_000 {
+        let spelled: String = base
+            .iter()
+            .enumerate()
+            .map(|(j, &b)| {
+                let up = (i >> (j % 14)) & 1 == 1 || (i / 7 + j as u32) % 3 == 0;
+                char::from(if up { b.to_ascii_uppercase() } else { b })
+            })
+            .collect();
+        let z = Zone::named(&spelled).unwrap_or_else(|| panic!("{spelled}"));
+        assert_eq!(z.name(), berlin.name(), "{spelled}");
+    }
+    // other tests may cache other zones meanwhile: count only this one's keys
+    let cache = tz::CACHE
+        .get()
+        .unwrap()
+        .read()
+        .unwrap_or_else(|e| e.into_inner());
+    let keys: Vec<&str> = cache
+        .keys()
+        .map(|k| &**k)
+        .filter(|k| k.eq_ignore_ascii_case("europe/berlin"))
+        .collect();
+    assert_eq!(keys, ["Europe/Berlin"]);
 }

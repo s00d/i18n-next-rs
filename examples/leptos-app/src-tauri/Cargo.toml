@@ -1,0 +1,28 @@
+[package]
+name = "leptos-app-tauri"
+version = "0.1.0"
+description = "The Tauri side of examples/leptos-app (DESIGN 8a): the plugin over the shared catalog; the front end is the Leptos app (tauri-guest)"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+publish = false
+
+# Its own workspace and lock, like examples/tauri-app: `generate_context!` needs the built
+# front end (`trunk build` in the folder above).
+[workspace]
+
+[lib]
+name = "leptos_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+i18n-next = { path = "../../../crates/i18n-next" }
+tauri-plugin-i18n-next = { path = "../../../crates/tauri-plugin-i18n-next" }
+
+[features]
+# used for production builds (`tauri build`): DO NOT REMOVE
+custom-protocol = ["tauri/custom-protocol"]

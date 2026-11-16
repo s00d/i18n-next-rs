@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The plugin's default set; report_missing is registered in debug builds only",
+  "windows": ["main"],
+  "permissions": ["core:default", "i18n-next:default", "i18n-next:allow-report-missing"]
+}

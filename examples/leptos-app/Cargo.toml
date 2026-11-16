@@ -1,0 +1,24 @@
+[package]
+name = "leptos-app"
+version = "0.1.0"
+description = "Playground of i18n-next in a Rust front end (DESIGN 8a): Leptos CSR in the browser (trunk) and as the front end of Tauri (tauri-guest)"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+publish = false
+
+# Its own workspace and lock, like examples/tauri-app: trunk builds it for wasm32 only, and
+# `cargo test --workspace` of the main workspace must not build Leptos (DESIGN 8a).
+[workspace]
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+i18n-next = { path = "../../crates/i18n-next", features = ["tauri-guest"] }
+# localStorage, navigator.languages and fetch of the browser mode, as i18n-next does: no web-sys
+js-sys = "0.3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

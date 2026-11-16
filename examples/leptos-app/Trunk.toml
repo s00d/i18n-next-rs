@@ -1,0 +1,5 @@
+# trunk build (browser and Tauri use the same dist); `trunk serve` for the browser mode,
+# `cargo tauri dev` in this folder for the Tauri mode (src-tauri/tauri.conf.json runs trunk).
+[build]
+target = "index.html"
+dist = "dist"

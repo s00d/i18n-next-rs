@@ -1,0 +1,3 @@
+# CLDR data (plurals, number and date formats) of the example's locales only (DESIGN 2.2, 2.4).
+[env]
+I18N_NEXT_LOCALES = "en,ru,ar"

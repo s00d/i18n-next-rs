@@ -405,6 +405,22 @@ fn first_load_picks_the_system_locale() {
         off.ok("load", json!({ "languages": ["de"] }))["locale"],
         "en"
     );
+    // step 4: guest-js reads data over the protocol: `meta` with the languages picks the
+    // same way, once, and a later `load` does not pick again
+    let app = App::new(catalog());
+    let meta = app.ok("meta", json!({ "languages": ["de-AT"] }));
+    assert_eq!(
+        (&meta["locale"], &meta["tags"]["de/index"].is_string()),
+        (&json!("de"), &true)
+    );
+    assert_eq!(
+        app.ok("meta", json!({ "languages": ["ar"] }))["locale"],
+        "de"
+    );
+    assert_eq!(
+        app.ok("load", json!({ "languages": ["ar"] }))["locale"],
+        "de"
+    );
 }
 
 /// Given persist on, when the user switches to `de` and the app restarts on the same config

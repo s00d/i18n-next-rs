@@ -50,18 +50,24 @@ pub fn load(
 /// fallback chain of every locale, which the front end premerges in order, DESIGN 6.2),
 /// the named formats, `tags` (the content tag of each chunk of the chain of `locale`, the
 /// active one when not given, roots and `page`, by `"<locale>/<page>"`) and `bundle` (the
-/// tag of its protocol bundle). As raw bytes, like `load`.
+/// tag of its protocol bundle). As raw bytes, like `load`. `languages`
+/// (`navigator.languages`) picks the start locale like the first `load` does (8b.3), so a
+/// front end that reads data over the protocol never needs `load`.
 #[tauri::command]
 pub fn meta(
     state: State<'_, Handle>,
     locale: Option<String>,
     page: Option<String>,
+    languages: Option<Vec<String>>,
 ) -> Result<Response> {
     if let Some(l) = &locale {
         known_locale(&state, l)?;
     }
     if let Some(p) = &page {
         known_page(&state, p)?;
+    }
+    if languages.is_some() {
+        state.first_load(languages.as_deref());
     }
     Ok(Response::new(payload::meta(
         &state,

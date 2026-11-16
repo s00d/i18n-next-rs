@@ -4,7 +4,7 @@ pub fn tauri_plugin_i18n_next::commands::available_locales(tauri::state::State<'
 pub fn tauri_plugin_i18n_next::commands::get_locale(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>) -> alloc::string::String
 pub fn tauri_plugin_i18n_next::commands::load(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, core::option::Option<alloc::string::String>, core::option::Option<alloc::vec::Vec<alloc::string::String>>) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
 pub fn tauri_plugin_i18n_next::commands::load_page(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, alloc::string::String) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
-pub fn tauri_plugin_i18n_next::commands::meta(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
+pub fn tauri_plugin_i18n_next::commands::meta(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>, core::option::Option<alloc::vec::Vec<alloc::string::String>>) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
 pub fn tauri_plugin_i18n_next::commands::pages(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>) -> alloc::vec::Vec<alloc::string::String>
 pub fn tauri_plugin_i18n_next::commands::report_missing(alloc::vec::Vec<tauri_plugin_i18n_next::models::MissingKey>)
 pub fn tauri_plugin_i18n_next::commands::set_locale(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, alloc::string::String) -> tauri_plugin_i18n_next::error::Result<u64>

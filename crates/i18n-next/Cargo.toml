@@ -152,6 +152,20 @@ required-features = ["payload"]
 
 # Models and differentials that build floats (`Arg::Float`, `Count::from(f64)`) or the
 # float printer: with `--no-default-features` they are skipped, the rest still runs.
+# dhat counts the whole process: the allocation tests run without libtest's threads
+# (tests/support/harness.rs).
+[[test]]
+name = "alloc"
+harness = false
+
+[[test]]
+name = "linked_alloc"
+harness = false
+
+[[test]]
+name = "json_alloc"
+harness = false
+
 [[test]]
 name = "text_model"
 required-features = ["format"]

@@ -396,8 +396,8 @@ impl Builder {
         });
         *lock(&handle.sub) = Some(sub);
         // step 1 of the start order (8b.3): a saved locale that is still available
+        // (`set_locale` refuses an unknown or disabled one)
         if let Some(code) = saved
-            && i18n.locales().iter().any(|l| l.code == code)
             && i18n.set_locale(&code).is_ok()
         {
             handle.chosen.store(true, Ordering::Release);

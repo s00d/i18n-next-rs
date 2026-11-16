@@ -49,7 +49,11 @@ fn number_goldens_in_wasm() {
 #[wasm_bindgen_test]
 fn date_goldens_in_wasm() {
     // the counts of tests/date_compat.rs: a run cut short (a JS exception) fails here too
-    for (golden, min) in [(date::DATE, 39_000), (date::RELATIVE, 9_800), (date::PROPS, 19_900)] {
+    for (golden, min) in [
+        (date::DATE, 39_000),
+        (date::RELATIVE, 9_800),
+        (date::PROPS, 19_900),
+    ] {
         match date::run(golden) {
             Ok(n) => assert!(n > min, "only {n} lines ran"),
             Err(diff) => panic!("date goldens differ:\n{diff}"),

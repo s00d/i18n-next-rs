@@ -118,8 +118,8 @@ pub(crate) fn find(tag: &str) -> Option<usize> {
             return Some(i);
         }
         // CLDR parentLocales: `uz-Cyrl`, `bs-Cyrl` … go to the root, never to `uz` / `bs`
-        root_parent = data::key(cand.as_str())
-            .is_some_and(|k| data::ROOT_SCRIPTS.binary_search(&k).is_ok());
+        root_parent =
+            data::key(cand.as_str()).is_some_and(|k| data::ROOT_SCRIPTS.binary_search(&k).is_ok());
         cand.truncate(base);
     }
     if !explicit && let Some(r) = &region {
@@ -172,7 +172,11 @@ mod tests {
     /// `de-AT` locale; a script inferred from the region still reaches the regional locale.
     #[test]
     fn explicit_script_truncates_past_the_region() {
-        for (tag, want) in [("de-Latn-AT", "de"), ("en-Latn-IN", "en"), ("de-AT", "de-AT")] {
+        for (tag, want) in [
+            ("de-Latn-AT", "de"),
+            ("en-Latn-IN", "en"),
+            ("de-AT", "de-AT"),
+        ] {
             assert_eq!(find(tag).map(name), Some(want.to_owned()), "{tag}");
         }
         if index("zh-Hant").is_some() {
@@ -188,8 +192,8 @@ mod tests {
     fn root_parent_scripts_go_to_the_root() {
         for k in data::ROOT_SCRIPTS {
             let bytes = k.to_be_bytes();
-            let tag = String::from_utf8(bytes.iter().copied().take_while(|&b| b != 0).collect())
-                .unwrap();
+            let tag =
+                String::from_utf8(bytes.iter().copied().take_while(|&b| b != 0).collect()).unwrap();
             assert_eq!(find(&tag), Some(data::UND), "{tag}");
             assert_eq!(find(&format!("{tag}-XX")), Some(data::UND), "{tag}-XX");
         }

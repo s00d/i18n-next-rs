@@ -366,3 +366,37 @@ fn timestamps_from_time() {
     let i18n = I18n::builder().time_zone("UTC").build().unwrap();
     assert_eq!(i18n.td(at), "1/5/2024");
 }
+
+/// Given views in more locales the instance does not know than the cache of resolved
+/// locales keeps (8), when each formats twice, then every answer is that locale's, the
+/// same as an instance whose active locale it is.
+#[test]
+fn views_in_unknown_locales_keep_their_formats() {
+    let codes = [
+        "zh-Hant-TW",
+        "de-CH",
+        "ar-EG",
+        "hi",
+        "ja",
+        "fr-CA",
+        "pt-PT",
+        "es-MX",
+        "ru",
+        "sw",
+        "de-Latn-AT",
+        "en-IN",
+    ];
+    let i18n = I18n::builder().time_zone("UTC").build().unwrap();
+    for _ in 0..2 {
+        for code in codes {
+            let own = I18n::builder()
+                .time_zone("UTC")
+                .locale(code)
+                .build()
+                .unwrap();
+            let view = i18n.with_locale(code);
+            assert_eq!(view.td(AT), own.td(AT), "{code}");
+            assert_eq!(view.tn(1_234_567.5), own.tn(1_234_567.5), "{code}");
+        }
+    }
+}

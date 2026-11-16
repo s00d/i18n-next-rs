@@ -89,6 +89,12 @@ pub(crate) struct Meta {
     zone: Option<crate::format::Zone>,
     #[cfg(feature = "format")]
     system_zone: std::sync::OnceLock<crate::format::Zone>,
+    /// Number data of view locales outside the snapshot's table, resolved once each
+    /// ([`Meta::cold_number`]); filled in order, first come first kept.
+    // ponytail: 8 codes; past them a code resolves on every call (~90 ns), grow if apps
+    // format in more unknown locales than that
+    #[cfg(feature = "format")]
+    cold_numbers: [std::sync::OnceLock<(Box<str>, &'static crate::format::Loc)>; 8],
     /// [`Builder::clock`]; else the system clock.
     #[cfg(feature = "format")]
     clock: Option<crate::format::api::Clock>,
@@ -182,6 +188,25 @@ impl Meta {
     #[cfg(feature = "format")]
     fn number(&self, code: &str) -> &'static crate::format::Loc {
         crate::format::locale::resolve(self.tag(code))
+    }
+
+    /// [`Meta::number`] of a view locale the snapshot's table lacks, kept for the next call.
+    #[cfg(feature = "format")]
+    fn cold_number(&self, code: &str) -> &'static crate::format::Loc {
+        for slot in &self.cold_numbers {
+            match slot.get() {
+                Some((c, loc)) if **c == *code => return loc,
+                Some(_) => {}
+                None => {
+                    let loc = self.number(code);
+                    // another thread may have taken the slot meanwhile: then this one is
+                    // not kept, the answer is the same
+                    let _ = slot.set((code.into(), loc));
+                    return loc;
+                }
+            }
+        }
+        self.number(code)
     }
 
     /// The named number format `name` of locale `code`: by the code, then shorter
@@ -299,7 +324,7 @@ impl Snapshot {
     pub(crate) fn number_of(&self, code: &str) -> &'static crate::format::Loc {
         match self.numbers.get(code) {
             Some(n) => n,
-            None => self.meta.number(code),
+            None => self.meta.cold_number(code),
         }
     }
 

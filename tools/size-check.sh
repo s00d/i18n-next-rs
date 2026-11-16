@@ -40,14 +40,36 @@ measure() {
   # A probe that links `js-sys` (the browser zones of `tz`) carries wasm-bindgen's describe
   # metadata (~290 KB) that an app's build removes: run wasm-bindgen as that build does.
   if grep -q '__wasm_bindgen_unstable' "${wasm}"; then
-    local bindgen="${WASM_BINDGEN:-wasm-bindgen}"
-    command -v "${bindgen}" >/dev/null || { echo "size-check: ${bindgen} not found (needed for a js-sys probe)" >&2; return 1; }
+    local bindgen
+    bindgen="$(bindgen_for "${repo}")" || return 1
     "${bindgen}" --target web --out-dir "${target_dir}/bindgen-${variant}" "${wasm}" >&2 || return 1
     wasm="${target_dir}/bindgen-${variant}/size_probe_bg.wasm"
   fi
   wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
     "${wasm}" -o "${opt}" || return 1
   wc -c < "${opt}" | tr -d ' ' || return 1
+}
+
+# bindgen_for <repo-dir> -> path of a wasm-bindgen CLI of exactly the version the probe's
+# Cargo.lock pins (the CLI refuses a module built by another version). Tries $WASM_BINDGEN,
+# the one on PATH and target/tools/bin; else installs that version under
+# target/tools/wasm-bindgen-<version> (once; it goes away with target/).
+bindgen_for() {
+  local want cand
+  want="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print; exit }' \
+    "$1/tools/size-probe/Cargo.lock")"
+  [[ -n "${want}" ]] || { echo "size-check: no wasm-bindgen in $1/tools/size-probe/Cargo.lock" >&2; return 1; }
+  local own="${HERE}/target/tools/wasm-bindgen-${want}"
+  for cand in "${WASM_BINDGEN:-}" wasm-bindgen "${HERE}/target/tools/bin/wasm-bindgen" "${own}/bin/wasm-bindgen"; do
+    [[ -n "${cand}" ]] && command -v "${cand}" >/dev/null || continue
+    if [[ "$("${cand}" --version 2>/dev/null)" == "wasm-bindgen ${want}" ]]; then
+      command -v "${cand}"
+      return 0
+    fi
+  done
+  echo "size-check: installing wasm-bindgen-cli ${want} into ${own}" >&2
+  cargo install --locked --quiet --root "${own}" wasm-bindgen-cli --version "=${want}" >&2 || return 1
+  echo "${own}/bin/wasm-bindgen"
 }
 
 # fmt_growth <hundredths-of-a-percent> -> "+1.05%" / "-0.50%"

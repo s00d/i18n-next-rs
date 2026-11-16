@@ -364,7 +364,8 @@ jobs:
           tool: cargo-public-api@0.52.0,cargo-semver-checks@0.51.0
       - name: Snapshot matches api/
         run: |
-          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next > api/i18n-next.txt
+          # `payload` (encode / apply, the plugin's side of the protocol) is public API too
+          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next --features payload > api/i18n-next.txt
           cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p tauri-plugin-i18n-next > api/tauri-plugin-i18n-next.txt
           git diff --exit-code api/ || {
             echo "::error::public API changed: regenerate api/*.txt with cargo public-api and commit the diff"
@@ -379,8 +380,10 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          cargo semver-checks -p i18n-next --baseline-rev "$BASE_SHA"
+          cargo semver-checks -p i18n-next --features payload --baseline-rev "$BASE_SHA"
           cargo semver-checks -p tauri-plugin-i18n-next --baseline-rev "$BASE_SHA"
       - name: Semver checks (against crates.io)
         if: env.CRATES_PUBLISHED == 'true'
-        run: cargo semver-checks --workspace
+        run: |
+          cargo semver-checks -p i18n-next --features payload
+          cargo semver-checks -p tauri-plugin-i18n-next

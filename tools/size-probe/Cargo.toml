@@ -24,9 +24,15 @@ full = ["i18n-next/default"]
 # as runtime): the constant std runtime that tools/size-check.sh subtracts from the other
 # variants.
 empty = []
+# A minimal Rust front end inside Tauri (M9): the micro build plus `tauri-guest` and `global`
+# (`connect`, `set_page`, `set_locale` on a spawned task, `t!` on the installed guest),
+# reported and budgeted on its own.
+guest = ["i18n-next/tauri-guest", "i18n-next/global", "dep:js-sys"]
 
 [dependencies]
 i18n-next = { path = "../../crates/i18n-next", default-features = false }
+# `guest` only: the task `connect` runs on (js-sys's own futures, as tauri_guest uses them)
+js-sys = { version = "0.3", optional = true, default-features = false }
 
 [profile.release]
 opt-level = "z"

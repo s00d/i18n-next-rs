@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Size gate (DESIGN 2.4): builds tools/size-probe for wasm32-unknown-unknown in the
-# micro (default-features = false) and full (default features) variants, shrinks each
-# with `wasm-opt -Oz`, prints the bytes, and compares with a base checkout. The bytes
+# micro (default-features = false), full (default features) and guest (micro + tauri-guest)
+# variants, shrinks each with `wasm-opt -Oz`, prints the bytes, and compares with a base
+# checkout. The bytes
 # are net: the probe minus the same probe without i18n-next (`--features empty`), so the
 # constant std runtime of a wasm binary does not dilute the percentage.
 #
@@ -9,7 +10,7 @@
 #   tools/size-check.sh <base-dir>    # also compare with the same build of <base-dir>
 #
 # Fails when a variant is over its budget (tools/size-budget.env: MICRO_BUDGET, FULL_BUDGET,
-# net bytes). Growth over SIZE_THRESHOLD_PCT (default 2) percent against the base is reported
+# GUEST_BUDGET, net bytes). Growth over SIZE_THRESHOLD_PCT (default 2) percent against the base is reported
 # as a warning to read in the PR, not a failure: a new feature legitimately adds code, and the
 # owner's guideline is "about 100 KB is a real size, don't contort the design for less".
 # A base without tools/size-probe has no baseline: the sizes are printed.
@@ -103,9 +104,10 @@ head_rt="$(runtime "${HERE}")"
 "${has_base}" && base_rt="$(runtime "${BASE}")"
 
 status=0
-for variant in micro full; do
+for variant in micro full guest; do
   head_bytes="$(net "${HERE}" "${variant}" "${head_rt}")"
-  if "${has_base}"; then
+  # a base from before a variant existed (the `guest` probe came with M9) has no baseline for it
+  if "${has_base}" && { [[ "${variant}" == "micro" ]] || grep -q "^${variant} = " "${BASE}/tools/size-probe/Cargo.toml"; }; then
     base_bytes="$(net "${BASE}" "${variant}" "${base_rt}")"
     # growth in hundredths of a percent, integer math only (an empty base counts as 1 byte)
     growth=$(( (head_bytes - base_bytes) * 10000 / (base_bytes > 0 ? base_bytes : 1) ))

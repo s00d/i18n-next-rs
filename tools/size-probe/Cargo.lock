@@ -60,6 +60,7 @@ name = "size-probe"
 version = "0.0.0"
 dependencies = [
  "i18n-next",
+ "js-sys",
 ]
 
 [[package]]

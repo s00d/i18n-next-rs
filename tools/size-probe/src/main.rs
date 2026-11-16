@@ -17,7 +17,7 @@
 #[cfg(feature = "empty")]
 use i18n_next as _;
 
-#[cfg(not(feature = "empty"))]
+#[cfg(not(any(feature = "empty", feature = "guest")))]
 fn main() {
     use i18n_next::{Args, I18n, scope, t, tc};
     use std::hint::black_box;
@@ -70,6 +70,26 @@ fn main() {
         black_box(d.tdr(black_box(1_704_428_640_000i64)));
         black_box(d.text(black_box("due")).date(black_box(1_704_428_640_000i64)).to_string());
     }
+}
+
+/// A Rust front end on the Tauri plugin: connect, a page, a locale switch, `t!` on the
+/// installed guest. The plugin's answers decide what is shown at run time; here only the
+/// linked code counts.
+#[cfg(feature = "guest")]
+fn main() {
+    use i18n_next::{t, tauri_guest};
+    use std::hint::black_box;
+
+    js_sys::futures::spawn_local(async {
+        let Ok(i18n) = tauri_guest::connect(black_box("index")).await else {
+            return;
+        };
+        let _ = i18n_next::install(i18n);
+        black_box(t!("nav.home").to_string());
+        let _ = tauri_guest::set_page(black_box("settings")).await;
+        let _ = tauri_guest::set_locale(black_box("ru")).await;
+        black_box(t!("title", @page = "settings").to_string());
+    });
 }
 
 /// Allocates, grows and frees once, so the allocator (dlmalloc on wasm) is part of the

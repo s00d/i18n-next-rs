@@ -101,6 +101,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown, wasm32-wasip1
+          components: clippy
       - uses: Swatinem/rust-cache@v2
 
       - name: Build wasm32-unknown-unknown (default features)
@@ -109,6 +110,9 @@ jobs:
         run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown --no-default-features
       - name: Build wasm32-unknown-unknown (tauri-guest)
         run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown --features tauri-guest
+      # `tauri_guest` exists on wasm32-unknown-unknown only: the native clippy never sees it.
+      - name: Clippy wasm32-unknown-unknown (tauri-guest)
+        run: cargo clippy -p i18n-next --locked --lib --tests --target wasm32-unknown-unknown --features tauri-guest -- -D warnings
       - name: Build wasm32-unknown-unknown (without tz)
         run: cargo build -p i18n-next --locked --target wasm32-unknown-unknown --no-default-features --features std,format,global
       - name: Build wasm32-wasip1
@@ -378,6 +382,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.PUBLIC_API_NIGHTLY }}
+          targets: wasm32-unknown-unknown
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -387,6 +392,8 @@ jobs:
         run: |
           # `payload` (encode / apply, the plugin's side of the protocol) is public API too
           cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next --features payload > api/i18n-next.txt
+          # what exists on wasm32 only (`tauri_guest`); bench_inventory reads both snapshots
+          cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p i18n-next --features tauri-guest --target wasm32-unknown-unknown > api/i18n-next-wasm.txt
           cargo +"$PUBLIC_API_NIGHTLY" public-api -ss -p tauri-plugin-i18n-next > api/tauri-plugin-i18n-next.txt
           git diff --exit-code api/ || {
             echo "::error::public API changed: regenerate api/*.txt with cargo public-api and commit the diff"

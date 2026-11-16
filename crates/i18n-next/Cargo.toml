@@ -17,7 +17,9 @@ include = ["/src/**/*", "/build.rs", "/tests/**/*.rs", "/tests/support/dir/**/*"
     # Read the JSONTestSuite corpus / compat goldens from fixtures/ at the workspace root.
     "!/tests/json_differential.rs", "!/tests/compat.rs", "!/tests/support/compat.rs", "!/tests/wasm.rs",
     "!/tests/plural_props.rs", "!/tests/number_compat.rs", "!/tests/support/number.rs",
-    "!/tests/date_compat.rs", "!/tests/support/date.rs", "!/tests/tz_fixtures.rs", "!/tests/linked_compat.rs"]
+    "!/tests/date_compat.rs", "!/tests/support/date.rs", "!/tests/tz_fixtures.rs", "!/tests/linked_compat.rs",
+    # Replays the plugin's guest-js fixtures (crates/tauri-plugin-i18n-next/tests/guest-js).
+    "!/tests/tauri_guest.rs"]
 
 [lints]
 workspace = true
@@ -62,7 +64,10 @@ currency-names = []
 # The front-end payload (src/payload.rs, DESIGN 2.1 / 6.1): `encode` for the Tauri plugin,
 # `apply` for a Rust guest.
 payload = []
-tauri-guest = ["payload"]
+# A Rust front end inside Tauri (src/tauri_guest.rs, DESIGN 2.1 / 6.2): `connect` to the plugin
+# on wasm32-unknown-unknown through `js-sys` alone (its `futures` and the `wasm-bindgen` it
+# re-exports; no web-sys). Elsewhere it is only `payload`.
+tauri-guest = ["payload", "dep:js-sys"]
 chrono = ["dep:chrono"]
 time = ["dep:time"]
 
@@ -135,6 +140,11 @@ harness = false
 
 [[bench]]
 name = "payload"
+harness = false
+required-features = ["payload"]
+
+[[bench]]
+name = "tauri_guest"
 harness = false
 required-features = ["payload"]
 

@@ -293,11 +293,16 @@ fn benched_fns(sources: &[String], owners: &BTreeMap<String, String>) -> BTreeSe
 }
 
 /// Panics with the public functions of crate `name` at `root` that no bench names. The
-/// list comes from `api/<name>.txt` at the workspace root (`root/../..`).
+/// list comes from `api/<name>.txt` at the workspace root (`root/../..`) and, when there is
+/// one, `api/<name>-wasm.txt`: the wasm32 snapshot of what only exists there (`tauri_guest`).
 pub fn check(root: &Path, name: &str) {
     let api = root.join("../../api").join(format!("{name}.txt"));
-    let fns = public_fns(&fs::read_to_string(&api).unwrap());
+    let mut fns = public_fns(&fs::read_to_string(&api).unwrap());
     assert!(!fns.is_empty(), "no public fns in {}", api.display());
+    let wasm = root.join("../../api").join(format!("{name}-wasm.txt"));
+    if let Ok(text) = fs::read_to_string(&wasm) {
+        fns.extend(public_fns(&text));
+    }
     let mut benches = Vec::new();
     rust_files(&root.join("benches"), &mut benches);
     let benched = benched_fns(&benches, &owners(&fns));
@@ -671,7 +676,27 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
             ]
             .map(str::to_owned),
         );
-        assert_eq!(api("i18n-next"), want.into_iter().collect::<BTreeSet<_>>());
+        let native = want.into_iter().collect::<BTreeSet<_>>();
+        assert_eq!(api("i18n-next"), native);
+        // wasm32 with `tauri-guest`: the module on top, without the native-only builder
+        // methods (no file system there); `tauri_guest::set_locale` is keyed `set_locale`,
+        // which the native list has already
+        let wasm = api("i18n-next-wasm");
+        let added: BTreeSet<String> = wasm.difference(&native).cloned().collect();
+        let gone: BTreeSet<String> = native.difference(&wasm).cloned().collect();
+        assert_eq!(
+            added,
+            ["connect", "disconnect", "load", "preload", "refresh", "set_page"]
+                .map(str::to_owned)
+                .into_iter()
+                .collect()
+        );
+        assert_eq!(
+            gone,
+            methods("Builder", &["config", "dir", "lazy_dir"])
+                .into_iter()
+                .collect()
+        );
         let mut plugin: Vec<String> = [
             "available_locales",
             "get_locale",

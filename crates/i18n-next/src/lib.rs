@@ -23,6 +23,8 @@ mod plural;
 mod remote;
 mod scope;
 mod source;
+#[cfg(all(feature = "tauri-guest", target_arch = "wasm32", target_os = "unknown"))]
+pub mod tauri_guest;
 mod text;
 mod trace;
 #[cfg(feature = "tz")]

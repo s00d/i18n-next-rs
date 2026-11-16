@@ -1524,3 +1524,40 @@ fn missing_is_reported_once_per_display() {
     assert!(t == "  y");
     assert!(take().is_empty());
 }
+
+/// Given an app that reads texts through `t_ref`, when the closure reads again, switches
+/// the locale and reports a miss from inside the call, then each read sees the catalog as
+/// it is at that moment and nothing locks up.
+#[test]
+fn t_ref_reads_in_place() {
+    let misses = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = misses.clone();
+    let i18n = I18n::builder()
+        .locale("de")
+        .fallback("en")
+        .messages("de", None, r#"{"hi": "Hallo"}"#)
+        .messages("en", None, r#"{"hi": "Hello", "bye": "Bye"}"#)
+        .messages("de", Some("settings"), r#"{"title": "Einstellungen"}"#)
+        .missing(move |locale, key, _| seen.lock().unwrap().push(format!("{locale}:{key}")))
+        .build()
+        .unwrap();
+
+    // step 1: hit, fallback, page, miss → the same texts as `t`
+    assert_eq!(i18n.t_ref("hi", str::to_owned), "Hallo");
+    assert_eq!(i18n.t_ref("bye", str::to_owned), "Bye");
+    assert_eq!(i18n.page("settings").t_ref("title", str::to_owned), "Einstellungen");
+    assert_eq!(i18n.t_ref("nope", str::to_owned), "nope");
+    assert_eq!(i18n.t_ref("", str::len), 0);
+    assert_eq!(*misses.lock().unwrap(), ["de:nope"]);
+
+    // step 2: nested reads and a locale switch inside the closure → the outer text stays,
+    // the inner read after the switch sees `en`
+    let (outer, inner) = i18n.t_ref("hi", |outer| {
+        let before = i18n.t_ref("hi", str::to_owned);
+        i18n.set_locale("en").unwrap();
+        (format!("{outer}/{before}"), i18n.t_ref("hi", str::to_owned))
+    });
+    assert_eq!(outer, "Hallo/Hallo");
+    assert_eq!(inner, "Hello");
+    assert_eq!(i18n.t_ref("hi", str::to_owned), "Hello");
+}

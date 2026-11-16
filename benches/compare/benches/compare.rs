@@ -143,9 +143,13 @@ fn lookup(c: &mut Criterion) {
     assert_eq!(ours.t("s3.g4.k5"), fluent.format("s3-g4-k5", None).unwrap());
     assert_eq!(ours.t("only_en"), t!("only_en", locale = "de"));
     assert_eq!(ours.t("only_en"), fluent.format("only_en", None).unwrap());
+    assert!(ours.t_ref("s3.g4.k5", |t| t == ours.t("s3.g4.k5")));
 
     c.bench_function("versus/lookup_hit/i18n_next", |b| {
         b.iter(|| ours.t(black_box("s3.g4.k5")))
+    });
+    c.bench_function("versus/lookup_hit/i18n_next_ref", |b| {
+        b.iter(|| ours.t_ref(black_box("s3.g4.k5"), |t| black_box(t).len()))
     });
     c.bench_function("versus/lookup_hit/rust_i18n", |b| {
         b.iter(|| t!(black_box("s3.g4.k5"), locale = "de"))
@@ -156,6 +160,9 @@ fn lookup(c: &mut Criterion) {
     // missing in `de`, found in `en`
     c.bench_function("versus/lookup_fallback/i18n_next", |b| {
         b.iter(|| ours.t(black_box("only_en")))
+    });
+    c.bench_function("versus/lookup_fallback/i18n_next_ref", |b| {
+        b.iter(|| ours.t_ref(black_box("only_en"), |t| black_box(t).len()))
     });
     c.bench_function("versus/lookup_fallback/rust_i18n", |b| {
         b.iter(|| t!(black_box("only_en"), locale = "de"))
@@ -170,6 +177,9 @@ fn lookup(c: &mut Criterion) {
     assert_eq!(fluent.format("s3-g4-nope", None), None);
     c.bench_function("versus/lookup_miss/i18n_next", |b| {
         b.iter(|| ours.t(black_box("s3.g4.nope")))
+    });
+    c.bench_function("versus/lookup_miss/i18n_next_ref", |b| {
+        b.iter(|| ours.t_ref(black_box("s3.g4.nope"), |t| black_box(t).len()))
     });
     c.bench_function("versus/lookup_miss/rust_i18n", |b| {
         b.iter(|| t!(black_box("s3.g4.nope"), locale = "de"))

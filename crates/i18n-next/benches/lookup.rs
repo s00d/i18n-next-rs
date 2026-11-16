@@ -86,6 +86,15 @@ fn i18n_lookup(c: &mut Criterion) {
     c.bench_function("i18n/t/deep_6", |b| {
         b.iter(|| i18n.t(black_box("a.b.c.d.e.f")))
     });
+    c.bench_function("i18n/t_ref/root_hit", |b| {
+        b.iter(|| i18n.t_ref(black_box("s3.g4.k5"), str::len))
+    });
+    c.bench_function("i18n/t_ref/chain_3_to_en", |b| {
+        b.iter(|| i18n.t_ref(black_box("only_en"), str::len))
+    });
+    c.bench_function("i18n/t_ref/chain_3_miss", |b| {
+        b.iter(|| i18n.t_ref(black_box("s3.g4.nope"), str::len))
+    });
     c.bench_function("i18n/try_t/root_hit", |b| {
         b.iter(|| i18n.try_t(black_box("s3.g4.k5")))
     });
@@ -182,6 +191,9 @@ fn view_lookup(c: &mut Criterion) {
     });
     c.bench_function("view/t/other_locale_hit", |b| {
         b.iter(|| en.t(black_box("s3.g4.k5")))
+    });
+    c.bench_function("view/t_ref/page_hit", |b| {
+        b.iter(|| settings.t_ref(black_box("title"), str::len))
     });
     c.bench_function("view/try_t/page_hit", |b| {
         b.iter(|| settings.try_t(black_box("title")))

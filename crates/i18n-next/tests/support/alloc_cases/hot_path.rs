@@ -89,6 +89,15 @@ pub fn hot_path_allocations() {
     });
     dhat::assert_eq!(n, 0);
 
+    // case: t_ref() hit, fallback, page and miss → 0 blocks (the text borrowed).
+    let n = blocks(|| {
+        std::hint::black_box(i18n.t_ref("nav.home", str::len));
+        std::hint::black_box(i18n.t_ref("only_en", str::len));
+        std::hint::black_box(settings.t_ref("title", str::len));
+        std::hint::black_box(i18n.t_ref("nope", str::len));
+    });
+    dhat::assert_eq!(n, 0);
+
     // case: has_locale() / has_page(), the plugin's name checks → 0 blocks.
     let n = blocks(|| {
         std::hint::black_box(i18n.has_locale("de"));

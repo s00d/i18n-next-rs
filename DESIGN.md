@@ -746,6 +746,7 @@ git diff origin/main.. > target/pr.diff && cargo mutants -p i18n-next --in-diff 
 - `tests/alloc.rs` (dhat в режиме testing) фиксирует число аллокаций:
   - `Display` у `Text` без параметров — 0;
   - `t()` — 0 (`Translation`: общий `Arc<str>` текста или сам ключ при промахе);
+  - `t_ref(key, f)` — 0 (текст одалживается замыканию из снимка, без счётчика ссылок);
   - `get(key)` — 0;
   - `write_to` в готовый буфер — 0;
   - `load_page` payload — 1.

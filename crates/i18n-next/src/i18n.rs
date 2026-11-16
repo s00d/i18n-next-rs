@@ -779,6 +779,38 @@ impl I18n {
         }
     }
 
+    /// [`I18n::translate`] handing the text to `f` instead of returning it: the stored
+    /// string is borrowed from the snapshot, so no reference count is touched.
+    fn translate_ref<R>(
+        &self,
+        locale: Option<&str>,
+        page: Option<&str>,
+        key: &str,
+        f: impl FnOnce(&str) -> R,
+    ) -> R {
+        if key.is_empty() {
+            return f(key);
+        }
+        let report = self.inner.missing.is_some() || crate::trace::MISSES;
+        // `read` calls its closure exactly once; `Option` carries the `FnOnce` through
+        // its `FnMut` bound.
+        let mut f = Some(f);
+        let found = self.inner.read(|s| match s.lookup(locale, page, key) {
+            // a subtree has no text: the key, not reported
+            Some(e) => Ok(f.take().map(|f| f(e.text().map_or(key, |t| &**t)))),
+            None => Err((report && locale.is_none()).then(|| s.locale.clone())),
+        });
+        match found {
+            Ok(Some(r)) => r,
+            Ok(None) => unreachable!("Inner::read calls its closure once"),
+            Err(active) => {
+                self.report(locale.or(active.as_deref()), page, key);
+                let f = f.take().expect("not called on a miss");
+                f(key)
+            }
+        }
+    }
+
     fn resolve(
         &self,
         locale: Option<&str>,
@@ -892,6 +924,26 @@ impl I18n {
     #[must_use]
     pub fn t<'k>(&self, key: &'k str) -> Translation<'k> {
         self.translate(None, None, key)
+    }
+
+    /// [`I18n::t`] without the [`Translation`]: `f` gets the text as a `&str` borrowed
+    /// from the current catalog, valid only inside the call. Touches no reference count,
+    /// the cheapest way to read a text that is used right away (written, measured,
+    /// compared). Misses are reported as for [`I18n::t`].
+    ///
+    /// `f` may call into this `I18n` again, `t_ref` included.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    /// let i18n = I18n::builder().messages("en", None, r#"{"hi": "Hello"}"#).build()?;
+    /// assert_eq!(i18n.t_ref("hi", str::len), 5);
+    /// let mut out = String::new();
+    /// i18n.t_ref("nope", |text| out.push_str(text));
+    /// assert_eq!(out, "nope");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    pub fn t_ref<R>(&self, key: &str, f: impl FnOnce(&str) -> R) -> R {
+        self.translate_ref(None, None, key, f)
     }
 
     /// [`I18n::t`] with parameters and an optional default ([`Args::or`]). Strings are
@@ -1339,6 +1391,12 @@ impl View {
     pub fn t<'k>(&self, key: &'k str) -> Translation<'k> {
         let (l, p) = self.parts();
         self.i18n.translate(l, p, key)
+    }
+
+    /// [`I18n::t_ref`] in this view.
+    pub fn t_ref<R>(&self, key: &str, f: impl FnOnce(&str) -> R) -> R {
+        let (l, p) = self.parts();
+        self.i18n.translate_ref(l, p, key, f)
     }
 
     /// [`I18n::t_with`] in this view.

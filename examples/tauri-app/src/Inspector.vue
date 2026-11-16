@@ -2,7 +2,7 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useI18n } from '@i18n-micro/vue'
-import { EVENT_MISSING } from 'tauri-plugin-i18n-next-api'
+import { EVENT_CHANGED, EVENT_MISSING } from 'tauri-plugin-i18n-next-api'
 import { useI18nLink } from 'tauri-plugin-i18n-next-api/vue'
 import { computed, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -49,7 +49,10 @@ async function measure() {
 
 // Transport bench (DESIGN 6.1): synthetic `en` pages of 1k / 10k / 100k keys (Rust command
 // `bench_page`) read through the plugin's own paths, median of RUNS after a warm-up. The
-// result is a Markdown table for the performance page, one per platform (WebView2,
+// run switches to `en` (`load_page` answers for the active chain) and back after. Before
+// timing a size, every row runs once and must give the same data (protocol answers `ok`);
+// the `changed` refetch that `bench_page` causes the first time is awaited, not slept on.
+// The result is a Markdown table for the performance page, one per platform (WebView2,
 // WebKitGTK, Android WebView, WKWebView).
 const RUNS = 15
 const SIZES = [1_000, 10_000, 100_000]
@@ -67,29 +70,73 @@ async function median(f: () => Promise<unknown>): Promise<number> {
   return times[RUNS >> 1]
 }
 const copy = () => navigator.clipboard.writeText(benchTable.value)
+const ok = (r: Response) => {
+  if (!r.ok) throw new Error(`${r.url}: HTTP ${r.status}`)
+  return r
+}
+const utf8 = (b: ArrayBuffer) => JSON.parse(new TextDecoder().decode(b))
+// what a row returned, as the page's flat `data` object
+type Data = Record<string, unknown>
+const dataOf = (out: unknown, page: string): Data => {
+  const v = (out instanceof ArrayBuffer ? utf8(out) : out) as { data?: Data; chunks?: Array<{ locale: string; page: string; data: Data }> }
+  if (v.chunks) return v.chunks.find((c) => c.locale === 'en' && c.page === page)?.data ?? {}
+  return v.data ?? (v as Data)
+}
+const canon = (d: Data) => JSON.stringify(d, Object.keys(d).sort())
 async function bench() {
   benchRunning.value = true
   benchTable.value = 'running…'
+  const was = link.locale
   try {
+    await link.setLocale('en')
     const rows: Array<[string, (page: string, keys: number, url: string, text: string) => Promise<unknown>]> = [
       ['invoke raw (`ipc::Response`) → `TextDecoder` → `JSON.parse`', async (page) =>
-        JSON.parse(new TextDecoder().decode(await invoke<ArrayBuffer>('plugin:i18n-next|load_page', { page })))],
+        utf8(await invoke<ArrayBuffer>('plugin:i18n-next|load_page', { page }))],
       ['invoke raw, transfer only', (page) => invoke<ArrayBuffer>('plugin:i18n-next|load_page', { page })],
       ['invoke with `serde_json::Value`', (_, keys) => invoke('bench_value', { keys })],
-      ['**custom protocol: `fetch().json()`**', (_p, _k, url) => fetch(url, { cache: 'no-store' }).then((r) => r.json())],
-      ['custom protocol, transfer only (`arrayBuffer`)', (_p, _k, url) => fetch(url, { cache: 'no-store' }).then((r) => r.arrayBuffer())],
+      ['**custom protocol: `fetch().json()`**', (_p, _k, url) => fetch(url, { cache: 'no-store' }).then(ok).then((r) => r.json())],
+      ['custom protocol, transfer only (`arrayBuffer`)', (_p, _k, url) => fetch(url, { cache: 'no-store' }).then(ok).then((r) => r.arrayBuffer())],
       ['string already in JS: `JSON.parse` (JSON in the bundle)', async (_p, _k, _u, text) => JSON.parse(text)],
     ]
     const columns: string[] = []
     const cells: string[][] = rows.map(() => [])
     for (const keys of SIZES) {
-      const page = await invoke<string>('bench_page', { keys })
-      const meta = JSON.parse(new TextDecoder().decode(await invoke<ArrayBuffer>('plugin:i18n-next|meta', { locale: 'en', page })))
+      // the first `bench_page` of a size adds messages: the catalog version moves and every
+      // link refetches on `changed`. Wait for that event, then for the link's queue.
+      let seen = 0
+      let wake = () => {}
+      const unlisten = await listen<{ version: number }>(EVENT_CHANGED, (e) => {
+        seen = Math.max(seen, e.payload.version)
+        wake()
+      })
+      let page: string
+      let meta: { version: number; tags: Record<string, string> }
+      try {
+        const shown = link.version
+        page = await invoke<string>('bench_page', { keys })
+        meta = utf8(await invoke<ArrayBuffer>('plugin:i18n-next|meta', { locale: 'en', page }))
+        if (meta.version > shown) {
+          const v = meta.version
+          await new Promise<void>((resolve) => {
+            wake = () => void (seen >= v && resolve())
+            wake()
+          })
+        }
+      } finally {
+        unlisten()
+      }
+      await link.refresh() // queued after the link's own refetch of that `changed`
       const url = convertFileSrc(`${meta.tags[`en/${page}`]}/en/${page}.json`, 'i18n-next')
-      const body = await (await fetch(url, { cache: 'no-store' })).arrayBuffer()
+      const body = await ok(await fetch(url, { cache: 'no-store' })).arrayBuffer()
       const size = body.byteLength >= 1 << 20 ? `${(body.byteLength / (1 << 20)).toFixed(1)} MB` : `${Math.round(body.byteLength / 1024)} KB`
       columns.push(`${size} (${keys / 1000}k keys)`)
       const text = new TextDecoder().decode(body)
+      // every row once, untimed: the same data, or no numbers at all
+      const want = canon(dataOf(JSON.parse(text), page))
+      if (want === '{}') throw new Error(`${page}: empty chunk`)
+      for (const [name, run] of rows) {
+        if (canon(dataOf(await run(page, keys, url, text), page)) !== want) throw new Error(`${name}: other data for ${page}`)
+      }
       for (const [i, [, run]] of rows.entries()) cells[i].push((await median(() => run(page, keys, url, text))).toFixed(2))
     }
     benchTable.value = [
@@ -101,6 +148,7 @@ async function bench() {
   } catch (e) {
     benchTable.value = `bench failed: ${e}`
   } finally {
+    await link.setLocale(was).catch(() => {})
     benchRunning.value = false
   }
 }

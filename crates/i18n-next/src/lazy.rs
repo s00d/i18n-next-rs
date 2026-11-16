@@ -168,6 +168,10 @@ thread_local! {
     /// Lazy pairs this thread is loading the view of (by address): a pair of a view that
     /// leads back to one of them (two locales falling back to each other) is not loaded
     /// for it again.
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "already `const`: clippy misreads the expansion on targets without native TLS (Android)"
+    )]
     static LOADING: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 

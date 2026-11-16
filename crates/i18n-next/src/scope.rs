@@ -160,6 +160,10 @@ struct Frame {
 }
 
 thread_local! {
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "already `const`: clippy misreads the expansion on targets without native TLS (Android)"
+    )]
     static STACK: RefCell<Vec<Frame>> = const { RefCell::new(Vec::new()) };
 }
 

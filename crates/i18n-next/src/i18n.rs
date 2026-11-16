@@ -353,6 +353,10 @@ struct Cache {
 }
 
 thread_local! {
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "already `const`: clippy misreads the expansion on targets without native TLS (Android)"
+    )]
     static CACHE: RefCell<Cache> = const {
         RefCell::new(Cache { slots: [const { None }; 4], next: 0, drops: 0 })
     };

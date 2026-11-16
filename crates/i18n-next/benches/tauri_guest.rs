@@ -131,9 +131,8 @@ fn benches(c: &mut Criterion) {
         )
     };
     // a page checked at an older version whose chunks did not change: meta read, no load
-    let cached = |b: &mut criterion::Bencher| {
-        b.iter(|| unchanged(black_box(&meta_page), &held, &shown))
-    };
+    let cached =
+        |b: &mut criterion::Bencher| b.iter(|| unchanged(black_box(&meta_page), &held, &shown));
     c.bench_function("tauri_guest/set_page/first_visit_page_50", first_visit);
     c.bench_function("tauri_guest/set_page/unchanged_meta", cached);
     c.bench_function("tauri_guest/load/first_visit_page_50", first_visit);

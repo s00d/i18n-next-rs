@@ -20,11 +20,21 @@ const repo = 'https://github.com/s00d/i18n-next-rs/blob/main/'
 const exists = (rel) => existsSync(root + rel)
 const read = (rel) => readFileSync(root + rel, 'utf8')
 // `(DESIGN 6.1)`, `(8b.16)`: pointers into the design notes of the repository, not for the site.
-const ref = String.raw`(?:DESIGN\s+)?(?:8b\.\d+|\d+\.\d+[a-z]?)(?:\s+step\s+\d+)?`
+// Only these two forms: a plain `(1.2)` (a version, a changelog line) stays, and fenced code is never touched.
+// The first item says DESIGN or 8b; the ones after it may be bare (`(DESIGN 3.4, 6.2)`).
+const ref = String.raw`(?:DESIGN\s+[\d.]+[a-z]?|(?:DESIGN\s+)?8b\.\d+)(?:\s+step\s+\d+)?`
+const more = String.raw`(?:DESIGN\s+)?(?:8b\.\d+|\d+\.\d+[a-z]?)(?:\s+step\s+\d+)?`
 const noDesignRefs = (text) =>
   text
-    .replace(new RegExp(String.raw`[ \t]*\(${ref}(?:,\s*${ref})*\)`, 'g'), '')
-    .replace(new RegExp(String.raw`,\s*DESIGN\s+[\d.a-z]+(?=\))`, 'g'), '')
+    .split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m)
+    .map((part, i) =>
+      i % 2
+        ? part
+        : part
+            .replace(new RegExp(String.raw`[ \t]*\(${ref}(?:,\s*${more})*\)`, 'g'), '')
+            .replace(new RegExp(String.raw`,\s*DESIGN\s+[\d.a-z]+(?=\))`, 'g'), ''),
+    )
+    .join('')
 
 const page = (title, description, source, body) =>
   `---\ntitle: ${JSON.stringify(title)}\ndescription: ${JSON.stringify(description)}\ngenerated: true\n---\n\n` +
@@ -36,6 +46,13 @@ const link = (rel) => `[\`${rel}\`](${repo}${rel})`
 function check(cond, message) {
   if (!cond) throw new Error(`generate.mjs: ${message}`)
 }
+// noDesignRefs drops design pointers only: versions and fenced code stay.
+for (const [from, to] of [
+  ['a (DESIGN 3.4, 6.2). (8b.3 step 2)', 'a.'],
+  ['(protocol, DESIGN 6.1)', '(protocol)'],
+  ['## 0.2.0 (1.2)', '## 0.2.0 (1.2)'],
+  ['```rust\nf(8b.3) // (DESIGN 6.1)\n```', '```rust\nf(8b.3) // (DESIGN 6.1)\n```'],
+]) check(noDesignRefs(from) === to, `noDesignRefs(${JSON.stringify(from)}) = ${JSON.stringify(noDesignRefs(from))}`)
 
 // ---------------------------------------------------------------- JS API (TypeScript compiler API)
 

@@ -282,10 +282,18 @@ jobs:
       - name: Build guest-js and check dist
         run: pnpm -C crates/tauri-plugin-i18n-next build
       - run: pnpm -C crates/tauri-plugin-i18n-next test
+      # a bench per public function (from the .d.ts snapshot), and every bench runs: a smoke
+      # with a short time per task, no thresholds (the numbers are read locally, PLAN)
+      - run: pnpm -C crates/tauri-plugin-i18n-next bench:inventory
+      - name: Bench smoke
+        run: pnpm -C crates/tauri-plugin-i18n-next bench
+        env:
+          BENCH_TIME: "20"
 
   # The Tauri playground (DESIGN 8a): its own workspace and lock, built on linux with the
   # plugin from this checkout. The Vue front end (a pnpm workspace member on the guest-js
-  # package of this checkout) is built first: `generate_context!` embeds its dist.
+  # package of this checkout) is type-checked (vue-tsc) and built first: `generate_context!`
+  # embeds its dist. guest-js is built without its dist checks: the guest-js job runs them.
   tauri-app:
     name: tauri-app build
     runs-on: ubuntu-latest
@@ -315,7 +323,8 @@ jobs:
         working-directory: .
         run: |
           pnpm install --frozen-lockfile
-          pnpm -C crates/tauri-plugin-i18n-next build
+          pnpm -C crates/tauri-plugin-i18n-next build:lib
+          pnpm -C examples/tauri-app typecheck
           pnpm -C examples/tauri-app build
       - run: cargo fmt --check
       - run: cargo clippy --locked -- -D warnings

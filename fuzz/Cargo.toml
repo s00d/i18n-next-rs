@@ -13,6 +13,7 @@ publish = false
 #   cargo +nightly fuzz run linked    fuzz/corpus/linked    fixtures/compat/linked -- -max_total_time=60
 #   cargo +nightly fuzz run page_names "$PWD"/fuzz/corpus/page_names "$PWD"/fixtures/compat/locales -- -max_total_time=60
 #   (absolute paths: the target runs in an empty directory of its own and checks it stays empty)
+#   cargo +nightly fuzz run tzif      fuzz/corpus/tzif      fixtures/tzif -- -max_total_time=60
 #
 # Its own workspace and lock, outside the main one: `cargo test --workspace` never builds it.
 [workspace]
@@ -59,6 +60,13 @@ bench = false
 [[bin]]
 name = "intl_options"
 path = "fuzz_targets/intl_options.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tzif"
+path = "fuzz_targets/tzif.rs"
 test = false
 doc = false
 bench = false

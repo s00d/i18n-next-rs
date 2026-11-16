@@ -1645,6 +1645,7 @@ dependencies = [
  "dhat",
  "foldhash",
  "gungraun",
+ "jiff",
  "js-sys",
  "proptest",
  "rustc-hash 2.1.3",
@@ -1884,6 +1885,7 @@ checksum = "34e6d07feb763c647199bd9072192b9639da3b5ffde49afd73c08b1d5ceb1469"
 dependencies = [
  "jiff-core",
  "jiff-static",
+ "jiff-tzdb",
  "jiff-tzdb-platform",
  "log",
  "portable-atomic",

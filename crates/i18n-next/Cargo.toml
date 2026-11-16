@@ -34,16 +34,26 @@ tracing = { version = "0.1", optional = true, default-features = false }
 # `serde` feature only: `Text` serializes as its displayed string (`collect_str`).
 serde = { version = "1.0.229", optional = true, default-features = false }
 
+# Browser time zones (`tz` on wasm32-unknown-unknown only, DESIGN 2.1 / 5.4 / S12):
+# `Intl.DateTimeFormat` and `Date`. A platform binding to JS, not logic. No default features:
+# neither `unsafe-eval` (the `Function` constructor) nor `std` (pulls in futures-util) is needed.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+js-sys = { version = "0.3.107", optional = true, default-features = false }
+
 [features]
 default = ["std", "format", "tz", "global"]
 std = []
 format = []
-tz = []
+# Time zones (src/tz, DESIGN 5.4). On wasm32-unknown-unknown through `js-sys`.
+tz = ["dep:js-sys"]
 global = []
 serde = ["dep:serde"]
 tracing = ["dep:tracing"]
 watch = []
-tzdb = []
+# The bundled IANA tzdb (src/tz/tzdb.bin from scripts/tzdb.mjs, transitions since 1970):
+# a fallback after the platform's zones. Windows has no TZif files, so there `tz` always
+# includes it (`cfg(windows)` in src/tz): a feature cannot be on by default for one target.
+tzdb = ["tz"]
 currency-names = []
 tauri-guest = []
 chrono = []
@@ -61,6 +71,9 @@ serde_json = "1.0.154"
 serde = "1.0.229"
 foldhash = "0.2"
 rustc-hash = "2.1"
+# Oracle of the own `tz` (tests/tz_*.rs): system TZif files and its bundled tzdb, which is
+# the IANA release scripts/tzdb.mjs bundles.
+jiff = { version = "0.2.45", features = ["tzdb-bundle-always"] }
 # tests/tracing.rs: `with_default` needs `std` (the library dep stays without it).
 tracing = { version = "0.1", features = ["std"] }
 
@@ -108,6 +121,10 @@ harness = false
 name = "number"
 harness = false
 required-features = ["format"]
+
+[[bench]]
+name = "tz"
+harness = false
 
 # Models and differentials that build floats (`Arg::Float`, `Count::from(f64)`) or the
 # float printer: with `--no-default-features` they are skipped, the rest still runs.

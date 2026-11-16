@@ -58,8 +58,13 @@ fn storage() -> Option<JsValue> {
 
 /// `fetch("locales/<path>")` with the platform's `fetch`: what `ensure_async` asks for.
 async fn fetch(path: String) -> Result<Vec<u8>, String> {
+    fetch_url(&format!("locales/{path}")).await
+}
+
+/// The body at `url`, relative to the page.
+async fn fetch_url(path: &str) -> Result<Vec<u8>, String> {
     let global = js_sys::global();
-    let url = JsValue::from_str(&format!("locales/{path}"));
+    let url = JsValue::from_str(path);
     let res = call(&global, "fetch", &[url]).ok_or("no fetch")?;
     let res = JsFuture::from(Promise::resolve(&res))
         .await
@@ -140,6 +145,19 @@ async fn switch(code: String, page: RwSignal<String>) -> Result<(), i18n_next::E
     show(&page.get_untracked()).await
 }
 
+/// `wasm-size.txt` of the trunk hook (`<bytes> <gzip bytes>`), shown in the footer.
+async fn wasm_size() -> String {
+    let Ok(body) = fetch_url("wasm-size.txt").await else {
+        return String::new();
+    };
+    let text = String::from_utf8_lossy(&body);
+    let kb = |s: &str| s.parse::<f64>().map(|n| n / 1024.0).unwrap_or_default();
+    match text.split_whitespace().collect::<Vec<_>>()[..] {
+        [raw, gzip] => format!(" · .wasm {:.0} KB (gzip {:.0} KB)", kb(raw), kb(gzip)),
+        _ => String::new(),
+    }
+}
+
 /// `<html lang dir>` of the active locale.
 fn html_lang(i18n: &I18n) {
     let code = i18n.locale();
@@ -216,6 +234,8 @@ fn App(i18n: I18n) -> impl IntoView {
         html_lang(&shown);
     });
     let current = i18n.clone();
+    let size = RwSignal::new(String::new());
+    spawn_local(async move { size.set(wasm_size().await) });
     view! {
         <nav>
             {PAGES
@@ -271,6 +291,7 @@ fn App(i18n: I18n) -> impl IntoView {
             }}
             " · "
             {if in_tauri() { "Tauri (tauri-guest)" } else { "browser (remote + localStorage)" }}
+            {move || size.get()}
         </footer>
     }
 }

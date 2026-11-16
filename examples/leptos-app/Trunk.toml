@@ -3,3 +3,14 @@
 [build]
 target = "index.html"
 dist = "dist"
+
+# The size of the shipped .wasm (after wasm-opt) and gzipped, in bytes, for the footer
+# (DESIGN 8a): the app fetches `wasm-size.txt` next to itself, in the browser and in Tauri.
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "cd \"$TRUNK_STAGING_DIR\" && for f in *_bg.wasm; do echo \"$(wc -c < \"$f\") $(gzip -9c \"$f\" | wc -c)\"; done | tr -s ' ' | sed 's/^ //' > wasm-size.txt"]
+
+[hooks.windows]
+command = "powershell"
+command_arguments = ["-NoProfile", "-Command", "$f = Get-Item \"$env:TRUNK_STAGING_DIR\\*_bg.wasm\"; $o = [IO.MemoryStream]::new(); $g = [IO.Compression.GZipStream]::new($o, [IO.Compression.CompressionLevel]::Optimal); $b = [IO.File]::ReadAllBytes($f.FullName); $g.Write($b, 0, $b.Length); $g.Close(); \"$($f.Length) $($o.ToArray().Length)\" | Set-Content -NoNewline \"$env:TRUNK_STAGING_DIR\\wasm-size.txt\""]

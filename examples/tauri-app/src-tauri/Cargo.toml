@@ -22,6 +22,9 @@ tauri-build = { version = "2.7", features = [] }
 tauri = { version = "2.12", features = ["tray-icon"] }
 i18n-next = { path = "../../../crates/i18n-next" }
 tauri-plugin-i18n-next = { path = "../../../crates/tauri-plugin-i18n-next", features = ["tray-icon"] }
+# the `serde_json::Value` row of the transport bench (DESIGN 6.1); both already in Tauri's tree
+serde = "1"
+serde_json = "1"
 
 [features]
 # used for production builds (`tauri build`): DO NOT REMOVE

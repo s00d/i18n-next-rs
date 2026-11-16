@@ -3222,6 +3222,8 @@ name = "tauri-app"
 version = "0.1.0"
 dependencies = [
  "i18n-next",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-i18n-next",

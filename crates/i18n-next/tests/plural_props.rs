@@ -198,3 +198,91 @@ fn small_table_agrees_with_the_rule() {
         }
     }
 }
+
+/// Given tags at the edges of the UTS 35 grammar (M10 mutants), when `Intl` would check
+/// them, then the same ones are rejected: a 4-letter language, a singleton that is not
+/// alphanumeric, a private-use or extension subtag too long or not alphanumeric, a repeated
+/// singleton, a `-u-` key whose second character is a digit, a `-t-` field without a value
+/// or with a key that is not letter + digit.
+#[test]
+fn tag_grammar_edges() {
+    let valid = |t: &str| plural::canonical_language(t, |_| ()).is_some();
+    for t in [
+        "en-x-abcdefgh",
+        "en-a-bc-b-cd",
+        "en-u-abc",
+        "en-u-ca-gregory",
+        "en-t-de-419",
+        "en-t-de-at-h0-abc",
+        "en-t-h0-abc-defg",
+    ] {
+        assert!(valid(t), "{t} is valid");
+    }
+    for t in [
+        "abcd",
+        "en-$-ab",
+        "en-x-abcdefghi",
+        "en-x-a$",
+        "en-a-bc-a-cd",
+        "en-a-b$c",
+        "en-u-a1",
+        "en-t-de-at-aa-abc",
+        "en-t-h0",
+        "en-t-h0-ab",
+    ] {
+        assert!(!valid(t), "{t} is not valid");
+    }
+}
+
+/// Given the locales whose rules depend on a script or a region (`kok-Latn`, `pt-PT`), when
+/// a tag names them (the region through its numeric alias too), then their own rule set is
+/// picked, not the language's.
+#[test]
+fn script_and_region_pick_their_rule_set() {
+    assert_eq!(
+        plural::rule_index("kok-Latn"),
+        plural::locale_rule("kok-Latn")
+    );
+    assert_eq!(plural::rule_index("pt-620"), plural::locale_rule("pt-PT"));
+    assert_ne!(plural::locale_rule("pt-PT"), plural::locale_rule("pt"));
+}
+
+/// `shortest_whole` takes whole, non-negative values only: a fraction or a negative number
+/// is `None`, zero is itself.
+#[test]
+fn shortest_whole_domain() {
+    assert_eq!(plural::shortest_whole(0.0), Some((0, 0)));
+    assert_eq!(plural::shortest_whole(0.5), None);
+    assert_eq!(plural::shortest_whole(-5.0), None);
+}
+
+/// Given counts the golden table does not reach (Cornish `two` for thousands, Latvian
+/// decimals with two fraction digits), when the generated rules read them, then they pick
+/// the category `Intl.PluralRules` does (Node, ICU 78).
+#[test]
+fn generated_rules_past_the_golden() {
+    let select = |tag: &str, o: &Operands| (plural::rule(plural::rule_index(tag).unwrap()).0)(o);
+    for (n, want) in [
+        (22, Category::Two),
+        (2000, Category::Two),
+        (21_000, Category::Other),
+        (30_000, Category::Other),
+        (40_000, Category::Two),
+        (60_000, Category::Two),
+        (80_000, Category::Two),
+        (120_000, Category::Two),
+        (1_100_000, Category::Two),
+    ] {
+        assert_eq!(select("kw", &Operands::int(n)), want, "kw {n}");
+    }
+    for (s, want) in [
+        ("1", Category::One),
+        ("10", Category::Zero),
+        ("0.21", Category::One),
+        ("0.11", Category::Zero),
+        ("1.31", Category::One),
+        ("10.01", Category::One),
+    ] {
+        assert_eq!(select("lv", &Operands::parse(s)), want, "lv {s}");
+    }
+}

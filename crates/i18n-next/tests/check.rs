@@ -210,3 +210,45 @@ fn a_link_into_a_lazy_file_says_so() {
         "{report}"
     );
 }
+
+/// Given `=0`-marked plurals, when the catalog is checked, then a marked message takes one
+/// form per category the small counts reach plus the zero form (`en`: 3) or one per
+/// category of the locale (`fr` adds `many` for millions: 4), and a wrong count lists
+/// exactly those choices.
+#[test]
+fn marked_plurals_take_either_count() {
+    // step 1: fr with 4 forms (one, many, other), en and fr with 2
+    let i18n = I18n::builder()
+        .locale("en")
+        .files(
+            Locales::new()
+                .file("en.json", r#"{"a": "=0 none | one | {count} many", "b": "=0 none | {count}"}"#)
+                .file(
+                    "fr.json",
+                    r#"{"a": "=0 aucun | un | {count} millions | {count} autres", "b": "=0 aucun | {count}"}"#,
+                )
+                .files(),
+        )
+        .build()
+        .unwrap();
+
+    // step 2: check → only the two-form messages, each with its expected counts
+    let report = i18n.check();
+    let forms =
+        |locale: &str, expected: Vec<usize>, categories: Vec<String>| CheckItem::PluralForms {
+            locale: s(locale),
+            page: s("index"),
+            key: s("b"),
+            forms: 2,
+            expected,
+            categories,
+        };
+    assert_eq!(
+        report.items,
+        vec![
+            forms("en", vec![3], vec![s("one"), s("other")]),
+            forms("fr", vec![3, 4], vec![s("one"), s("other")]),
+        ],
+        "{report}"
+    );
+}

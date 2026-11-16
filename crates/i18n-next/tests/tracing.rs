@@ -84,3 +84,24 @@ fn misses_loads_and_fetches_are_traced() {
         assert!(lines.contains(want), "{want:?} not in\n{lines}");
     }
 }
+
+/// Given the `tracing` feature, when a named number or date format no locale of the chain
+/// has is used, then a warn names its kind, name and locale (JS `warnMissingFormat`).
+#[test]
+fn missing_formats_are_traced() {
+    let log = Log::default();
+    let lines = log.lines.clone();
+    tracing::subscriber::with_default(log, || {
+        let i18n = i18n_next::I18n::builder().time_zone("UTC").build().unwrap();
+        // step 1: unknown names → the default options
+        assert_eq!(i18n.tn_as(1.5, "nope"), "1.5");
+        assert_eq!(i18n.td_as(0i64, "never"), "1/1/1970");
+    });
+    let lines = lines.lock().unwrap().join("\n");
+    for want in [
+        "kind=\"number\" name=\"nope\" locale=\"en\"",
+        "kind=\"datetime\" name=\"never\" locale=\"en\"",
+    ] {
+        assert!(lines.contains(want), "{want:?} not in\n{lines}");
+    }
+}

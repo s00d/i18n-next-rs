@@ -203,6 +203,13 @@ fn damaged_tzif_never_panics() {
 /// POSIX strings both parsers accept: every rule form and the corners of v3.
 const POSIX_OK: &[&str] = &[
     "UTC0",
+    // day 365 (zero-based) of a common year is past its end; east of UTC its wall time is
+    // still in the year
+    "AAA-3BBB,0/0,365/0",
+    "AAA-3BBB,J1/0,365/23",
+    // permanent DST: from Jan 1 00:00 UTC to an end in standard time past the year
+    "AAA-3BBB-4,0/3,J365/25",
+    "AAA3BBB2,0/-3,J365/24",
     "<+14>-14",
     "<+0330>-3:30",
     "<-0930>9:30",
@@ -628,4 +635,77 @@ fn cache_is_bounded_by_real_zones() {
         .filter(|k| k.eq_ignore_ascii_case("europe/berlin"))
         .collect();
     assert_eq!(keys, ["Europe/Berlin"]);
+}
+
+/// A v2 TZif file built by hand: one type of `offset` seconds, `leaps` leap-second records,
+/// then the footer `tz`.
+fn tzif_v2(offset: i32, leaps: u32, tz: &str) -> Vec<u8> {
+    let header = |leapcnt: u32| {
+        let mut h = b"TZif2".to_vec();
+        h.extend([0u8; 15]);
+        for c in [0, 0, leapcnt, 0, 1, 4] {
+            h.extend(u32::to_be_bytes(c));
+        }
+        h
+    };
+    let ttinfo = |d: &mut Vec<u8>| {
+        d.extend(offset.to_be_bytes());
+        d.extend([0, 0]);
+        d.extend(b"ABC\0");
+    };
+    let mut d = header(0);
+    ttinfo(&mut d);
+    d.extend(header(leaps));
+    ttinfo(&mut d);
+    for i in 0..leaps {
+        d.extend(i64::from(i).to_be_bytes());
+        d.extend(i32::try_from(i).unwrap().to_be_bytes());
+    }
+    d.extend(format!("\n{tz}\n").bytes());
+    d
+}
+
+/// Given TZif files built by hand, when parsed, then an offset of 26 h less a second is
+/// taken and 26 h is not (RFC 8536 allows ±25:59:59), and leap-second records are stepped
+/// over to the footer.
+#[test]
+fn tzif_offsets_and_leap_records() {
+    assert_eq!(
+        tzif::parse(&tzif_v2(93_599, 0, "")).unwrap().offset_at(0),
+        93_599
+    );
+    assert_eq!(
+        tzif::parse(&tzif_v2(-93_599, 0, "")).unwrap().offset_at(0),
+        -93_599
+    );
+    assert!(tzif::parse(&tzif_v2(93_600, 0, "")).is_none());
+    for leaps in [1, 3] {
+        let t = tzif::parse(&tzif_v2(0, leaps, "<+01>-1")).unwrap();
+        assert_eq!(t.offset_at(4_000_000_000), 3600, "{leaps} leap records");
+    }
+}
+
+/// Given a southern-hemisphere rule (DST across New Year) evaluated from the years cached
+/// ahead, when asked around every Jan 1 from 1970 to 2100, then it answers as the rule
+/// itself: the guess of the year is corrected both ways.
+#[test]
+fn cached_rule_years_around_new_year() {
+    let rule = "AEST-10AEDT,M10.1.0,M4.1.0/3";
+    let table = tz::Table::new(Box::new([]), Box::new([]), 0, Posix::parse(rule));
+    let posix = Posix::parse(rule).unwrap();
+    for year in 1970..=2100 {
+        let jan1 = tz::days_from_civil(year, 1, 1) * 86_400;
+        for h in -36..36 {
+            let t = jan1 + h * 3600;
+            assert_eq!(table.offset_at(t), posix.offset_at(t), "{year} {h:+}h");
+        }
+    }
+}
+
+/// `load` reads a zone afresh (no cache): known names load, unknown ones do not.
+#[test]
+fn load_reads_a_zone() {
+    let berlin = tz::load("Europe/Berlin").expect("Europe/Berlin");
+    assert_eq!(berlin.offset_at(1_720_000_000), 7200);
+    assert!(tz::load("Mars/Olympus").is_none());
 }

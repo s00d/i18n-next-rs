@@ -166,7 +166,8 @@ jobs:
       - name: Tests on wasm32-wasip1 (wasmtime)
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir=.
-        run: cargo test -p i18n-next --locked --target wasm32-wasip1
+        # WASI has no system zoneinfo inside wasmtime: a WASI app ships the bundled tzdb
+        run: cargo test -p i18n-next --locked --target wasm32-wasip1 --features tzdb
       - name: Install wasm-opt (binaryen)
         run: |
           curl -sSfL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar xz -C "$RUNNER_TEMP"

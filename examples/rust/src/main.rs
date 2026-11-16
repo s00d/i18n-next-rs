@@ -434,18 +434,22 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
 fn server() -> String {
     let run = || -> std::io::Result<String> {
         let i18n = playground_rust::catalog().map_err(std::io::Error::other)?;
+        // `enable_all`: axum's accept loop sleeps on an accept error, which needs the timer.
         tokio::runtime::Builder::new_current_thread()
-            .enable_io()
+            .enable_all()
             .build()?
-            .block_on(playground_rust::with_server(i18n, |addr| async move {
-                let (status, body) =
-                    playground_rust::fetch(addr, "/settings", "ru;q=0.9, en;q=0.5").await?;
-                Ok(if status == 200 {
-                    body
-                } else {
-                    format!("HTTP {status}")
-                })
-            }))
+            .block_on(playground_rust::with_server(
+                playground_rust::app(i18n),
+                |addr| async move {
+                    let reply =
+                        playground_rust::fetch(addr, "/settings", "ru;q=0.9, en;q=0.5").await?;
+                    Ok(if reply.status == 200 {
+                        reply.body
+                    } else {
+                        format!("HTTP {}", reply.status)
+                    })
+                },
+            ))
     };
     run().unwrap_or_else(|e| e.to_string())
 }

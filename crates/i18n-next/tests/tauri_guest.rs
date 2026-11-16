@@ -10,9 +10,10 @@
 //! test that failed before its cleanup leaves the guest connected and its fake installed:
 //! the next `Fake::new` disconnects and takes that fake down first. Events are delivered by
 //! the test; a queued call (`set_page` of the shown page, which costs no call when nothing
-//! changed) waits for them. Work run beside the test (`spawn`) is driven by draining
-//! microtasks a bounded number of times (`settle`): a stalled queue fails, never hangs. No
-//! timers.
+//! changed) waits for them. Work run beside the test (`spawn`) is driven by turns of the
+//! event loop, a bounded number of them (`settle`): a stalled queue fails, never hangs. No
+//! timers: a turn is a `MessageChannel` message (`tick` of the fake), since Chrome finishes
+//! reading a `fetch` body in a task, not in microtasks.
 #![cfg(all(target_arch = "wasm32", target_os = "unknown", feature = "tauri-guest"))]
 
 use i18n_next::{Error, I18n, payload, tauri_guest};
@@ -233,15 +234,16 @@ fn spawn<T: 'static>(f: impl Future<Output = T> + 'static) -> Rc<RefCell<Option<
     out
 }
 
-/// Drains microtasks until `done`, at most 500 rounds: what is stuck fails the test.
+/// Turns the event loop (a task, and the microtasks before it) until `done`, at most 500
+/// turns: what is stuck fails the test.
 async fn until(what: &str, done: impl Fn() -> bool) {
+    let tick: Function = lib("tick").dyn_into().unwrap();
     for _ in 0..500 {
         if done() {
             return;
         }
-        JsFuture::from(Promise::resolve(&JsValue::NULL))
-            .await
-            .unwrap();
+        let turn: Promise = tick.call0(&JsValue::NULL).unwrap().dyn_into().unwrap();
+        JsFuture::from(turn).await.unwrap();
     }
     panic!("stalled: {what}");
 }

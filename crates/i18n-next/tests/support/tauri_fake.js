@@ -235,4 +235,18 @@ function rustSource(f) {
   }
 }
 
-return { Fake, contractSource, randomSource, rustSource }
+// One turn of the event loop, no timer: a promise a MessageChannel message (a task) resolves.
+// Chrome finishes a `Response` body read (`arrayBuffer`) in a task, never in microtasks
+// (Node does it in a few microtasks), so the tests' `until` waits a task per round.
+function tick() {
+  return new Promise((resolve) => {
+    const c = new MessageChannel()
+    c.port1.onmessage = () => {
+      c.port1.close()
+      resolve()
+    }
+    c.port2.postMessage(null)
+  })
+}
+
+return { Fake, contractSource, randomSource, rustSource, tick }

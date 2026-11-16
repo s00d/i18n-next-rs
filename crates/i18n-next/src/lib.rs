@@ -17,6 +17,8 @@ mod json;
 mod lazy;
 mod linked;
 mod loader;
+#[cfg(feature = "payload")]
+pub mod payload;
 mod plural;
 mod remote;
 mod scope;

@@ -430,9 +430,12 @@ impl<'a> Reader<'a> {
 /// Appends `s` quoted and escaped exactly like JS `JSON.stringify`: `"` and `\`, the
 /// short escapes `\b \f \n \r \t`, other control characters below U+0020 as `\u00xx`
 /// (lowercase hex); everything else, U+007F and U+2028 / U+2029 included, as is.
-#[allow(
-    dead_code,
-    reason = "the payload writer of M7; tested and benched already"
+#[cfg_attr(
+    not(feature = "payload"),
+    allow(
+        dead_code,
+        reason = "the payload writer; tests and benches use it without it"
+    )
 )]
 pub(crate) fn write_str(out: &mut String, s: &str) {
     const HEX: &[u8; 16] = b"0123456789abcdef";

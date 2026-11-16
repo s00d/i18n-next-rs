@@ -59,7 +59,10 @@ watch = []
 # includes it (`cfg(windows)` in src/tz): a feature cannot be on by default for one target.
 tzdb = ["tz"]
 currency-names = []
-tauri-guest = []
+# The front-end payload (src/payload.rs, DESIGN 2.1 / 6.1): `encode` for the Tauri plugin,
+# `apply` for a Rust guest.
+payload = []
+tauri-guest = ["payload"]
 chrono = ["dep:chrono"]
 time = ["dep:time"]
 
@@ -129,6 +132,11 @@ required-features = ["format"]
 [[bench]]
 name = "tz"
 harness = false
+
+[[bench]]
+name = "payload"
+harness = false
+required-features = ["payload"]
 
 # Models and differentials that build floats (`Arg::Float`, `Count::from(f64)`) or the
 # float printer: with `--no-default-features` they are skipped, the rest still runs.

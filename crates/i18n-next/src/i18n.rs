@@ -98,10 +98,14 @@ pub(crate) struct Meta {
     /// [`Builder::clock`]; else the system clock.
     #[cfg(feature = "format")]
     clock: Option<crate::format::api::Clock>,
-    /// What `check()` reads besides the chunks (M3).
-    check: check::Facts,
+    /// What `check()` reads besides the chunks (M3); its `reference` is `defaultLocale`.
+    pub(crate) check: check::Facts,
     /// `linked_messages(true)`: `build` and `reload` resolve links with it.
     linked: Option<ResolveLinked>,
+    /// `numberFormats` and `datetimeFormats` as one JSON object each (`i18n.json`, then the
+    /// builder's calls, a name given again wins): what the payload sends the front end.
+    #[cfg(feature = "payload")]
+    pub(crate) formats_json: (Box<str>, Box<str>),
 }
 
 impl Meta {
@@ -125,6 +129,14 @@ impl Meta {
     /// never expanded through its own links (`utils` `buildFallbackLocaleChain`). A cycle
     /// (`a → b → a`) stops at the first repeat.
     fn chain(&self, data: &FastMap<Arc<str>, Arc<LocaleData>>, code: &str) -> Chain {
+        self.chain_codes(code)
+            .iter()
+            .filter_map(|c| data.get(*c).cloned())
+            .collect()
+    }
+
+    /// The locale codes of [`Meta::chain`], with or without data.
+    pub(crate) fn chain_codes<'a>(&'a self, code: &'a str) -> Vec<&'a str> {
         let mut codes: Vec<&str> = Vec::new();
         let mut next = Some(code);
         while let Some(c) = next {
@@ -139,7 +151,13 @@ impl Meta {
         {
             codes.push(fb);
         }
-        codes.iter().filter_map(|c| data.get(*c).cloned()).collect()
+        codes
+    }
+
+    /// `fallbackLocale` (the builder's, else `i18n.json`'s).
+    #[cfg(feature = "payload")]
+    pub(crate) fn fallback(&self) -> Option<&str> {
+        self.fallback.as_deref()
     }
 }
 
@@ -357,6 +375,39 @@ impl Snapshot {
             Some(_) => None,
         };
         own.is_some_and(|d| d.has(self.meta.page(page), key))
+    }
+}
+
+impl Snapshot {
+    /// [`I18n::locales`] of this snapshot.
+    pub(crate) fn locale_infos(&self) -> Vec<LocaleInfo> {
+        let s = self;
+        let meta = &s.meta;
+        let mut rest: Vec<&str> = s
+            .data
+            .keys()
+            .map(|k| &**k)
+            .chain(meta.declared.iter().map(|k| &**k))
+            .filter(|c| !meta.configured.iter().any(|l| l.code == *c))
+            .collect();
+        rest.sort_unstable();
+        rest.dedup();
+        let info = |code: &str, entry: Option<&loader::LocaleEntry>| LocaleInfo {
+            code: code.to_owned(),
+            iso: meta
+                .iso
+                .get(code)
+                .map(|s| String::from(&**s))
+                .or_else(|| entry.and_then(|e| e.iso.clone())),
+            dir: entry.and_then(|e| e.dir.clone()),
+            display_name: entry.and_then(|e| e.display_name.clone()),
+        };
+        meta.configured
+            .iter()
+            .filter(|l| !l.disabled)
+            .map(|l| info(&l.code, Some(l)))
+            .chain(rest.into_iter().map(|c| info(c, None)))
+            .collect()
     }
 }
 
@@ -919,34 +970,7 @@ impl I18n {
     /// Known locales that are not disabled: `i18n.json` order first, then the rest by code.
     #[must_use]
     pub fn locales(&self) -> Vec<LocaleInfo> {
-        self.inner.read(|s| {
-            let meta = &s.meta;
-            let mut rest: Vec<&str> = s
-                .data
-                .keys()
-                .map(|k| &**k)
-                .chain(meta.declared.iter().map(|k| &**k))
-                .filter(|c| !meta.configured.iter().any(|l| l.code == *c))
-                .collect();
-            rest.sort_unstable();
-            rest.dedup();
-            let info = |code: &str, entry: Option<&loader::LocaleEntry>| LocaleInfo {
-                code: code.to_owned(),
-                iso: meta
-                    .iso
-                    .get(code)
-                    .map(|s| String::from(&**s))
-                    .or_else(|| entry.and_then(|e| e.iso.clone())),
-                dir: entry.and_then(|e| e.dir.clone()),
-                display_name: entry.and_then(|e| e.display_name.clone()),
-            };
-            meta.configured
-                .iter()
-                .filter(|l| !l.disabled)
-                .map(|l| info(&l.code, Some(l)))
-                .chain(rest.into_iter().map(|c| info(c, None)))
-                .collect()
-        })
+        self.inner.read(Snapshot::locale_infos)
     }
 
     /// Known page names (from files, `messages` and aliases), sorted.
@@ -1053,6 +1077,47 @@ impl I18n {
     #[must_use]
     pub fn version(&self) -> u64 {
         self.inner.version.load(Ordering::Acquire)
+    }
+}
+
+#[cfg(feature = "payload")]
+impl I18n {
+    /// Replaces each `(locale, page)` chunk with its tree (`payload::apply`) and switches to
+    /// `locale` unless it is disabled: one new snapshot, subscribers notified.
+    pub(crate) fn replace_chunks(
+        &self,
+        chunks: Vec<(Arc<str>, Option<String>, Tree)>,
+        locale: Option<&str>,
+    ) -> Result<(), Error> {
+        let change = self.inner.write(|s| {
+            let mut data = DataMap::clone(&s.data);
+            for (code, page, tree) in chunks {
+                let mut slot = data
+                    .get(&code)
+                    .map(|d| LocaleData::clone(d))
+                    .unwrap_or_default();
+                put(
+                    &mut slot,
+                    s.meta.page(page.as_deref()),
+                    Layer::Ready(Arc::new(tree)),
+                );
+                data.insert(code, Arc::new(slot));
+            }
+            let active = match locale {
+                Some(l) if !s.meta.disabled(l) => Arc::from(l),
+                _ => s.locale.clone(),
+            };
+            Ok(Some(Snapshot::new(
+                s.meta.clone(),
+                data,
+                active,
+                s.version + 1,
+            )))
+        })?;
+        if let Some(change) = change {
+            self.inner.listeners.send(&change);
+        }
+        Ok(())
     }
 }
 
@@ -1258,10 +1323,10 @@ pub struct Builder {
     linked: Option<ResolveLinked>,
     /// `formats(json)` texts, in call order.
     #[cfg(feature = "format")]
-    formats: Vec<String>,
+    pub(crate) formats: Vec<String>,
     /// `datetime_formats(json)` texts, in call order.
     #[cfg(feature = "format")]
-    datetime_formats: Vec<String>,
+    pub(crate) datetime_formats: Vec<String>,
     #[cfg(feature = "format")]
     time_zone: Option<String>,
     #[cfg(feature = "format")]
@@ -1740,6 +1805,10 @@ impl Builder {
         }
         #[cfg(feature = "format")]
         crate::format::options::check_numbering(&numbering, |code| meta.number(code))?;
+        #[cfg(feature = "payload")]
+        {
+            meta.formats_json = crate::payload::formats_json(&self, &config)?;
+        }
         meta.configured = config.locales;
         let locale: Arc<str> = Arc::from(
             self.locale

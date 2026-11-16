@@ -836,3 +836,117 @@ impl Tree {
         own.chain(walk)
     }
 }
+
+// ---- payload for the frontend (M7, `payload.rs`) ----
+
+#[cfg(feature = "payload")]
+impl Tree {
+    /// Appends the chunk as one nested JSON object, the shape the file had: what JS
+    /// `addRouteTranslations` takes. Keys are sorted (byte order) and arrays by index, so
+    /// the bytes depend only on the content (an `ETag` is stable). Unreachable parts are
+    /// left out: `__proto__`, keys with a dot below the root, linked texts stored for a
+    /// view ([`Node::Linked`]; ponytail: the front end reads a weaker layer's own text
+    /// there, resolved in its own locale: send them when a cross-locale link shows up).
+    pub(crate) fn write_json(&self, out: &mut String) {
+        // children by container path (`None`: the chunk root); a path's last segment is its
+        // key, as `parent` splits it
+        let mut kids: FastMap<Option<&str>, Vec<(&str, &str, &Node)>> = FastMap::default();
+        for (path, node) in &self.walk {
+            if matches!(node, Node::Linked(_)) {
+                continue;
+            }
+            let (parent, key) = match path.rfind('.') {
+                Some(i) => (path.get(..i), path.get(i + 1..).unwrap_or("")),
+                None => (None, &**path),
+            };
+            kids.entry(parent).or_default().push((key, path, node));
+        }
+        let mut top: Vec<(&str, Option<&str>, &Node)> = kids
+            .remove(&None)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, p, n)| (k, Some(p), n))
+            .collect();
+        // own root keys hold dots, walk keys never do: no clash; an own key's subtree is
+        // never stored (unreachable), so it has no path and writes as empty
+        top.extend(
+            self.own
+                .iter()
+                .filter_map(|(k, n)| (!matches!(n, Node::Linked(_))).then_some((&**k, None, n))),
+        );
+        top.sort_unstable_by(|a, b| a.0.cmp(b.0));
+        out.push('{');
+        for (i, (key, path, node)) in top.into_iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            crate::json::write_str(out, key);
+            out.push(':');
+            write_node(out, &mut kids, path, node);
+        }
+        out.push('}');
+    }
+
+    /// Merges `incoming` with its entries at `depth` replacing (not merging into) what was
+    /// stored there: named formats `{"<locale>": {"<name>": {..}}}` at depth 2, where a name
+    /// given again wins whole, as `Builder::formats` documents.
+    pub(crate) fn merge_replacing(&mut self, incoming: Tree, depth: usize) {
+        let at: Vec<Arc<str>> = incoming
+            .walk
+            .keys()
+            .filter(|k| k.bytes().filter(|&b| b == b'.').count() + 1 == depth)
+            .cloned()
+            .collect();
+        if !at.is_empty() {
+            self.walk.retain(|k, _| {
+                !at.iter().any(|p| {
+                    k.strip_prefix(&**p)
+                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+                })
+            });
+        }
+        self.merge(incoming);
+    }
+}
+
+/// Writes `node` stored at walk path `path` (`None`: an own root key, no children).
+#[cfg(feature = "payload")]
+fn write_node<'t>(
+    out: &mut String,
+    kids: &mut FastMap<Option<&'t str>, Vec<(&'t str, &'t str, &'t Node)>>,
+    path: Option<&'t str>,
+    node: &'t Node,
+) {
+    let (open, close, array) = match node {
+        Node::Leaf(Entry::Msg(m)) => {
+            let raw = match m {
+                Msg::Text(t) => &t.raw,
+                Msg::Plural(p) => &p.text.raw,
+            };
+            return crate::json::write_str(out, raw);
+        }
+        // a number or boolean as JS prints it: valid JSON as it is
+        Node::Leaf(Entry::Value(v)) => return out.push_str(v),
+        Node::Null | Node::Leaf(Entry::Node) | Node::Linked(_) => return out.push_str("null"),
+        Node::Obj { .. } => ('{', '}', false),
+        Node::Arr { .. } => ('[', ']', true),
+    };
+    let mut list = path.and_then(|p| kids.remove(&Some(p))).unwrap_or_default();
+    if array {
+        list.sort_unstable_by_key(|k| k.0.parse::<usize>().unwrap_or(usize::MAX));
+    } else {
+        list.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    }
+    out.push(open);
+    for (i, (key, child, n)) in list.into_iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        if !array {
+            crate::json::write_str(out, key);
+            out.push(':');
+        }
+        write_node(out, kids, Some(child), n);
+    }
+    out.push(close);
+}

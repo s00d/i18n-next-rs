@@ -1,8 +1,14 @@
+[![Crates.io](https://img.shields.io/crates/v/tauri-plugin-i18n-next?style=for-the-badge)](https://crates.io/crates/tauri-plugin-i18n-next)
+[![docs.rs](https://img.shields.io/docsrs/tauri-plugin-i18n-next?style=for-the-badge)](https://docs.rs/tauri-plugin-i18n-next)
+[![Documentation](https://img.shields.io/badge/docs-site-blue?style=for-the-badge)](https://s00d.github.io/i18n-next-rs/)
+
 # tauri-plugin-i18n-next
 
 Tauri 2 plugin for [i18n-next](https://crates.io/crates/i18n-next): one locale catalog
 for the Rust backend, native menus and tray, and the WebView (through the
 `tauri-plugin-i18n-next-api` npm package).
+
+**Documentation: <https://s00d.github.io/i18n-next-rs/>**
 
 ```rust,no_run
 use tauri_plugin_i18n_next::ManagerExt;

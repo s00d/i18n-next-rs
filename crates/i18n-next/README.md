@@ -1,8 +1,14 @@
+[![Crates.io](https://img.shields.io/crates/v/i18n-next?style=for-the-badge)](https://crates.io/crates/i18n-next)
+[![docs.rs](https://img.shields.io/docsrs/i18n-next?style=for-the-badge)](https://docs.rs/i18n-next)
+[![Documentation](https://img.shields.io/badge/docs-site-blue?style=for-the-badge)](https://s00d.github.io/i18n-next-rs/)
+
 # i18n-next
 
 i18n for Rust on the same locale files as [nuxt-i18n-micro](https://github.com/s00d/nuxt-i18n-micro):
 global and per-page translations, plurals and `Intl`-compatible formats, native and wasm,
 with no runtime dependencies.
+
+**Documentation: <https://s00d.github.io/i18n-next-rs/>**
 
 **Status: pre-release (0.1).** Root and page chunks, fallback chains, `i18n.json`, plurals
 (CLDR rules as in `Intl.PluralRules`), linked messages, `Text` (the Rust `<i18n-t>`), `t!` and

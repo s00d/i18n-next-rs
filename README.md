@@ -1,50 +1,94 @@
-# i18n-next-rs
+[![Crates.io](https://img.shields.io/crates/v/i18n-next?style=for-the-badge)](https://crates.io/crates/i18n-next)
+[![npm version](https://img.shields.io/npm/v/tauri-plugin-i18n-next-api/latest?style=for-the-badge)](https://www.npmjs.com/package/tauri-plugin-i18n-next-api)
+[![Documentation](https://img.shields.io/badge/docs-site-blue?style=for-the-badge)](https://s00d.github.io/i18n-next-rs/)
+[![CI](https://img.shields.io/github/actions/workflow/status/s00d/i18n-next-rs/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/s00d/i18n-next-rs/actions/workflows/ci.yml)
+[![GitHub issues](https://img.shields.io/github/issues/s00d/i18n-next-rs?style=for-the-badge)](https://github.com/s00d/i18n-next-rs/issues)
+[![GitHub stars](https://img.shields.io/github/stars/s00d/i18n-next-rs?style=for-the-badge)](https://github.com/s00d/i18n-next-rs/stargazers)
+[![Donate](https://img.shields.io/badge/Donate-Donationalerts-ff4081?style=for-the-badge)](https://www.donationalerts.com/r/s00d88)
 
-i18n for Rust and Tauri on the same locale files as
-[nuxt-i18n-micro](https://github.com/s00d/nuxt-i18n-micro): one catalog (global and
-per-page translations) for a Rust backend, native menus and tray, a Vue WebView and
-Rust frontends in wasm.
+# i18n-next
 
-Documentation: **https://s00d.github.io/i18n-next-rs/**
+i18n for Rust and Tauri 2 on the same locale files as
+[nuxt-i18n-micro](https://github.com/s00d/nuxt-i18n-micro): one catalog of global and per-page
+translations for a Rust backend, native menus and tray, a Vue WebView and Rust frontends in wasm.
 
-**Status: pre-release (0.1).** The catalog (root and page chunks, fallback chains,
-`i18n.json`), plurals, linked messages, `Text`, `t!` and `scope`, number and date formats
-(CLDR 48, matched line by line with `Intl`), lazy and remote loading, the Tauri plugin, the
-npm package and the Rust guest for Tauri work. Nothing is published yet.
+**Documentation: https://s00d.github.io/i18n-next-rs/**
+
+- **Same files as the web:** `locales/{locale}.json`, `locales/pages/{page}/{locale}.json` and
+  `i18n.json` of nuxt-i18n-micro, fallback chains, linked messages (`@:key`), `<i18n-t>` as `Text`.
+- **`Intl`-compatible formats:** plurals by CLDR rules, numbers, currencies, dates and relative time
+  as `Intl` prints them (own CLDR 48 data and time zones, matched line by line with `Intl`).
+- **Small core:** no runtime dependencies, native and wasm; `default-features = false` is a ~120 KB
+  micro build, `I18N_NEXT_LOCALES=en,de,ru` keeps only the CLDR data you ship.
+- **Tauri plugin:** the catalog reaches the WebView over a cacheable `i18n-next://` protocol;
+  `setLocale` switches Rust, native labels and every window, the saved locale survives restarts.
+- **Frontends:** `tauri-plugin-i18n-next-api` for any `@i18n-micro` adapter (Vue with a router guard,
+  React, Preact, Solid), and a Rust guest (`tauri-guest`) for Leptos and other wasm apps.
+
+| Platform | Supported |
+|----------|-----------|
+| Windows · macOS · Linux | ✅ |
+| Android · iOS (Tauri) | ✅ (locales embedded with `files()`) |
+| Browser (wasm32) | ✅ |
+| Server (axum, any async runtime) | ✅ (`scope()` per request) |
+
+**Status: pre-release (0.1), not published yet.** Until the first release, use the git dependency:
+`i18n-next = { git = "https://github.com/s00d/i18n-next-rs" }`.
+
+## Quick start
 
 ```rust
+use i18n_next::{I18n, t};
+
 I18n::builder().dir("locales").locale("ru").fallback("en").install()?;
 println!("{}", t!("greeting", name = "Ann"));
+println!("{}", t!("title", @page = "settings"));
+i18n_next::set_locale("en")?;
 ```
 
-| Package | What |
-| --- | --- |
-| [`i18n-next`](crates/i18n-next) | the core crate: catalog, pages, plurals, `Intl`-compatible formats; no runtime dependencies, native and wasm |
-| [`tauri-plugin-i18n-next`](crates/tauri-plugin-i18n-next) | Tauri 2 plugin: hands the catalog to the WebView and native UI |
-| `tauri-plugin-i18n-next-api` | npm package (guest-js) for the WebView side: `connect` for any `@i18n-micro` adapter, `/vue` with a router guard |
+Tauri:
 
-Playgrounds, all on the shared catalog in [`examples/locales`](examples/locales):
-
-- `cargo run -p playground-rust` — a console tour (`--check` fails on any missing key);
-- [`examples/tauri-app`](examples/tauri-app) — Vue + vue-router, native menu and tray, two windows (`pnpm playground:tauri`);
-- [`examples/leptos-app`](examples/leptos-app) — Leptos in the browser (`trunk serve`) and inside Tauri (`cargo tauri dev`);
-- [`examples/nuxt-site`](examples/nuxt-site) — nuxt-i18n-micro on the same files.
-
-Design and work plan: [DESIGN.md](DESIGN.md), [PLAN.md](PLAN.md) (Russian). Changes: [CHANGELOG.md](CHANGELOG.md).
-
-## Development
-
-```sh
-cargo nextest run --workspace        # tests (profiles in .config/nextest.toml)
-cargo test --doc --workspace         # doctests
-cargo bench -p i18n-next             # criterion benches
-cargo run -p playground-rust -- --check
-tools/size-check.sh                  # .wasm size of the micro, full and guest builds
-pnpm install && pnpm typecheck && pnpm test && pnpm build   # guest-js
-pnpm -C scripts compat               # regenerate the compat goldens (JS writes them)
-pnpm docs:generate                   # the docs site
+```rust
+// src-tauri/src/lib.rs
+tauri::Builder::default()
+    .plugin(tauri_plugin_i18n_next::Builder::new(i18n).build())   // t! works in Rust too
+    .run(tauri::generate_context!())?;
 ```
 
-The whole gate and the test rules: [Contributing](https://s00d.github.io/i18n-next-rs/contributing).
+```ts
+// src/main.ts
+import { createTauriI18n } from 'tauri-plugin-i18n-next-api/vue'
 
-MSRV: Rust 1.90. License: MIT.
+app.use(await createTauriI18n({ router }))
+```
+
+Full setup (capability, embedded locales for bundles, Leptos): [Quick start](https://s00d.github.io/i18n-next-rs/getting-started/quick-start).
+
+## Packages
+
+| Package | Purpose | Docs |
+|---|---|---|
+| [`i18n-next`](crates/i18n-next) | Core: catalog, pages, plurals, `Intl`-compatible formats | [guide](https://s00d.github.io/i18n-next-rs/getting-started/introduction) · [api](https://s00d.github.io/i18n-next-rs/reference/rust-api) |
+| [`tauri-plugin-i18n-next`](crates/tauri-plugin-i18n-next) | Tauri 2 plugin: catalog for the WebView and native UI | [guide](https://s00d.github.io/i18n-next-rs/guides/tauri) |
+| `tauri-plugin-i18n-next-api` | npm package for the WebView (`connect`, `/vue`, React, Preact, Solid) | [guide](https://s00d.github.io/i18n-next-rs/guides/frontend) · [api](https://s00d.github.io/i18n-next-rs/reference/javascript-api) |
+
+## Examples
+
+All on the shared catalog in [`examples/locales`](examples/locales):
+
+- [`examples/rust`](examples/rust): console tour and an axum server (`cargo run -p playground-rust -- --check`);
+- [`examples/tauri-app`](examples/tauri-app): Vue + vue-router, native menu and tray, two windows, Android;
+- [`examples/leptos-app`](examples/leptos-app): Leptos in the browser and inside Tauri;
+- [`examples/nuxt-site`](examples/nuxt-site): nuxt-i18n-micro on the same files.
+
+Performance and comparison with rust-i18n, fluent and ICU4X: [Performance](https://s00d.github.io/i18n-next-rs/performance).
+
+## Contributing
+
+Issues and pull requests are welcome. Build, test and benchmark commands and the CI gate:
+[Contributing](https://s00d.github.io/i18n-next-rs/contributing). Design notes: [DESIGN.md](DESIGN.md).
+Changes: [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE). MSRV: Rust 1.90.

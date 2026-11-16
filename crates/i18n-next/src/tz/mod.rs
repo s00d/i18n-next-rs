@@ -9,6 +9,7 @@
 //! - other non-Windows targets (unix, macOS, iOS, WASI): TZif files under `$TZDIR`,
 //!   `/usr/share/zoneinfo`, `/var/db/timezone/zoneinfo`, `/usr/share/lib/zoneinfo`,
 //!   `/etc/zoneinfo`;
+//! - Windows: TZif files under `$TZDIR` when it is set;
 //! - the bundled tzdb (`tzdb.rs`): with feature `tzdb`, and always on Windows when `tz` is on
 //!   (a Cargo feature cannot default to on for one target, so `cfg(windows)` includes it).
 //!
@@ -284,13 +285,17 @@ fn read(name: &str, file: &str) -> Option<Zone> {
         }
     }
     #[cfg(not(any(
-        windows,
         target_os = "android",
         all(target_arch = "wasm32", target_os = "unknown")
     )))]
     {
         let tzdir = std::env::var("TZDIR").ok();
-        let dirs = tzdir.iter().map(String::as_str).chain(ZONEINFO);
+        // Windows has no system zoneinfo: only `$TZDIR`, then the bundle
+        let system: &[&str] = if cfg!(windows) { &[] } else { &ZONEINFO };
+        let dirs = tzdir
+            .iter()
+            .map(String::as_str)
+            .chain(system.iter().copied());
         for dir in dirs {
             if let Ok(d) = std::fs::read(format!("{dir}/{file}"))
                 && let Some(t) = tzif::parse(&d)
@@ -307,10 +312,9 @@ fn read(name: &str, file: &str) -> Option<Zone> {
     None
 }
 
-/// System zoneinfo directories, after `$TZDIR`.
+/// System zoneinfo directories, after `$TZDIR` (none on Windows).
 #[cfg_attr(
     any(
-        windows,
         target_os = "android",
         all(target_arch = "wasm32", target_os = "unknown")
     ),

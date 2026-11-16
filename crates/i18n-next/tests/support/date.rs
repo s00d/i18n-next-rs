@@ -112,7 +112,8 @@ fn lines(text: &str) -> Vec<(&str, &str)> {
         .collect()
 }
 
-/// `$TZDIR` (searched before the system zoneinfo, src/tz/mod.rs `read`) for the goldens:
+/// `$TZDIR` (searched before the system zoneinfo, and on Windows before the bundled tzdb, which
+/// has no history before 1970: src/tz/mod.rs `read`) for the goldens:
 /// TZif files of jiff-tzdb, the IANA release of `src/tz/tzdb.bin` (tests/tz_tzdb.rs), written
 /// under `CARGO_TARGET_TMPDIR`. The goldens hold Node's zone data; the system's is whatever
 /// the OS ships: macOS runners had a tzdata from before Morocco's 2026 change (+01 with a

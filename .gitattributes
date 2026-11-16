@@ -1,0 +1,13 @@
+# LF everywhere, on every platform: golden files, fixtures and snapshots are compared byte
+# for byte (guest-js contract and random fixtures, the payload golden, __golden__/, api/),
+# and Windows autocrlf would rewrite them on checkout.
+* text=auto eol=lf
+
+# Binary data: never converted, never diffed as text.
+*.bin binary
+*.tzif binary
+fixtures/tzif/tzdata binary
+*.png binary
+*.ico binary
+*.icns binary
+*.wasm binary

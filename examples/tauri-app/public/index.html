@@ -21,22 +21,44 @@
     const { invoke, convertFileSrc } = window.__TAURI__.core
     const { listen } = window.__TAURI__.event
     const $ = (id) => document.getElementById(id)
+    const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v)
+    // deep merge, `from` wins; `null` never hides a weaker value (as the Rust lookup)
+    function merge(into, from) {
+      for (const [k, v] of Object.entries(from)) {
+        if (v === null || k === '__proto__') continue
+        into[k] = isObj(v) && isObj(into[k]) ? merge(into[k], v) : v
+      }
+      return into
+    }
 
     async function render() {
-      // data by protocol (fetch().json()), control by IPC (DESIGN 6.1)
+      // control and metadata by IPC, data by protocol (fetch().json(), DESIGN 6.1)
       const start = JSON.parse(new TextDecoder().decode(
-        await invoke('plugin:i18n-next|load', { languages: navigator.languages })))
-      const url = convertFileSrc(`v${start.version}/${start.locale}/index.json`, 'i18n-next')
-      const root = await fetch(url).then((r) => r.json())
-      const meta = start.locales.find((l) => l.code === start.locale) || {}
-      document.documentElement.lang = start.locale
-      document.documentElement.dir = meta.dir || 'ltr'
+        await invoke('plugin:i18n-next|meta', {})))
+      // the first load applies navigator.languages (8b.3); later ones are no-ops
+      await invoke('plugin:i18n-next|load', { languages: navigator.languages })
+      const meta = JSON.parse(new TextDecoder().decode(
+        await invoke('plugin:i18n-next|meta', {})))
+      // plain names: convertFileSrc percent-encodes the whole path, `?` and `=` included
+      const url = convertFileSrc(`${meta.bundle}/bundle?locale=${meta.locale}`, 'i18n-next')
+      const bundle = await fetch(url).then((r) => r.json())
+      // the JS core reads one locale: premerge the chain, weakest first (DESIGN 6.2)
+      const view = {}
+      for (const code of [...meta.chains[meta.locale]].reverse()) {
+        for (const c of bundle.chunks.filter((c) => c.locale === code)) {
+          merge(view, c.data)
+          Object.assign(view, c.linked) // flat dotted keys: own keys win over the walk
+        }
+      }
+      const info = meta.locales.find((l) => l.code === meta.locale) || {}
+      document.documentElement.lang = meta.locale
+      document.documentElement.dir = info.dir || 'ltr'
       $('greeting').textContent = await invoke('greeting', { name: 'Tauri' })
-      $('version').textContent = `v${start.version}`
-      $('locale').innerHTML = start.locales
-        .map((l) => `<option value="${l.code}"${l.code === start.locale ? ' selected' : ''}>${l.displayName || l.code}</option>`)
+      $('version').textContent = `v${meta.version} (start v${start.version})`
+      $('locale').innerHTML = meta.locales
+        .map((l) => `<option value="${l.code}"${l.code === meta.locale ? ' selected' : ''}>${l.displayName || l.code}</option>`)
         .join('')
-      $('payload').textContent = JSON.stringify(root, null, 2)
+      $('payload').textContent = JSON.stringify(view, null, 2)
     }
 
     $('locale').addEventListener('change', (e) =>

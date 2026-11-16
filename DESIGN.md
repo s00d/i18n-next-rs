@@ -566,15 +566,15 @@ app.i18n().t("menu.quit");      // трейт-расширение Manager; app.
 
 | Канал | Для чего |
 | --- | --- |
-| **custom protocol `i18n-next://`** (`convertFileSrc(path, 'i18n-next')` даёт `i18n-next://localhost/…` на macOS / iOS / Linux и `http://i18n-next.localhost/…` на Windows / Android) | данные: `GET /v{version}/{locale}/{page}.json` (чанк как есть, сырые байты файла), `GET /v{version}/bundle?locale=…&page=…` (root цепочки + страница одним ответом). Ответ: `Content-Type: application/json`, `ETag`, `Cache-Control: max-age=31536000, immutable` (версия в пути) |
-| команды IPC | управление и метаданные: `set_locale`, `get_locale`, `available_locales`, `pages`, `meta` (версия, цепочка, форматы, `locales` из `i18n.json`), `report_missing` (dev) |
-| raw invoke `load` / `load_page` | запасной путь с тем же payload, когда протокол недоступен (переключается в guest-js) |
-| событие `i18n-next://changed { locale, version }` | уведомление; новая версия меняет URL, поэтому кеш никогда не отдаёт старое |
+| **custom protocol `i18n-next://`** (`convertFileSrc(path, 'i18n-next')` даёт `i18n-next://localhost/…` на macOS / iOS / Linux и `http://i18n-next.localhost/…` на Windows / Android; он кодирует весь путь `encodeURIComponent`, включая `/`, `?`, `=`, поэтому обработчик сначала декодирует путь целиком, потом делит его, а `path` содержит имена как есть) | данные: `GET /{tag}/{locale}/{page}.json` — сериализованный кешированный чанк загруженного каталога `{"data":{…},"linked":{…}}` (слитые файлы, `extend`, `messages`, разрешённые linked; не сырые байты файла), `GET /{tag}/bundle?locale=…&page=…` (чанки цепочки: root + страница одним ответом). `{tag}` — тег содержимого: хеш JSON чанка (у bundle — хеш тегов его чанков), а не глобальная версия: смена локали или вытеснение страниц не меняют URL неизменившихся чанков, `en → de → en` читает `en` из кеша. Ответ: `Content-Type: application/json`, `ETag: "{tag}"`, `Cache-Control: max-age=31536000, immutable`. Чужой тег — `410 Gone` с текущими тегом и версией в теле (`{kind, message, tag, version}`) и в `X-I18n-Tag` / `X-I18n-Version` (`Access-Control-Expose-Headers`); тег сверяется до сборки тела |
+| команды IPC | управление и метаданные: `set_locale`, `get_locale`, `available_locales`, `pages`, `meta` (версия, `locales`, `defaultLocale`, `fallbackLocale`, цепочка fallback каждой локали `chains`, форматы, теги чанков цепочки и bundle), `report_missing` (dev) |
+| raw invoke `load` / `load_page` | запасной путь с тем же payload, когда протокол недоступен (переключается в guest-js); `load` с meta несёт и `chains` |
+| событие `i18n-next://changed { locale, version }` | уведомление, строго в порядке версий (ядро доставляет изменения по очереди); после него guest-js берёт новые теги через `meta`. Вытеснение страниц версию не меняет |
 
 Безопасность протокола: у custom protocol нет ACL, как у команд, поэтому обработчик:
-- принимает только `GET`;
+- принимает только `GET` / `HEAD` и отвечает на CORS preflight `OPTIONS` (204 для своих origin, с запрошенными заголовками);
 - принимает только имена из каталога (8b.2);
-- сверяет `Origin` с origin приложения, чужой — 403.
+- сверяет `Origin` с origin приложения (плюс dev-сервер в debug и `Builder::origins` для `tauri-plugin-localhost`, внешних URL, Android dev host), чужой — 403.
 
 Переводы не секрет, но это убирает доступ из встроенных сторонних фреймов. Обработчик протокола — чистая функция `Request → Response`, поэтому тестируется без WebView (story-тесты и `ipc_model`).
 
@@ -582,7 +582,9 @@ app.i18n().t("menu.quit");      // трейт-расширение Manager; app.
 
 Без runtime-зависимости от `@i18n-micro/*`. `/vue` использует опциональную peer-зависимость `@i18n-micro/vue`.
 
-Данные guest-js берёт через `fetch(convertFileSrc(…, 'i18n-next')).json()`, с `<link rel="preload">` на root активной цепочки при старте. Управление идёт через команды. Если протокол недоступен, переключается на raw invoke `load` / `load_page` (6.1). Rust-гость (`tauri-guest`) делает то же через `fetch` из `js-sys`, без `web-sys`.
+Данные guest-js берёт через `fetch(convertFileSrc(…, 'i18n-next')).json()`, с `<link rel="preload">` на root активной цепочки при старте. URL строятся из тегов `meta` (`/{tag}/{locale}/{page}.json`, `/{bundle}/bundle?…`); на `410` берётся тег из тела ответа. Управление идёт через команды. Если протокол недоступен, переключается на raw invoke `load` / `load_page` (6.1). Rust-гость (`tauri-guest`) делает то же через `fetch` из `js-sys`, без `web-sys`, и применяет payload (`payload::apply`, `linked` хранится отдельно, как на сервере).
+
+Цепочка fallback: JS core смотрит в локаль и один fallback, а каталог — во всю цепочку (`de-at → de → en`). Поэтому guest-js (M8) **предварительно сливает** вид `(locale, page)` по `chains[locale]` из meta, от слабого к сильному: для каждой локали root, затем страница; `data` — глубоким слиянием (`null` не скрывает более слабое значение, как в lookup Rust), затем `linked` — плоскими ключами с точками поверх (собственный ключ корня в `getByPath` читается раньше обхода по точкам). Получившийся объект — единственный слой локали в JS. Это повторяет ответы сервера (проверка: `tests/payload.rs` эмулирует такой lookup для `de-at → de → en`). События `changed` со старой версией guest-js отбрасывает.
 
 ```ts
 import { createI18n } from '@i18n-micro/runtime'
@@ -894,7 +896,7 @@ README: корень (обзор и ссылки), `crates/i18n-next` (быст�
 
 ### 8b.3 Запоминание локали
 
-- Плагин: `.persist(true)` (по умолчанию включено). Пишется `app_config_dir/i18n-next.json` `{ "locale": "de" }` при каждом `set_locale`, атомарно (временный файл + rename).
+- Плагин: `.persist(true)` (по умолчанию включено). Пишется `app_config_dir/i18n-next.json` `{ "locale": "de" }` при каждом `set_locale`, атомарно (уникальный временный файл + fsync + rename, fsync каталога на unix), в порядке версий.
 - Порядок выбора при старте:
   1. сохранённая, если она ещё есть и не `disabled`;
   2. системная (в Tauri — `navigator.languages` WebView, вне Tauri — `LC_ALL` / `LC_MESSAGES` / `LANG`) через `negotiate` (`de-AT` → `de-at` → `de`);
@@ -944,7 +946,7 @@ I18n::builder().extend(my_lib::locales()).extend(other_lib::locales()).dir("loca
 ### 8b.7 Отчёт о недостающих ключах
 
 - dev-сборка: плагин собирает промахи Rust (`missing`) и JS. guest-js ставит `missingHandler` инстанса и пачкой отправляет промахи командой `report_missing`.
-- Дедупликация по `(locale, page, key)` со счётчиком. Результат — файл `app_data_dir/i18n-missing.json` и событие `i18n-next://missing`. inspector-панель `tauri-app` показывает список.
+- Дедупликация по `(locale, page, key)` со счётчиком. Результат — файл `app_data_dir/i18n-missing.json` (одна запись на пачку, в порядке изменений отчёта; не больше 10 000 ключей до 512 байт) и событие `i18n-next://missing` на каждый новый ключ. inspector-панель `tauri-app` показывает список.
 - В release выключено: команда не регистрируется, handler не ставится.
 - M13: отдавать эти данные (и каталог) в `@i18n-micro/devtools-ui` как источник.
 

@@ -103,6 +103,8 @@ pub fn run() {
                         .inner_size(480.0, 360.0)
                         .build()
                 {
+                    // a new window, a new binding: the plugin drops the old window's
+                    // binding when that window is destroyed
                     let i18n = app.i18n();
                     i18n.bind(&w, i18n.page("tray").text("second"));
                 }

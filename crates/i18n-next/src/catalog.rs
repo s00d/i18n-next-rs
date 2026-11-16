@@ -430,6 +430,10 @@ const PATH_SLACK: usize = 1 << 20;
 pub(crate) struct Tree {
     walk: FastMap<Arc<str>, Node>,
     own: FastMap<Arc<str>, Node>,
+    /// The payload JSON of this tree, written once on first use (8b.4): a loaded chunk
+    /// never changes, and every `&mut self` method clears it.
+    #[cfg(feature = "payload")]
+    json: std::sync::OnceLock<Arc<str>>,
 }
 
 /// A loaded chunk.
@@ -514,6 +518,13 @@ struct Frame {
 }
 
 impl Tree {
+    /// Drops what was derived from the content (the payload JSON).
+    #[inline]
+    fn changed(&mut self) {
+        #[cfg(feature = "payload")]
+        self.json.take();
+    }
+
     fn is_empty(&self) -> bool {
         self.walk.is_empty() && self.own.is_empty()
     }
@@ -681,6 +692,7 @@ impl Tree {
     /// Deep merge, `incoming` wins: objects merge, everything else (arrays, scalars,
     /// `null`) replaces what was there.
     pub(crate) fn merge(&mut self, incoming: Tree) {
+        self.changed();
         if self.is_empty() {
             *self = incoming;
             return;
@@ -788,6 +800,7 @@ impl Tree {
 
     /// Replaces the string leaf at `key` (in the own map when `own`) with `text`.
     pub(crate) fn set_message(&mut self, key: &str, own: bool, text: &str) {
+        self.changed();
         let map = if own { &mut self.own } else { &mut self.walk };
         if let Some(node) = map.get_mut(key) {
             *node = Node::Leaf(Entry::Msg(Msg::new(text)));
@@ -797,6 +810,7 @@ impl Tree {
     /// Stores what this chunk's view reads at `key` where a weaker layer's stored answer
     /// is not it ([`Node::Linked`]).
     pub(crate) fn insert_linked(&mut self, key: &str, entry: Entry) {
+        self.changed();
         self.walk.insert(Arc::from(key), Node::Linked(entry));
     }
 
@@ -848,6 +862,14 @@ impl Tree {
     /// view ([`Node::Linked`]; ponytail: the front end reads a weaker layer's own text
     /// there, resolved in its own locale: send them when a cross-locale link shows up).
     pub(crate) fn write_json(&self, out: &mut String) {
+        out.push_str(self.json.get_or_init(|| {
+            let mut json = String::new();
+            self.write_json_uncached(&mut json);
+            Arc::from(json)
+        }));
+    }
+
+    fn write_json_uncached(&self, out: &mut String) {
         // children by container path (`None`: the chunk root); a path's last segment is its
         // key, as `parent` splits it
         let mut kids: FastMap<Option<&str>, Vec<(&str, &str, &Node)>> = FastMap::default();

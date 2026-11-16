@@ -164,12 +164,19 @@ fn plugin_api(c: &mut Criterion) {
         b.iter(|| black_box(app.app.i18n().version()))
     });
     let h = app.handle();
+    // each bound label is unbound outside the timing: the list stays at one entry
     c.bench_function("handle/bind/label", |b| {
-        b.iter_batched(
-            || h.text("s0.k1"),
-            |text| black_box(h.bind(&Sink, text)),
-            BatchSize::SmallInput,
-        )
+        b.iter_custom(|iters| {
+            let mut total = std::time::Duration::ZERO;
+            for _ in 0..iters {
+                let text = h.text("s0.k1");
+                let start = std::time::Instant::now();
+                let id = black_box(h.bind(&Sink, text));
+                total += start.elapsed();
+                h.unbind(id);
+            }
+            total
+        })
     });
     c.bench_function("handle/unbind/bound", |b| {
         b.iter_batched(

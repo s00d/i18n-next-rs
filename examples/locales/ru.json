@@ -2,9 +2,18 @@
   "brand": "i18n-next",
   "nav": {
     "home": "Главная",
-    "settings": "Настройки"
+    "settings": "Настройки",
+    "about": "О программе"
   },
   "greeting": "Привет, {name}!",
   "apples": "нет яблок | {count} яблоко | {count} яблока | {count} яблок",
-  "cart": "=0 Корзина пуста | {count} товар | {count} товара | {count} товаров"
+  "cart": "=0 Корзина пуста | {count} товар | {count} товара | {count} товаров",
+  "demo": {
+    "price": "Цена: {price}",
+    "today": "Сегодня {date}",
+    "updated": "Обновлено {relativeDate}",
+    "terms": "Я принимаю {link}",
+    "terms_link": "условия использования",
+    "items": "Корзина пуста | {count} товар в корзине | {count} товара в корзине | {count} товаров в корзине"
+  }
 }

@@ -1,7 +1,8 @@
-//! Playground of tauri-plugin-i18n-next (DESIGN 8a), M7 skeleton: the shared catalog
-//! (`examples/locales`, `examples/i18n.json`) embedded, a native menu and tray whose labels
-//! follow the locale (`bind`), two windows (titles bound, both get `changed`), and a command
-//! that returns a `Text`. The front end is a static page for now; M8 brings guest-js.
+//! Playground of tauri-plugin-i18n-next (DESIGN 8a): the shared catalog (`examples/locales`,
+//! `examples/i18n.json`) embedded, a native menu and tray whose labels follow the locale
+//! (`bind`), two windows (titles bound, both get `changed`), and a command that returns a
+//! `Text`. The front end (`../src`, Vue + vue-router + guest-js) loads each route's page
+//! through the router guard and lists missed keys in its inspector.
 
 use i18n_next::{I18n, Text};
 use tauri::menu::{Menu, MenuItem, Submenu};
@@ -25,6 +26,9 @@ fn catalog() -> Result<I18n, i18n_next::Error> {
             file!("en.json"),
             file!("ru.json"),
             file!("ar.json"),
+            file!("pages/about/en.json"),
+            file!("pages/about/ru.json"),
+            file!("pages/about/ar.json"),
             file!("pages/settings/en.json"),
             file!("pages/settings/ru.json"),
             file!("pages/tray/en.json"),

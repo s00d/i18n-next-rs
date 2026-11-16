@@ -1,12 +1,21 @@
 {
   "nav": {
     "home": "Home",
-    "settings": "Settings"
+    "settings": "Settings",
+    "about": "About"
   },
   "greeting": "Hello, {name}!",
   "brand": "i18n-next",
   "footer": "Made with @:brand",
   "shout": "@.upper:{'nav.home'}!",
   "apples": "no apples | one apple | {count} apples",
-  "cart": "=0 Your cart is empty | {count} item | {count} items"
+  "cart": "=0 Your cart is empty | {count} item | {count} items",
+  "demo": {
+    "price": "Price: {price}",
+    "today": "Today is {date}",
+    "updated": "Updated {relativeDate}",
+    "terms": "I accept the {link}",
+    "terms_link": "terms of use",
+    "items": "The cart is empty | {count} item in the cart | {count} items in the cart"
+  }
 }

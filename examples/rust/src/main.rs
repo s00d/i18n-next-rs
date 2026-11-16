@@ -52,7 +52,10 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
             "locales",
             expect(codes.join(", "), "en (English), ru (Русский), ar (العربية)"),
         ),
-        ("pages", expect(i18n.pages().join(", "), "settings, tray")),
+        (
+            "pages",
+            expect(i18n.pages().join(", "), "about, settings, tray"),
+        ),
         ("t", expect(i18n.t("nav.home"), "Home")),
         (
             "t_with",
@@ -172,7 +175,7 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
                     lazy.pages().join(","),
                     lazy.page("settings").t("title")
                 ),
-                "settings,tray / Settings",
+                "about,settings,tray / Settings",
             ),
         ),
         (

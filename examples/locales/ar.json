@@ -2,8 +2,17 @@
   "brand": "i18n-next",
   "nav": {
     "home": "الرئيسية",
-    "settings": "الإعدادات"
+    "settings": "الإعدادات",
+    "about": "حول"
   },
   "greeting": "مرحبا، {name}!",
-  "apples": "لا تفاح | تفاحة واحدة | تفاحتان | {count} تفاحات | {count} تفاحة | {count} تفاحة"
+  "apples": "لا تفاح | تفاحة واحدة | تفاحتان | {count} تفاحات | {count} تفاحة | {count} تفاحة",
+  "demo": {
+    "price": "السعر: {price}",
+    "today": "اليوم {date}",
+    "updated": "تم التحديث {relativeDate}",
+    "terms": "أوافق على {link}",
+    "terms_link": "شروط الاستخدام",
+    "items": "لا عناصر | عنصر واحد | عنصران | {count} عناصر | {count} عنصرًا | {count} عنصر"
+  }
 }

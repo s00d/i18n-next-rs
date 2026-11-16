@@ -1,0 +1,5 @@
+{
+  "title": "About",
+  "body": "One catalog for Rust, Tauri and the browser: {brand}.",
+  "source": "Translations come from the Rust catalog over the i18n-next:// protocol."
+}

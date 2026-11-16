@@ -1,2 +1,5 @@
 src-tauri/target/
 src-tauri/gen/
+dist/
+# written by @i18n-micro/types-generator on every build (vite.config.ts)
+src/i18n-micro.d.ts

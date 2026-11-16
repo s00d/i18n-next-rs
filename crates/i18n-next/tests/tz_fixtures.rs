@@ -609,7 +609,7 @@ fn cache_is_bounded_by_real_zones() {
             .iter()
             .enumerate()
             .map(|(j, &b)| {
-                let up = (i >> (j % 14)) & 1 == 1 || (i / 7 + j as u32) % 3 == 0;
+                let up = (i >> (j % 14)) & 1 == 1 || (i / 7 + j as u32).is_multiple_of(3);
                 char::from(if up { b.to_ascii_uppercase() } else { b })
             })
             .collect();

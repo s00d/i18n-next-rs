@@ -9,14 +9,15 @@ repository.workspace = true
 authors.workspace = true
 keywords = ["i18n", "localization", "translation", "tauri", "wasm"]
 categories = ["internationalization", "localization", "wasm"]
-include = ["/src/**/*", "/build.rs", "/tests/**/*.rs", "/benches/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md",
+include = ["/src/**/*", "/build.rs", "/tests/**/*.rs", "/tests/support/dir/**/*", "/benches/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md",
     # Workspace checks, not crate tests: version_sync reads the root Cargo.toml, the other
     # members and the plugin package.json; bench_inventory reads api/<crate>.txt at the
     # workspace root. None of them exist in the published package.
     "!/tests/version_sync.rs", "!/tests/bench_inventory.rs", "!/tests/support/inventory.rs",
     # Read the JSONTestSuite corpus / compat goldens from fixtures/ at the workspace root.
     "!/tests/json_differential.rs", "!/tests/compat.rs", "!/tests/support/compat.rs", "!/tests/wasm.rs",
-    "!/tests/plural_props.rs", "!/tests/number_compat.rs", "!/tests/support/number.rs"]
+    "!/tests/plural_props.rs", "!/tests/number_compat.rs", "!/tests/support/number.rs",
+    "!/tests/date_compat.rs", "!/tests/support/date.rs", "!/tests/tz_fixtures.rs", "!/tests/linked_compat.rs"]
 
 [lints]
 workspace = true

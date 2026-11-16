@@ -106,14 +106,14 @@
 | `format` | да | `tn` / `td` / `tdr`, форматированные аргументы в `Text`, данные CLDR для форматов |
 | `tz` | да | IANA-зоны и системная зона своим модулем `tz` (5.4); в браузере — через `Intl`; без неё только UTC и фиксированные смещения |
 | `tzdb` | на Windows да, иначе нет | встроенная компактная tzdb из своего генератора (нужна там, где нет системных TZif: Windows) |
-| `serde` | нет | `Serialize` для `Text` / `Key` (плагин включает) |
+| `serde` | нет | `Serialize` для `Text` (у `Key` нет; плагин включает) |
 | `currency-names` | нет | имена валют для `currencyDisplay: name` (+~34 КБ на локаль), спайк S11 |
-| `global` | да | глобальный инстанс, макросы `t!` / `tc!` / `tn!` / `td!` / `tdr!` / `key!` без передачи `i18n`, `scope` (4.4) |
+| `global` | да | только глобальный инстанс: `install()` / `global()`. Макросы `t!` и прочие, `scope`, `Key` и свободные функции есть и без неё (с явным инстансом или в `scope`), 4.4 |
 | `chrono`, `time` | нет | `From<…>` для дат |
-| `std` | да | без неё — `no_std` + `alloc`, если микроверсии это даст выигрыш в размере (решение по замеру в M1) |
-| `watch` | нет | перезагрузка на лету в dev, native, раздел 8b.5 |
+| `std` | да | зарезервирована: ничего не переключает, `no_std` не сделан (замер не показал выигрыша, ради которого стоило бы) |
+| `watch` | нет | перезагрузка на лету в dev, native: `I18n::watch` есть только с фичей и вне wasm, в снимки `api/*.txt` не входит; в Tauri — `Builder::watch` плагина, раздел 8b.5 |
 | `tracing` | нет | промахи и загрузки в `tracing`, раздел 8b.17 |
-| `tauri-guest` | нет | Rust-фронтенд внутри Tauri (Leptos, Yew, Dioxus в wasm): `connect()` к плагину, раздел 2.1 |
+| `tauri-guest` | нет | Rust-фронтенд внутри Tauri (Leptos, Yew, Dioxus в wasm): `connect(page)` к плагину, раздел 2.1; включает `payload` и `js-sys` |
 
 Плюрал-правила CLDR есть всегда: это сгенерированный код в несколько КБ.
 
@@ -135,13 +135,14 @@
 - Загрузка в браузере: встроенные файлы (`files(include_dir!(…))`) или подгрузка по сети через `ensure_async`, раздел 3.3. Крейт не тянет `web-sys` и HTTP-клиент: сеть даёт приложение (gloo-net, reqwest, `fetch`).
 - `scope().wrap(fut)` работает с `wasm-bindgen-futures` так же, как с tokio.
 
-**Rust-фронтенд в Tauri** (фича `tauri-guest`, зависимости `wasm-bindgen`, `js-sys`, `wasm-bindgen-futures`, только на wasm). Аналог guest-js для тех, у кого фронт написан на Rust:
+**Rust-фронтенд в Tauri** (фича `tauri-guest`, единственная зависимость `js-sys` — у него свои futures и реэкспорт `wasm-bindgen`; только на wasm). Аналог guest-js для тех, у кого фронт написан на Rust:
 
 ```rust
-let i18n = i18n_next::tauri_guest::connect().await?;   // invoke plugin:i18n-next|load → тот же payload
-i18n.install()?;                                        // дальше t!("key") в компонентах Leptos/Yew
-i18n_next::tauri_guest::set_page("settings").await?;   // load_page
-i18n_next::tauri_guest::set_locale("de").await?;       // Rust-бэкенд и все окна
+let i18n = i18n_next::tauri_guest::connect("index").await?; // meta + чанки по протоколу (запасной путь — raw invoke `load`)
+i18n_next::install(i18n.clone())?;                           // connect сам не ставит глобально; дальше t!("key")
+i18n_next::tauri_guest::set_page("settings").await?;         // чанки страницы, страница следует за сменой локали
+i18n_next::tauri_guest::set_locale("de").await?;             // Rust-бэкенд и все окна
+// ещё: load / preload / refresh / disconnect
 ```
 
 - Формат payload описан в крейте (`payload.rs`: `encode` для плагина, `apply` для гостя), поэтому обе стороны используют один код.
@@ -209,7 +210,7 @@ i18n_next::tauri_guest::set_locale("de").await?;       // Rust-бэкенд и �
 - Целые числа выводятся своим кодом. `core::fmt` для `f64` (+17 КБ) подтягивается только фичей `format`: кратчайшее десятичное представление нужно для совместимости с `Intl`, и своя реализация Ryu тянула бы такие же таблицы.
 - Никаких `format!` / `unwrap()` с сообщениями на горячем и библиотечном пути: каждый такой вызов тянет форматирование. Проверяет CI-джоб `size` через `twiggy`.
 - Данные CLDR генерируются как Rust-статика (`&'static str`, массивы) только для локалей из `I18N_NEXT_LOCALES`. Нет декодера в рантайме, а неиспользуемое вырезает линкер.
-- CI-джоб `size`: собирает микроверсию и полную версию пробы, печатает net-размер и рост к базе. Падает только при превышении бюджета (`tools/size-budget.env`: micro 110 КБ, full 160 КБ net); рост больше 2% — предупреждение для чтения в PR: новая фича законно добавляет код. Бюджет поднимается осознанно, отдельным коммитом.
+- CI-джоб `size`: собирает микроверсию и полную версию пробы, печатает net-размер и рост к базе. Падает только при превышении бюджета (`tools/size-budget.env`: micro 130 КБ, full 270 КБ, guest 190 КБ net); рост больше 2% — предупреждение для чтения в PR: новая фича законно добавляет код. Бюджет поднимается осознанно, отдельным коммитом.
 - Ориентир размера: микроверсия до ~100 КБ `.wasm` после `wasm-opt -Oz` — это нормальный реальный размер, гнаться за меньшим ценой сложности не нужно (решение владельца). Контроль — относительный CI-гейт роста (2%) и разбор явного раздувания, а не абсолютная цель.
 
 ## 3. Глобальные и страничные переводы
@@ -516,7 +517,7 @@ Msg      = Text(Template) | Plural { marked, forms: Vec<Template> }
 | Android | контейнер tzdata (`/apex/com.android.tzdata/etc/tz/tzdata`, `/system/usr/share/zoneinfo/tzdata`): индекс + те же TZif внутри |
 | Windows | системных TZif нет, а API требует `unsafe` FFI, поэтому фича `tzdb` (на Windows включена по умолчанию): компактная tzdb из своего генератора (`scripts/tzdb.mjs` из IANA tzdata), только переходы с 1970 года и POSIX-правило |
 | Браузер | `js-sys`: локальная зона — `Date.getTimezoneOffset()`, именованная — `Intl.DateTimeFormat({ timeZone }).formatToParts` с кешем смещения по (зона, час) |
-| Системная зона | `TZ`, затем цель симлинка `/etc/localtime`; в Tauri — зона WebView (`Intl.DateTimeFormat().resolvedOptions().timeZone`, или явная зона инстанса фронта) из первого `meta` / `load`, как `languages` для локали: `I18n::set_system_time_zone` принимает её один раз, если у каталога нет своей зоны и системная ещё не читалась; явная `.time_zone(...)` сильнее всего. Зона, известная по имени, уходит фронту в meta (`timeZone`), и guest-js форматирует даты в ней же: `td` в Rust и JS совпадают |
+| Системная зона | `TZ`, затем цель симлинка `/etc/localtime`; на Windows вне Tauri — только `TZ`, иначе UTC (реестр требует `unsafe` FFI; встроенная tzdb даёт именованные зоны, не системную); в Tauri — зона WebView (`Intl.DateTimeFormat().resolvedOptions().timeZone`, или явная зона инстанса фронта) из первого `meta` / `load`, как `languages` для локали: `I18n::set_system_time_zone` принимает её один раз, если у каталога нет своей зоны и системная ещё не читалась; явная `.time_zone(...)` сильнее всего. Зона, известная по имени, уходит фронту в meta (`timeZone`), и guest-js форматирует даты в ней же: `td` в Rust и JS совпадают |
 | Часы | native — `SystemTime` (вне wasm он не паникует); браузер — `Date.now()`; тесты — `.clock()` |
 
 Проверка:
@@ -881,6 +882,8 @@ README: корень (обзор и ссылки), `crates/i18n-next` (быст�
 ```
 
 - Rust: `.config("i18n.json")` или `.config_json(include_str!(…))`. Отдельные вызовы builder'а (`iso`, `fallback_for`, `formats`) работают и переопределяют файл.
+- `defaultLocale` и `fallbackLocale` могут быть `null` (как в JS): это значит «не задано», поэтому ответ `meta` читается как такой же конфиг (`payload::builder`). Поля зоны в файле нет: зона — `Builder::time_zone` или `set_system_time_zone` (5.4).
+- Плагин отдаёт `locales`, `defaultLocale`, цепочки, форматы, теги чанков и зону командой `meta` (6.1).
 - `disabled` скрывает локаль из `available_locales` и запрещает `set_locale`. `dir` уходит фронту. `displayName` по умолчанию берётся из CLDR (8b.14).
 - Плагин кладёт `locales`, `defaultLocale` и форматы в payload `load`. `createTauriI18n` передаёт их в `createI18n` из `@i18n-micro/vue` (опции `locales`, `defaultLocale`) и сам ставит `<html lang dir>` при каждой смене локали. `connect` делает то же для runtime-инстанса.
 - Тот же файл можно скормить Nuxt-модулю (`locales`, `defaultLocale`), поэтому сайт и приложение описывают локали один раз.

@@ -163,10 +163,10 @@ fn lookup(c: &mut Criterion) {
     c.bench_function("versus/lookup_fallback/fluent", |b| {
         b.iter(|| fluent.format(black_box("only_en"), None))
     });
-    // missing everywhere: each returns its miss (the key; `de.` + the key for rust-i18n;
-    // `None` for fluent)
+    // missing everywhere: each returns its miss (the key, for rust-i18n too; `None` for
+    // fluent)
     assert_eq!(ours.t("s3.g4.nope"), "s3.g4.nope");
-    assert_eq!(t!("s3.g4.nope", locale = "de"), "de.s3.g4.nope");
+    assert_eq!(t!("s3.g4.nope", locale = "de"), "s3.g4.nope");
     assert_eq!(fluent.format("s3-g4-nope", None), None);
     c.bench_function("versus/lookup_miss/i18n_next", |b| {
         b.iter(|| ours.t(black_box("s3.g4.nope")))

@@ -1,5 +1,6 @@
-//! Characterization golden of everything the front end reads (DESIGN 7.2): the `load` and
-//! `load_page` payloads, protocol chunks, the bundle, error bodies and the `changed` event.
+//! Characterization golden of everything the front end reads (DESIGN 7.2): the `load`,
+//! `load_page` and `meta` payloads, protocol chunks (linked texts included), the bundle,
+//! error bodies, the CORS preflight and the `changed` event.
 //! `UPDATE_GOLDEN=1` rewrites `tests/__golden__/payload.md`; read every diff whole.
 
 mod common;
@@ -25,11 +26,13 @@ fn payload_schema_matches_the_golden() {
             None,
             r#"{"nav": {"home": "Home", "list": ["a", {"b": "B"}]}, "a.b": "own dotted key",
                 "esc": "quote \" slash \\ tab \t nl \n u2028  ", "n": 1.50, "t": true,
-                "x": null, "__proto__": {"p": 1}, "cart": "=0 empty | {count} item | {count} items"}"#,
+                "x": null, "__proto__": {"p": 1}, "cart": "=0 empty | {count} item | {count} items",
+                "inf": 1e400, "brand": "Acme", "hello": "Hi @:brand"}"#,
         )
-        .messages("ar", None, r#"{"nav": {"home": "الرئيسية"}}"#)
+        .messages("ar", None, r#"{"nav": {"home": "الرئيسية"}, "brand": "أكمي"}"#)
         .messages("en", Some("settings"), r#"{"title": "Settings"}"#)
         .messages("ar", Some("settings"), r#"{"title": "الإعدادات"}"#)
+        .linked_messages(true)
         .build()
         .unwrap();
     let app = App::new(i18n);
@@ -52,18 +55,42 @@ fn payload_schema_matches_the_golden() {
         ),
     );
     line(
+        "meta {locale: ar, page: settings}",
+        text(
+            app.call_raw("meta", json!({ "locale": "ar", "page": "settings" }))
+                .unwrap(),
+        ),
+    );
+    line(
         "load_page {page: nope}",
         app.call_raw("load_page", json!({ "page": "nope" }))
             .unwrap_err(),
     );
-    for path in [
-        "/v0/en/index.json",
-        "/v0/ar/settings.json",
-        "/v0/bundle?locale=ar&page=settings",
-        "/v0/xx/index.json",
-        "/v1/en/index.json",
-    ] {
-        let r = app.request(path, Some(common::origin()));
+    let paths = [
+        app.chunk_path("en", "index"),
+        app.chunk_path("ar", "index"),
+        app.chunk_path("ar", "settings"),
+        app.bundle_path("ar", Some("settings")),
+        format!("{}/xx/index.json", &app.chunk_path("en", "index")[..17]),
+        "/0000000000000000/en/index.json".to_owned(),
+    ];
+    let preflight = tauri::http::Request::builder()
+        .method("OPTIONS")
+        .uri("i18n-next://localhost/x")
+        .header("access-control-request-headers", "x-trace");
+    for (call, r) in paths
+        .iter()
+        .map(|path| {
+            (
+                format!("GET {path}"),
+                app.request(path, Some(common::origin())),
+            )
+        })
+        .chain([(
+            "OPTIONS (x-trace)".to_owned(),
+            app.send(preflight, Some(common::origin())),
+        )])
+    {
         let mut headers: Vec<String> = r
             .headers()
             .iter()
@@ -72,7 +99,7 @@ fn payload_schema_matches_the_golden() {
             .collect();
         headers.sort();
         line(
-            &format!("GET {path}"),
+            &call,
             format!(
                 "{} [{}] {}",
                 r.status().as_u16(),

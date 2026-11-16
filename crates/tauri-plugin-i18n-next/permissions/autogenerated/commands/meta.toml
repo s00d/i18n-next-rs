@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-meta"
+description = "Enables the meta command without any pre-configured scope."
+commands.allow = ["meta"]
+
+[[permission]]
+identifier = "deny-meta"
+description = "Denies the meta command without any pre-configured scope."
+commands.deny = ["meta"]

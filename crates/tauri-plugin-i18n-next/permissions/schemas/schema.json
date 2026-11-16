@@ -343,6 +343,18 @@
           "markdownDescription": "Denies the load_page command without any pre-configured scope."
         },
         {
+          "description": "Enables the meta command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-meta",
+          "markdownDescription": "Enables the meta command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the meta command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-meta",
+          "markdownDescription": "Denies the meta command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pages command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pages",
@@ -379,10 +391,10 @@
           "markdownDescription": "Denies the set_locale command without any pre-configured scope."
         },
         {
-          "description": "What the front end needs (DESIGN 8b.2): load the payload and pages, read and switch the locale. `report_missing` (dev only) is not included: add `i18n-next:allow-report-missing` to a dev capability.\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-load-page`\n- `allow-get-locale`\n- `allow-available-locales`\n- `allow-pages`\n- `allow-set-locale`",
+          "description": "What the front end needs (DESIGN 8b.2): the meta (tags, chains, formats), load the payload and pages, read and switch the locale. `report_missing` (dev only) is not included: add `i18n-next:allow-report-missing` to a dev capability.\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-load-page`\n- `allow-meta`\n- `allow-get-locale`\n- `allow-available-locales`\n- `allow-pages`\n- `allow-set-locale`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "What the front end needs (DESIGN 8b.2): load the payload and pages, read and switch the locale. `report_missing` (dev only) is not included: add `i18n-next:allow-report-missing` to a dev capability.\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-load-page`\n- `allow-get-locale`\n- `allow-available-locales`\n- `allow-pages`\n- `allow-set-locale`"
+          "markdownDescription": "What the front end needs (DESIGN 8b.2): the meta (tags, chains, formats), load the payload and pages, read and switch the locale. `report_missing` (dev only) is not included: add `i18n-next:allow-report-missing` to a dev capability.\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-load-page`\n- `allow-meta`\n- `allow-get-locale`\n- `allow-available-locales`\n- `allow-pages`\n- `allow-set-locale`"
         }
       ]
     }

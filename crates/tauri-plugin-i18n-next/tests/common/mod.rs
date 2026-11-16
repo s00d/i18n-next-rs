@@ -43,6 +43,7 @@ fn commands() -> impl Fn(tauri::ipc::Invoke<MockRuntime>) -> bool + Send + Sync 
     tauri::generate_handler![
         load,
         load_page,
+        meta,
         set_locale,
         get_locale,
         available_locales,
@@ -140,12 +141,55 @@ impl App {
     }
 
     pub fn request(&self, path: &str, origin: Option<&str>) -> tauri::http::Response<Vec<u8>> {
-        let mut req = tauri::http::Request::get(format!("i18n-next://localhost{path}"));
+        self.send(
+            tauri::http::Request::get(format!("i18n-next://localhost{path}")),
+            origin,
+        )
+    }
+
+    /// Sends a request built by the test (any method, URI, headers) from `origin`.
+    pub fn send(
+        &self,
+        mut req: tauri::http::request::Builder,
+        origin: Option<&str>,
+    ) -> tauri::http::Response<Vec<u8>> {
         if let Some(o) = origin {
             req = req.header("origin", o);
         }
         let origins = [self::origin().to_owned()];
         tauri_plugin_i18n_next::protocol::handle(self.handle(), &origins, &req.body(()).unwrap())
+    }
+
+    /// The `meta` command's answer (tags of the chain of `locale` with `page`).
+    pub fn meta(&self, locale: Option<&str>, page: Option<&str>) -> Value {
+        let mut args = json!({});
+        if let Some(l) = locale {
+            args["locale"] = json!(l);
+        }
+        if let Some(p) = page {
+            args["page"] = json!(p);
+        }
+        let bytes = self.call_raw("meta", args).unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    /// The current URL path of one chunk, as the front end builds it from `meta`.
+    pub fn chunk_path(&self, locale: &str, page: &str) -> String {
+        let (tag, _) = i18n_next::payload::chunk(self.handle(), locale, Some(page));
+        format!("/{tag:016x}/{locale}/{page}.json")
+    }
+
+    /// The current URL path of a bundle.
+    pub fn bundle_path(&self, locale: &str, page: Option<&str>) -> String {
+        let meta = self.meta(Some(locale), page);
+        let mut path = format!(
+            "/{}/bundle?locale={locale}",
+            meta["bundle"].as_str().unwrap()
+        );
+        if let Some(p) = page {
+            path += &format!("&page={p}");
+        }
+        path
     }
 
     /// Events of `name` that `window` gets, as JSON, in order.
@@ -162,8 +206,9 @@ impl App {
     }
 }
 
-/// Everything that arrived so far (events are sent synchronously by the writer, so after
-/// the call that caused them they are all in).
+/// Everything that arrived so far (with no other thread delivering, events are sent by the
+/// writing thread before its call returns, so after the call that caused them they are
+/// all in).
 pub fn drain(rx: &Receiver<Value>) -> Vec<Value> {
     rx.try_iter().collect()
 }

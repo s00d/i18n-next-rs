@@ -1,9 +1,11 @@
 //! IPC model of the plugin (DESIGN 7.3): random sessions of a front end and Rust over one
 //! mock app with two windows: locale switches from JS and from Rust, `load` / `load_page`,
-//! `add_messages`, protocol requests (the pure handler, any version, foreign origins),
+//! `add_messages`, protocol requests (the pure handler: the current tag from `meta`, a tag
+//! handed out earlier, a wrong one; foreign origins),
 //! names that are not in the catalog (`BadName`, 8b.2), `bind` / `unbind` of native labels.
 //! After each step every answer is compared with a small model: status, payload chunks,
-//! the events each window got and the label of each bound target. Each payload is also
+//! the events each window got and the label of each bound target. A tag handed out earlier
+//! must still serve exactly when its chunk's content is the same as then (content tags). Each payload is also
 //! applied to a guest catalog (`payload::apply`), which must answer like the server.
 //! At the end: both windows saw the same events, the last one carries the app's version,
 //! and unbound targets never changed after `unbind`.
@@ -34,8 +36,9 @@ enum Action {
     Get {
         locale: usize,
         page: usize,
-        /// −1, 0 or +1 around the current version.
-        skew: i8,
+        /// 0: the current tag (from `meta`), 1: one handed out earlier for the pair (the
+        /// n-th, wrapping), 2: a tag nothing has.
+        tag: (u8, usize),
         foreign: bool,
     },
     Bundle(usize, Option<usize>),
@@ -53,8 +56,8 @@ fn action() -> impl Strategy<Value = Action> {
         2 => proptest::option::of(p.clone()).prop_map(Action::Load),
         2 => p.clone().prop_map(Action::LoadPage),
         3 => (l.clone(), p.clone(), 0..KEYS.len(), 0..4u8).prop_map(|(l, p, k, v)| Action::Add(l, p, k, v)),
-        3 => (l.clone(), p.clone(), -1..=1i8, prop::bool::weighted(0.15))
-            .prop_map(|(locale, page, skew, foreign)| Action::Get { locale, page, skew, foreign }),
+        4 => (l.clone(), p.clone(), (0..3u8, 0..8usize), prop::bool::weighted(0.15))
+            .prop_map(|(locale, page, tag, foreign)| Action::Get { locale, page, tag, foreign }),
         1 => (l, proptest::option::of(p)).prop_map(|(l, p)| Action::Bundle(l, p)),
         2 => (0..BAD.len(), 0..5u8).prop_map(|(n, w)| Action::BadName(n, w)),
         2 => (0..KEYS.len()).prop_map(Action::Bind),
@@ -207,6 +210,8 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
     let mut seen: [Vec<Value>; 2] = Default::default();
     let mut m = Model::new();
     let mut bound: Vec<Bound> = Vec::new();
+    // tags handed out, with the data of the pair at that time
+    let mut issued: BTreeMap<(usize, usize), Vec<(String, Value)>> = BTreeMap::new();
     let h = app.handle();
     for a in actions {
         match *a {
@@ -257,43 +262,57 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
             Action::Get {
                 locale,
                 page,
-                skew,
+                tag: (way, nth),
                 foreign,
             } => {
-                let version = m.version as i64 + i64::from(skew);
-                let path = format!("/v{version}/{}/{}.json", LOCALES[locale], PAGES[page]);
+                let (l, p) = (LOCALES[locale], PAGES[page]);
+                let current = app.chunk_path(l, p)[1..17].to_owned();
+                // `meta` lists the same tag for a pair with data
+                let meta = app.meta(Some(l), Some(p));
+                if let Some(t) = meta["tags"].get(format!("{l}/{p}")) {
+                    prop_assert_eq!(t, &json!(current));
+                }
+                let history = issued.entry((locale, page)).or_default();
+                let (tag, then) = match way {
+                    0 => (current.clone(), Some(m.data(locale, page))),
+                    1 if !history.is_empty() => {
+                        let (t, d) = &history[nth % history.len()];
+                        (t.clone(), Some(d.clone()))
+                    }
+                    _ => ("0000000000000000".to_owned(), None),
+                };
+                if way == 0 {
+                    history.push((current.clone(), m.data(locale, page)));
+                }
+                let path = format!("/{tag}/{l}/{p}.json");
                 let from = if foreign {
                     "https://ads.example"
                 } else {
                     origin()
                 };
                 let r = app.request(&path, Some(from));
+                let fresh = then.as_ref() == Some(&m.data(locale, page));
                 let want = if foreign {
                     403
-                } else if version < 0 {
-                    404
-                } else if skew != 0 {
-                    410
-                } else {
+                } else if fresh {
                     200
+                } else {
+                    410
                 };
                 prop_assert_eq!(r.status().as_u16(), want, "{}", path);
                 if want == 200 {
                     let got: Value = serde_json::from_slice(r.body()).unwrap();
-                    prop_assert_eq!(got, m.data(locale, page));
+                    prop_assert_eq!(&got["data"], &m.data(locale, page));
+                    prop_assert_eq!(&tag, &current);
                 }
                 if want == 410 {
-                    prop_assert_eq!(
-                        r.headers()["x-i18n-version"].to_str().unwrap(),
-                        m.version.to_string()
-                    );
+                    let h = r.headers();
+                    prop_assert_eq!(h["x-i18n-tag"].to_str().unwrap(), current.as_str());
+                    prop_assert_eq!(h["x-i18n-version"].to_str().unwrap(), m.version.to_string());
                 }
             }
             Action::Bundle(l, p) => {
-                let mut path = format!("/v{}/bundle?locale={}", m.version, LOCALES[l]);
-                if let Some(p) = p {
-                    path += &format!("&page={}", PAGES[p]);
-                }
+                let path = app.bundle_path(LOCALES[l], p.map(|p| PAGES[p]));
                 let (status, body) = app.get(&path);
                 prop_assert_eq!(status, 200);
                 let got: Value = serde_json::from_slice(&body).unwrap();
@@ -319,12 +338,18 @@ fn run(actions: &[Action]) -> Result<(), TestCaseError> {
                     }
                     3 => {
                         let esc: String = name.bytes().map(|b| format!("%{b:02X}")).collect();
-                        let path = format!("/v{}/{esc}/index.json", m.version);
+                        let path = format!(
+                            "{}/{esc}/index.json",
+                            app.chunk_path("en", "index")[..17].to_owned()
+                        );
                         prop_assert_eq!(app.get(&path).0, 404);
                     }
                     _ => {
                         let esc: String = name.bytes().map(|b| format!("%{b:02X}")).collect();
-                        let path = format!("/v{}/en/{esc}.json", m.version);
+                        let path = format!(
+                            "{}/en/{esc}.json",
+                            app.chunk_path("en", "index")[..17].to_owned()
+                        );
                         prop_assert_eq!(app.get(&path).0, 404);
                     }
                 }

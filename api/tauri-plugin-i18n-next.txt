@@ -4,6 +4,7 @@ pub fn tauri_plugin_i18n_next::commands::available_locales(tauri::state::State<'
 pub fn tauri_plugin_i18n_next::commands::get_locale(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>) -> alloc::string::String
 pub fn tauri_plugin_i18n_next::commands::load(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, core::option::Option<alloc::string::String>, core::option::Option<alloc::vec::Vec<alloc::string::String>>) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
 pub fn tauri_plugin_i18n_next::commands::load_page(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, alloc::string::String) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
+pub fn tauri_plugin_i18n_next::commands::meta(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
 pub fn tauri_plugin_i18n_next::commands::pages(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>) -> alloc::vec::Vec<alloc::string::String>
 pub fn tauri_plugin_i18n_next::commands::report_missing(alloc::vec::Vec<tauri_plugin_i18n_next::models::MissingKey>)
 pub fn tauri_plugin_i18n_next::commands::set_locale(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, alloc::string::String) -> tauri_plugin_i18n_next::error::Result<u64>
@@ -88,6 +89,7 @@ pub fn tauri_plugin_i18n_next::models::MissingKey::serialize<__S>(&self, __S) ->
 impl<'de> serde_core::de::Deserialize<'de> for tauri_plugin_i18n_next::models::MissingKey
 pub fn tauri_plugin_i18n_next::models::MissingKey::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 pub mod tauri_plugin_i18n_next::protocol
+pub const tauri_plugin_i18n_next::protocol::TAG_HEADER: &str
 pub const tauri_plugin_i18n_next::protocol::VERSION_HEADER: &str
 pub fn tauri_plugin_i18n_next::protocol::handle<B>(&i18n_next::i18n::I18n, &[alloc::string::String], &http::request::Request<B>) -> http::response::Response<alloc::vec::Vec<u8>>
 pub enum tauri_plugin_i18n_next::Error
@@ -124,12 +126,14 @@ pub fn tauri_plugin_i18n_next::Builder::build<R: tauri::Runtime>(self) -> tauri:
 pub fn tauri_plugin_i18n_next::Builder::data_dir(self, impl core::convert::Into<std::path::PathBuf>) -> Self
 pub fn tauri_plugin_i18n_next::Builder::global(self, bool) -> Self
 pub fn tauri_plugin_i18n_next::Builder::new(i18n_next::i18n::I18n) -> Self
+pub fn tauri_plugin_i18n_next::Builder::origins<I, S>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = S>, S: core::convert::Into<alloc::string::String>
 pub fn tauri_plugin_i18n_next::Builder::persist(self, bool) -> Self
 pub fn tauri_plugin_i18n_next::Builder::system_locale(self, bool) -> Self
 pub fn tauri_plugin_i18n_next::Builder::watch(self, bool) -> Self
 pub struct tauri_plugin_i18n_next::Handle
 impl tauri_plugin_i18n_next::Handle
 pub fn tauri_plugin_i18n_next::Handle::bind<T: tauri_plugin_i18n_next::Relabel + core::clone::Clone + 'static>(&self, &T, i18n_next::text::Text) -> tauri_plugin_i18n_next::BindId
+pub fn tauri_plugin_i18n_next::Handle::origins(&self) -> &[alloc::string::String]
 pub fn tauri_plugin_i18n_next::Handle::unbind(&self, tauri_plugin_i18n_next::BindId) -> bool
 impl core::ops::deref::Deref for tauri_plugin_i18n_next::Handle
 pub type tauri_plugin_i18n_next::Handle::Target = i18n_next::i18n::I18n
@@ -143,17 +147,24 @@ impl<R: tauri::Runtime, T: tauri::Manager<R>> tauri_plugin_i18n_next::ManagerExt
 pub fn T::i18n(&self) -> &tauri_plugin_i18n_next::Handle
 pub trait tauri_plugin_i18n_next::Relabel: core::marker::Send + core::marker::Sync
 pub fn tauri_plugin_i18n_next::Relabel::relabel(&self, &str) -> tauri::error::Result<()>
+pub fn tauri_plugin_i18n_next::Relabel::window(&self) -> core::option::Option<alloc::string::String>
 impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::menu::CheckMenuItem<R>
 pub fn tauri::menu::CheckMenuItem<R>::relabel(&self, &str) -> tauri::error::Result<()>
+pub fn tauri::menu::CheckMenuItem<R>::window(&self) -> core::option::Option<alloc::string::String>
 impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::menu::IconMenuItem<R>
 pub fn tauri::menu::IconMenuItem<R>::relabel(&self, &str) -> tauri::error::Result<()>
+pub fn tauri::menu::IconMenuItem<R>::window(&self) -> core::option::Option<alloc::string::String>
 impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::menu::MenuItem<R>
 pub fn tauri::menu::MenuItem<R>::relabel(&self, &str) -> tauri::error::Result<()>
+pub fn tauri::menu::MenuItem<R>::window(&self) -> core::option::Option<alloc::string::String>
 impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::menu::Submenu<R>
 pub fn tauri::menu::Submenu<R>::relabel(&self, &str) -> tauri::error::Result<()>
+pub fn tauri::menu::Submenu<R>::window(&self) -> core::option::Option<alloc::string::String>
 impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::webview::webview_window::WebviewWindow<R>
 pub fn tauri::webview::webview_window::WebviewWindow<R>::relabel(&self, &str) -> tauri::error::Result<()>
+pub fn tauri::webview::webview_window::WebviewWindow<R>::window(&self) -> core::option::Option<alloc::string::String>
 impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::window::Window<R>
 pub fn tauri::window::Window<R>::relabel(&self, &str) -> tauri::error::Result<()>
+pub fn tauri::window::Window<R>::window(&self) -> core::option::Option<alloc::string::String>
 pub fn tauri_plugin_i18n_next::missing(&str, &str, &str)
 pub type tauri_plugin_i18n_next::Result<T> = core::result::Result<T, tauri_plugin_i18n_next::error::Error>

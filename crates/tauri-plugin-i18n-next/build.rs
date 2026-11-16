@@ -4,6 +4,7 @@
 const COMMANDS: &[&str] = &[
     "load",
     "load_page",
+    "meta",
     "set_locale",
     "get_locale",
     "available_locales",

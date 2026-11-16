@@ -22,8 +22,9 @@ pub use error::{Error, Result};
 pub use missing::missing;
 
 /// The event every window gets after a change of what lookups answer (a locale switch,
-/// `add_messages`, `reload`, a `watch` reload): `{ "locale": "de", "version": 7 }`. A new
-/// version changes every protocol URL, so nothing stale is read from the cache.
+/// `add_messages`, `reload`, a `watch` reload): `{ "locale": "de", "version": 7 }`, in
+/// version order. A changed chunk gets a new protocol URL (its content tag), so nothing
+/// stale is read from the cache; the front end asks `meta` for the new tags.
 pub const EVENT_CHANGED: &str = "i18n-next://changed";
 
 /// The dev event of the missing-key report (DESIGN 8b.7): one `{ locale, page, key, count }`
@@ -44,8 +45,12 @@ pub struct Handle {
     persist: Option<PathBuf>,
     /// The locale in the persist file (or the one the system picked, which is not saved).
     saved: Mutex<Saved>,
-    /// Origins the protocol answers (the app's own, the dev server's in debug).
+    /// Origins the protocol answers (the app's own, the dev server's in debug, the
+    /// builder's extra ones).
     origins: Vec<String>,
+    /// The last change handled: persist, relabel and the event run in version order, under
+    /// this lock, and a change older than it is not handled again.
+    handled: Mutex<u64>,
     sub: Mutex<Option<Subscription>>,
     watch: Mutex<Option<WatchGuard>>,
 }
@@ -69,8 +74,9 @@ impl Deref for Handle {
 
 impl Handle {
     /// Shows `text` on `target` now and again after every change (locale switch, reload),
-    /// until [`Handle::unbind`] (DESIGN 6.3). A target that fails to relabel (a closed
-    /// window) is skipped; it stays bound.
+    /// until [`Handle::unbind`] (DESIGN 6.3). A target that fails to relabel (a destroyed
+    /// item or window) is unbound then; a window's bindings (and those of targets whose
+    /// [`Relabel::window`] names it) go when the window is destroyed.
     ///
     /// ```rust,no_run
     /// # fn demo<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
@@ -82,8 +88,17 @@ impl Handle {
     /// ```
     pub fn bind<T: Relabel + Clone + 'static>(&self, target: &T, text: Text) -> BindId {
         let (id, label) = lock(&self.binds).add(Arc::new(target.clone()), text);
-        let _ = target.relabel(&label);
+        if target.relabel(&label).is_err() {
+            self.unbind(id);
+        }
         id
+    }
+
+    /// The origins the protocol serves: the app's own, the dev server's in debug builds and
+    /// [`Builder::origins`]. What the plugin passes to [`protocol::handle`].
+    #[must_use]
+    pub fn origins(&self) -> &[String] {
+        &self.origins
     }
 
     /// Stops updating a bound target; `false` when `id` is not bound (any more).
@@ -91,23 +106,40 @@ impl Handle {
         lock(&self.binds).remove(id)
     }
 
-    /// After a change: save the locale (8b.3) and relabel what shows something new.
-    fn on_change(&self, change: &Change) {
+    /// After a change, in version order: save the active locale (8b.3), relabel what shows
+    /// something new, then `emit` the change. The catalog delivers changes in order; a
+    /// change older than one handled already is skipped all the same. What is saved and
+    /// shown is read from the catalog now, not from the change.
+    fn on_change(&self, change: &Change, emit: impl FnOnce(models::Changed)) {
+        let mut handled = lock(&self.handled);
+        if change.version <= *handled {
+            return;
+        }
+        *handled = change.version;
         if let Some(path) = &self.persist {
+            let locale = self.i18n.locale();
             let mut saved = lock(&self.saved);
-            if saved.system_pick.as_deref() == Some(&*change.locale) {
-                saved.system_pick = None;
-            } else if saved.file.as_deref() != Some(&*change.locale) {
-                saved.file = Some(change.locale.clone());
+            let picked = saved.system_pick.take();
+            if picked.as_deref() != Some(&*locale) && saved.file.as_deref() != Some(&*locale) {
+                saved.file = Some(locale.clone());
                 // ponytail: a failed write is dropped (read-only config dir); the locale
                 // is still switched, only not remembered
-                let _ = persist::write(path, &change.locale);
+                let _ = persist::write(path, &locale);
             }
         }
         let todo = lock(&self.binds).refresh();
-        for (target, label) in todo {
-            let _ = target.relabel(&label);
+        let failed: Vec<BindId> = todo
+            .into_iter()
+            .filter(|(_, target, label)| target.relabel(label).is_err())
+            .map(|(id, _, _)| id)
+            .collect();
+        for id in failed {
+            self.unbind(id);
         }
+        emit(models::Changed {
+            locale: change.locale.to_string(),
+            version: change.version,
+        });
     }
 
     /// The first `load`: the system locale from `navigator.languages` (8b.3 step 2), unless
@@ -170,6 +202,7 @@ pub struct Builder {
     global: bool,
     watch: bool,
     data_dir: Option<PathBuf>,
+    origins: Vec<String>,
 }
 
 impl Builder {
@@ -183,7 +216,23 @@ impl Builder {
             global: true,
             watch: true,
             data_dir: None,
+            origins: Vec::new(),
         }
+    }
+
+    /// More origins the protocol serves, besides the app's own (`tauri://localhost`,
+    /// `http(s)://tauri.localhost`) and, in debug builds, the dev server's: pages loaded
+    /// from elsewhere that read translations (`tauri-plugin-localhost`'s
+    /// `http://localhost:<port>`, an external URL, an Android dev host). Each is an origin
+    /// as the WebView sends it: scheme, host and port, no path.
+    #[must_use]
+    pub fn origins<I, S>(mut self, origins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.origins.extend(origins.into_iter().map(Into::into));
+        self
     }
 
     /// Picks the start locale from the WebView's `navigator.languages` (sent with the first
@@ -229,13 +278,14 @@ impl Builder {
 
     /// The plugin.
     pub fn build<R: Runtime>(self) -> TauriPlugin<R> {
-        use commands::{available_locales, get_locale, load, load_page, pages, set_locale};
+        use commands::{available_locales, get_locale, load, load_page, meta, pages, set_locale};
         // `report_missing` only in debug builds (8b.2, 8b.7)
         type Handler<R> = Box<dyn Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync>;
         let handler: Handler<R> = if cfg!(debug_assertions) {
             Box::new(tauri::generate_handler![
                 load,
                 load_page,
+                meta,
                 set_locale,
                 get_locale,
                 available_locales,
@@ -246,6 +296,7 @@ impl Builder {
             Box::new(tauri::generate_handler![
                 load,
                 load_page,
+                meta,
                 set_locale,
                 get_locale,
                 available_locales,
@@ -256,17 +307,30 @@ impl Builder {
             .invoke_handler(handler)
             .register_asynchronous_uri_scheme_protocol(SCHEME, |ctx, request, responder| {
                 let app = ctx.app_handle().clone();
-                std::thread::spawn(move || {
+                // the shared blocking pool: no thread start per request; the handle is
+                // dropped, the task runs on (it answers through `responder`)
+                drop(tauri::async_runtime::spawn_blocking(move || {
                     let response = match app.try_state::<Handle>() {
-                        Some(h) => protocol::handle(&h.i18n, &h.origins, &request),
+                        Some(h) => protocol::handle(&h.i18n, h.origins(), &request),
                         None => protocol::unavailable(),
                     };
                     responder.respond(response);
-                });
+                }));
             })
             .setup(move |app, _api| {
                 self.setup(app)?;
                 Ok(())
+            })
+            .on_event(|app, event| {
+                if let tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } = event
+                    && let Some(h) = app.try_state::<Handle>()
+                {
+                    lock(&h.binds).drop_window(label);
+                }
             })
             .on_drop(|app| {
                 // breaks the cycle catalog → listener → app → state → catalog
@@ -298,6 +362,7 @@ impl Builder {
         {
             origins.push(url.origin().ascii_serialization());
         }
+        origins.extend(self.origins);
         let saved = persist.as_deref().and_then(persist::read);
         let i18n = self.i18n;
         if self.global {
@@ -316,6 +381,7 @@ impl Builder {
                 system_pick: None,
             }),
             origins,
+            handled: Mutex::new(i18n.version()),
             sub: Mutex::default(),
             watch: Mutex::default(),
         });
@@ -323,13 +389,10 @@ impl Builder {
         let emitter = app.clone();
         let sub = i18n.subscribe(move |change| {
             if let Some(h) = emitter.try_state::<Handle>() {
-                h.on_change(change);
+                h.on_change(change, |payload| {
+                    let _ = emitter.emit(EVENT_CHANGED, payload);
+                });
             }
-            let payload = models::Changed {
-                locale: change.locale.to_string(),
-                version: change.version,
-            };
-            let _ = emitter.emit(EVENT_CHANGED, payload);
         });
         *lock(&handle.sub) = Some(sub);
         // step 1 of the start order (8b.3): a saved locale that is still available

@@ -11,7 +11,7 @@ use tauri::ipc::Response;
 
 /// `Ok` for a locale that is known and not disabled.
 pub(crate) fn known_locale(i18n: &I18n, code: &str) -> Result<()> {
-    if i18n.locales().iter().any(|l| l.code == code) {
+    if i18n.has_locale(code) {
         Ok(())
     } else {
         Err(Error::UnknownLocale(code.to_owned()))
@@ -20,7 +20,7 @@ pub(crate) fn known_locale(i18n: &I18n, code: &str) -> Result<()> {
 
 /// `Ok` for `index` (the root) and every page the catalog knows.
 pub(crate) fn known_page(i18n: &I18n, page: &str) -> Result<()> {
-    if page == "index" || i18n.pages().iter().any(|p| p == page) {
+    if page == "index" || i18n.has_page(page) {
         Ok(())
     } else {
         Err(Error::UnknownPage(page.to_owned()))
@@ -43,6 +43,31 @@ pub fn load(
     state.first_load(languages.as_deref());
     let (_, bytes) = payload::encode(&state, None, page.as_deref(), true);
     Ok(Response::new(bytes))
+}
+
+/// What the front end needs to start and to build protocol URLs, without the chunks:
+/// `version`, `locale`, `defaultLocale`, `fallbackLocale`, `locales`, `chains` (the
+/// fallback chain of every locale, which the front end premerges in order, DESIGN 6.2),
+/// the named formats, `tags` (the content tag of each chunk of the chain of `locale`, the
+/// active one when not given, roots and `page`, by `"<locale>/<page>"`) and `bundle` (the
+/// tag of its protocol bundle). As raw bytes, like `load`.
+#[tauri::command]
+pub fn meta(
+    state: State<'_, Handle>,
+    locale: Option<String>,
+    page: Option<String>,
+) -> Result<Response> {
+    if let Some(l) = &locale {
+        known_locale(&state, l)?;
+    }
+    if let Some(p) = &page {
+        known_page(&state, p)?;
+    }
+    Ok(Response::new(payload::meta(
+        &state,
+        locale.as_deref(),
+        page.as_deref(),
+    )))
 }
 
 /// Navigation: the page chunks of the active chain, as raw bytes.

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const names = (m) => Object.keys(m).filter((k) => k !== 'default').sort()
-const expected = { index: ['ping'], vue: ['createTauriI18n', 'ping'] }
+const expected = { index: ['meta'], vue: ['createTauriI18n', 'meta'] }
 
 for (const [entry, fns] of Object.entries(expected)) {
   const cjs = require(`../dist-js/${entry}.cjs`)

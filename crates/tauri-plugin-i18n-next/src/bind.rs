@@ -13,6 +13,12 @@ pub trait Relabel: Send + Sync {
     /// # Errors
     /// What Tauri returns (a destroyed item or window).
     fn relabel(&self, label: &str) -> tauri::Result<()>;
+
+    /// The label of the window this target is (or lives in), if any: its bindings are
+    /// dropped when that window is destroyed. `None` by default.
+    fn window(&self) -> Option<String> {
+        None
+    }
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -43,11 +49,19 @@ impl<R: tauri::Runtime> Relabel for tauri::WebviewWindow<R> {
     fn relabel(&self, label: &str) -> tauri::Result<()> {
         self.set_title(label)
     }
+
+    fn window(&self) -> Option<String> {
+        Some(self.label().to_owned())
+    }
 }
 
 impl<R: tauri::Runtime> Relabel for tauri::Window<R> {
     fn relabel(&self, label: &str) -> tauri::Result<()> {
         self.set_title(label)
+    }
+
+    fn window(&self) -> Option<String> {
+        Some(self.label().to_owned())
     }
 }
 
@@ -58,6 +72,8 @@ pub struct BindId(u64);
 struct Bound {
     id: u64,
     target: Arc<dyn Relabel>,
+    /// [`Relabel::window`] of the target.
+    window: Option<String>,
     text: Text,
     /// What the target shows now.
     shown: String,
@@ -77,6 +93,7 @@ impl Bindings {
         let shown = text.to_string();
         self.list.push(Bound {
             id: self.next,
+            window: target.window(),
             target,
             text,
             shown: shown.clone(),
@@ -88,16 +105,51 @@ impl Bindings {
         self.list.extract_if(.., |b| b.id == id.0).count() > 0
     }
 
+    /// Drops every binding of the window `label` (it was destroyed).
+    pub(crate) fn drop_window(&mut self, label: &str) {
+        self.list.retain(|b| b.window.as_deref() != Some(label));
+    }
+
     /// Renders every bound text again: the targets whose label changed, with it.
-    pub(crate) fn refresh(&mut self) -> Vec<(Arc<dyn Relabel>, String)> {
+    pub(crate) fn refresh(&mut self) -> Vec<(BindId, Arc<dyn Relabel>, String)> {
         let mut todo = Vec::new();
         for b in &mut self.list {
             let now = b.text.to_string();
             if now != b.shown {
                 b.shown.clone_from(&now);
-                todo.push((b.target.clone(), now));
+                todo.push((BindId(b.id), b.target.clone(), now));
             }
         }
         todo
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Win(&'static str);
+
+    impl Relabel for Win {
+        fn relabel(&self, _: &str) -> tauri::Result<()> {
+            Ok(())
+        }
+
+        fn window(&self) -> Option<String> {
+            Some(self.0.to_owned())
+        }
+    }
+
+    /// Given targets in two windows, when one window is destroyed, then only its bindings
+    /// go.
+    #[test]
+    fn a_destroyed_window_drops_its_bindings() {
+        let i18n = i18n_next::I18n::builder().build().unwrap();
+        let mut b = Bindings::default();
+        let (a, _) = b.add(Arc::new(Win("second")), i18n.text("x"));
+        let (keep, _) = b.add(Arc::new(Win("main")), i18n.text("x"));
+        b.drop_window("second");
+        assert!(!b.remove(a));
+        assert!(b.remove(keep));
     }
 }

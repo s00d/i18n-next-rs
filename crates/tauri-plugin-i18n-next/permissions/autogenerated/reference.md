@@ -1,11 +1,12 @@
 ## Default Permission
 
-What the front end needs (DESIGN 8b.2): load the payload and pages, read and switch the locale. `report_missing` (dev only) is not included: add `i18n-next:allow-report-missing` to a dev capability.
+What the front end needs (DESIGN 8b.2): the meta (tags, chains, formats), load the payload and pages, read and switch the locale. `report_missing` (dev only) is not included: add `i18n-next:allow-report-missing` to a dev capability.
 
 #### This default permission set includes the following:
 
 - `allow-load`
 - `allow-load-page`
+- `allow-meta`
 - `allow-get-locale`
 - `allow-available-locales`
 - `allow-pages`
@@ -120,6 +121,32 @@ Enables the load_page command without any pre-configured scope.
 <td>
 
 Denies the load_page command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`i18n-next:allow-meta`
+
+</td>
+<td>
+
+Enables the meta command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`i18n-next:deny-meta`
+
+</td>
+<td>
+
+Denies the meta command without any pre-configured scope.
 
 </td>
 </tr>

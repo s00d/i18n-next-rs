@@ -102,11 +102,18 @@ fn ipc(c: &mut Criterion) {
     c.bench_function("ipc/pages/one", |b| {
         b.iter(|| black_box(app.call("pages", json!({})).unwrap()))
     });
+    c.bench_function("ipc/meta/chain_page", |b| {
+        b.iter(|| black_box(app.call_raw("meta", json!({ "page": "settings" })).unwrap()))
+    });
+    // The dev report records nothing in release builds (benches run in release): these two
+    // measure on purpose what an app pays for leaving the handler and the command in a
+    // release build, the IPC round trip and a no-op. The dev path is covered by
+    // tests/dev_report.rs and the unit test of src/missing.rs (one write per batch).
     let keys = json!({ "keys": [{ "locale": "en", "page": "index", "key": "nope" }] });
-    c.bench_function("ipc/report_missing/known_key", |b| {
+    c.bench_function("ipc/report_missing/release_noop", |b| {
         b.iter(|| black_box(app.call("report_missing", keys.clone()).unwrap()))
     });
-    c.bench_function("plugin/missing/known_key", |b| {
+    c.bench_function("plugin/missing/release_noop", |b| {
         b.iter(|| tauri_plugin_i18n_next::missing(black_box("en"), "nope", "index"))
     });
 }
@@ -121,14 +128,21 @@ fn protocol(c: &mut Criterion) {
             .unwrap()
     };
     let h = app.handle();
+    let root = app.chunk_path("en", "index");
+    let page = app.chunk_path("de", "settings");
+    let bundle = app.bundle_path("de", Some("settings"));
+    // what `convertFileSrc` sends: the whole path percent-encoded
+    let encoded = root.replace('/', "%2F").replacen("%2F", "/", 1);
     let mut g = c.benchmark_group("protocol/handle");
     for (case, path) in [
-        ("chunk_root_1000", "/v0/en/index.json"),
-        ("chunk_page_50", "/v0/de/settings.json"),
-        ("bundle_1000x2", "/v0/bundle?locale=de&page=settings"),
-        ("unknown_locale", "/v0/xx/index.json"),
+        ("chunk_root_1000", root.clone()),
+        ("chunk_root_encoded", encoded),
+        ("chunk_page_50", page),
+        ("bundle_1000x2", bundle),
+        ("stale_tag_410", format!("/0000000000000000{}", &root[17..])),
+        ("unknown_locale", format!("{}/xx/index.json", &root[..17])),
     ] {
-        let r = req(path);
+        let r = req(&path);
         g.bench_function(case, |b| {
             b.iter(|| black_box(tauri_plugin_i18n_next::protocol::handle(h, &origins, &r)))
         });
@@ -156,6 +170,9 @@ fn plugin_api(c: &mut Criterion) {
     c.bench_function("builder/data_dir/path", |b| {
         b.iter(|| black_box(Builder::new(i18n.clone()).data_dir("/tmp/x")))
     });
+    c.bench_function("builder/origins/one", |b| {
+        b.iter(|| black_box(Builder::new(i18n.clone()).origins(["http://localhost:1430"])))
+    });
     c.bench_function("builder/build/mock", |b| {
         b.iter(|| black_box(plugin(i18n.clone()).build::<MockRuntime>()))
     });
@@ -164,6 +181,9 @@ fn plugin_api(c: &mut Criterion) {
         b.iter(|| black_box(app.app.i18n().version()))
     });
     let h = app.handle();
+    c.bench_function("handle/origins/default", |b| {
+        b.iter(|| black_box(black_box(h).origins().len()))
+    });
     // each bound label is unbound outside the timing: the list stays at one entry
     c.bench_function("handle/bind/label", |b| {
         b.iter_custom(|iters| {
@@ -188,6 +208,9 @@ fn plugin_api(c: &mut Criterion) {
     let window: Arc<dyn Relabel> = Arc::new(app.w.clone());
     c.bench_function("relabel/relabel/webview_window", |b| {
         b.iter(|| black_box(window.relabel(black_box("Title"))))
+    });
+    c.bench_function("relabel/window/webview_window", |b| {
+        b.iter(|| black_box(window.window()))
     });
 }
 

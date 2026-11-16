@@ -130,14 +130,15 @@ jobs:
       - name: wasm-bindgen-test (Node)
         env:
           CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
-        run: cargo test -p i18n-next --locked --target wasm32-unknown-unknown
+        # `tauri-guest` adds tests/tauri_guest.rs (a fake __TAURI_INTERNALS__) to the defaults
+        run: cargo test -p i18n-next --locked --target wasm32-unknown-unknown --features tauri-guest
 
       - name: wasm-bindgen-test (headless Chrome)
         env:
           CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
           WASM_BINDGEN_USE_BROWSER: "1"
         # CHROMEWEBDRIVER is preset on GitHub's ubuntu images.
-        run: CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" cargo test -p i18n-next --locked --target wasm32-unknown-unknown
+        run: CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" cargo test -p i18n-next --locked --target wasm32-unknown-unknown --features tauri-guest
 
       - name: Tests on wasm32-wasip1 (wasmtime)
         env:

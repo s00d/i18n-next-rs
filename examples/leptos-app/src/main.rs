@@ -103,23 +103,32 @@ async fn browser() -> Result<I18n, i18n_next::Error> {
     Ok(i18n)
 }
 
-/// Loads `page` in the active locale: from the plugin, or the files it lacks.
-async fn show(page: &'static str) -> Result<(), i18n_next::Error> {
+/// Loads `page` in the active locale: from the plugin, or the files it lacks (again when
+/// the locale switched while they loaded).
+async fn show(page: &str) -> Result<(), i18n_next::Error> {
     if in_tauri() {
         return tauri_guest::set_page(page).await;
     }
     let i18n = i18n_next::global().ok_or(i18n_next::Error::NotInstalled)?;
-    i18n.ensure_async(&i18n.locale(), Some(page), fetch).await
+    loop {
+        let locale = i18n.locale();
+        i18n.ensure_async(&locale, Some(page), fetch).await?;
+        if *i18n.locale() == *locale {
+            return Ok(());
+        }
+    }
 }
 
-/// Switches the locale: Rust and every window, or this page (its files first, so no key
-/// shows while they load) and `localStorage`.
-async fn switch(code: String, page: String) -> Result<(), i18n_next::Error> {
+/// Switches the locale: Rust and every window (the plugin loads the shown page), or this
+/// page (its files first, so no key shows while they load) and `localStorage`; then the page
+/// shown by now, which a navigation during the switch may have changed.
+async fn switch(code: String, page: RwSignal<String>) -> Result<(), i18n_next::Error> {
     if in_tauri() {
         return tauri_guest::set_locale(&code).await;
     }
     let i18n = i18n_next::global().ok_or(i18n_next::Error::NotInstalled)?;
-    i18n.ensure_async(&code, Some(&page), fetch).await?;
+    i18n.ensure_async(&code, Some(&page.get_untracked()), fetch)
+        .await?;
     i18n.set_locale(&code)?;
     if let Some(s) = storage() {
         call(
@@ -128,7 +137,7 @@ async fn switch(code: String, page: String) -> Result<(), i18n_next::Error> {
             &[JsValue::from_str(SAVED), JsValue::from_str(&code)],
         );
     }
-    Ok(())
+    show(&page.get_untracked()).await
 }
 
 /// `<html lang dir>` of the active locale.
@@ -198,7 +207,7 @@ fn App(i18n: I18n) -> impl IntoView {
         });
     };
     let to = move |code: String| {
-        spawn_local(async move { report(switch(code, page.get_untracked()).await) });
+        spawn_local(async move { report(switch(code, page).await) });
     };
     let locales = i18n.locales();
     let shown = i18n.clone();

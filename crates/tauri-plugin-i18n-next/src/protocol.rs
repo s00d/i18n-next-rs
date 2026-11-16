@@ -289,3 +289,15 @@ fn decode(s: &str) -> Option<String> {
     }
     String::from_utf8(out).ok()
 }
+
+#[cfg(test)]
+mod tests {
+    /// Before the plugin is set up the scheme answers `503` with a JSON error body.
+    #[test]
+    fn unavailable_is_503_with_its_kind() {
+        let r = super::unavailable();
+        assert_eq!(r.status(), 503);
+        let body: serde_json::Value = serde_json::from_slice(r.body()).unwrap();
+        assert_eq!(body["kind"], "Unavailable");
+    }
+}

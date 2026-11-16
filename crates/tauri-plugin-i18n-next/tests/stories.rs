@@ -225,6 +225,8 @@ fn protocol_refuses_foreign_origins_and_methods() {
         format!("/{tag}/en/index"),
         format!("/{tag}/bundle"),
         format!("/{tag}%ZZ/en/index.json"),
+        // the tag's digits behind a zero: 17 hex digits are no tag
+        format!("/0{tag}/en/index.json"),
     ] {
         assert_eq!(app.get(&path).0, 404, "{path}");
     }
@@ -763,4 +765,16 @@ fn concurrent_switches_reach_windows_labels_and_file_in_order() {
     assert_eq!(saved, json!({ "locale": "ar" }));
     drop(app);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Given windows bound as labels, when the plugin asks which window a target lives in, then
+/// a webview window and its window name themselves (their bindings go with them) and a
+/// target of the app's own has none.
+#[test]
+fn windows_name_themselves_as_relabel_targets() {
+    let app = App::new(catalog());
+    assert_eq!(Relabel::window(&app.w), Some("main".to_owned()));
+    let second = app.second.as_ref().window();
+    assert_eq!(Relabel::window(&second), Some("second".to_owned()));
+    assert_eq!(Relabel::window(&Label::default()), None);
 }

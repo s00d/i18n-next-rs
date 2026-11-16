@@ -155,20 +155,23 @@ mod tests {
         let keys: Vec<String> = (0..1000).map(|i| format!("k{i}")).collect();
         record(keys.iter().map(|k| ("en", "index", k.as_str())));
         assert_eq!(*writes.lock().unwrap(), [(1000, 1000)]);
-        // step 2: an over-long key is dropped
+        // step 2: an over-long key is dropped, one of the longest allowed is kept
         let long = "x".repeat(MAX_LEN + 1);
         record(std::iter::once(("en", "index", long.as_str())));
         assert_eq!(writes.lock().unwrap().len(), 1);
+        let longest = "x".repeat(MAX_LEN);
+        record(std::iter::once(("en", "index", longest.as_str())));
+        assert_eq!(writes.lock().unwrap().last(), Some(&(1, 1001)));
         // step 3: past the cap new keys are dropped, a known one still counts
         let more: Vec<String> = (0..MAX_ENTRIES).map(|i| format!("m{i}")).collect();
         record(more.iter().map(|k| ("en", "index", k.as_str())));
         assert_eq!(
             writes.lock().unwrap().last(),
-            Some(&(MAX_ENTRIES - 1000, MAX_ENTRIES))
+            Some(&(MAX_ENTRIES - 1001, MAX_ENTRIES))
         );
         record(std::iter::once(("en", "index", "k1")));
         record(std::iter::once(("en", "index", "brand-new")));
-        assert_eq!(writes.lock().unwrap().len(), 2);
+        assert_eq!(writes.lock().unwrap().len(), 3);
         let r = REPORT.lock().unwrap();
         assert_eq!(r.counts[&("en".into(), "index".into(), "k1".into())], 2);
     }

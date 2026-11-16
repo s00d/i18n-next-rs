@@ -453,3 +453,37 @@ fn plural_operands_of_shown_numbers_match_intl() {
         assert_eq!(i18n.tn_as(v, "f"), want, "{locale} {options} {v}");
     }
 }
+
+/// The payload JSON of a chunk is cached; adding messages to that chunk drops the cache, so
+/// the next payload carries them.
+#[cfg(feature = "payload")]
+#[test]
+fn payload_follows_added_messages() {
+    let i18n = I18n::builder()
+        .messages("en", None, r#"{"a": "A"}"#)
+        .build()
+        .unwrap();
+    let text = |i18n: &I18n| {
+        String::from_utf8(i18n_next::payload::encode(i18n, None, None, false).1).unwrap()
+    };
+    assert!(!text(&i18n).contains("\"b\""));
+    i18n.add_messages("en", None, r#"{"b": "B"}"#).unwrap();
+    let after = text(&i18n);
+    assert!(
+        after.contains("\"b\":\"B\"") && after.contains("\"a\":\"A\""),
+        "{after}"
+    );
+}
+
+/// Without `tz` only UTC exists: a named zone is refused, dates show UTC to the second.
+#[cfg(not(feature = "tz"))]
+#[test]
+fn without_tz_only_utc() {
+    assert!(I18n::builder().time_zone("Asia/Tokyo").build().is_err());
+    let i18n = I18n::builder()
+        .time_zone("UTC")
+        .datetime_formats(r#"{"en": {"t": {"hour": "numeric", "minute": "2-digit", "second": "2-digit", "hourCycle": "h23"}}}"#)
+        .build()
+        .unwrap();
+    assert_eq!(i18n.td_as(1_704_428_640_000i64, "t"), "04:24:00");
+}

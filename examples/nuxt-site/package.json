@@ -1,0 +1,21 @@
+{
+  "name": "i18n-next-nuxt-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Nuxt site on the same examples/locales and examples/i18n.json as the Rust and Tauri playgrounds (DESIGN 8b.19)",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "generate": "nuxt generate",
+    "check": "node scripts/check-texts.mjs"
+  },
+  "dependencies": {
+    "nuxt": "4.6.4",
+    "nuxt-i18n-micro": "4.1.3",
+    "vue": "3.5.45",
+    "vue-router": "4.6.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "@parcel/watcher"]
+  }
+}

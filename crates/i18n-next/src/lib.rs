@@ -27,6 +27,7 @@ mod source;
 pub mod tauri_guest;
 mod text;
 mod trace;
+mod translation;
 #[cfg(feature = "tz")]
 #[allow(
     dead_code,
@@ -54,6 +55,7 @@ pub use scope::{Scope, Scoped, locale, negotiate, page, scope, set_locale, t};
 #[cfg(feature = "global")]
 pub use scope::{global, install};
 pub use text::{Key, Part, PluralCtx, Text};
+pub use translation::Translation;
 #[cfg(all(
     feature = "watch",
     not(all(target_arch = "wasm32", target_os = "unknown"))

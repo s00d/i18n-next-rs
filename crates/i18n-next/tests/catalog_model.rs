@@ -1484,9 +1484,9 @@ fn check_lookup(
             };
             let args = kind.map(ArgsKind::args);
             let got = match (&view, &args) {
-                (Some(v), None) => v.t(key),
+                (Some(v), None) => v.t(key).into(),
                 (Some(v), Some(a)) => v.t_with(key, a),
-                (None, None) => i18n.t(key),
+                (None, None) => i18n.t(key).into(),
                 (None, Some(a)) => i18n.t_with(key, a),
             };
             let (want, miss) = m.t(vloc, page, key, kind);

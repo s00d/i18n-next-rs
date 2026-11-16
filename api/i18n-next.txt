@@ -319,7 +319,7 @@ pub fn i18n_next::I18n::page(&self, &str) -> i18n_next::View
 pub fn i18n_next::I18n::pages(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn i18n_next::I18n::reload(&self) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::I18n::set_locale(&self, &str) -> core::result::Result<(), i18n_next::Error>
-pub fn i18n_next::I18n::t(&self, &str) -> alloc::string::String
+pub fn i18n_next::I18n::t<'k>(&self, &'k str) -> i18n_next::Translation<'k>
 pub fn i18n_next::I18n::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
 pub fn i18n_next::I18n::tc(&self, &str, impl core::convert::Into<i18n_next::Count>) -> alloc::string::String
 pub fn i18n_next::I18n::tc_with(&self, &str, impl core::convert::Into<i18n_next::Count>, &i18n_next::Args<'_>) -> alloc::string::String
@@ -518,13 +518,54 @@ impl core::hash::Hash for i18n_next::Timestamp
 pub fn i18n_next::Timestamp::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for i18n_next::Timestamp
 impl core::marker::StructuralPartialEq for i18n_next::Timestamp
+pub struct i18n_next::Translation<'k>(_)
+impl core::borrow::Borrow<str> for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::borrow(&self) -> &str
+impl core::cmp::Eq for i18n_next::Translation<'_>
+impl core::cmp::PartialEq for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::eq(&self, &Self) -> bool
+impl core::cmp::PartialEq<&str> for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::eq(&self, &&str) -> bool
+impl core::cmp::PartialEq<alloc::borrow::Cow<'_, str>> for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::eq(&self, &alloc::borrow::Cow<'_, str>) -> bool
+impl core::cmp::PartialEq<alloc::string::String> for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::eq(&self, &alloc::string::String) -> bool
+impl core::cmp::PartialEq<i18n_next::Translation<'_>> for &str
+pub fn &str::eq(&self, &i18n_next::Translation<'_>) -> bool
+impl core::cmp::PartialEq<i18n_next::Translation<'_>> for alloc::borrow::Cow<'_, str>
+pub fn alloc::borrow::Cow<'_, str>::eq(&self, &i18n_next::Translation<'_>) -> bool
+impl core::cmp::PartialEq<i18n_next::Translation<'_>> for alloc::string::String
+pub fn alloc::string::String::eq(&self, &i18n_next::Translation<'_>) -> bool
+impl core::cmp::PartialEq<i18n_next::Translation<'_>> for str
+pub fn str::eq(&self, &i18n_next::Translation<'_>) -> bool
+impl core::cmp::PartialEq<str> for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::eq(&self, &str) -> bool
+impl core::convert::AsRef<str> for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::as_ref(&self) -> &str
+impl core::convert::From<i18n_next::Translation<'_>> for alloc::string::String
+pub fn alloc::string::String::from(i18n_next::Translation<'_>) -> alloc::string::String
+impl core::convert::From<i18n_next::Translation<'_>> for alloc::sync::Arc<str>
+pub fn alloc::sync::Arc<str>::from(i18n_next::Translation<'_>) -> alloc::sync::Arc<str>
+impl core::fmt::Debug for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for i18n_next::Translation<'_>
+pub fn i18n_next::Translation<'_>::hash<H: core::hash::Hasher>(&self, &mut H)
+impl core::ops::deref::Deref for i18n_next::Translation<'_>
+pub type i18n_next::Translation<'_>::Target = str
+pub fn i18n_next::Translation<'_>::deref(&self) -> &str
+impl<'k> core::clone::Clone for i18n_next::Translation<'k>
+pub fn i18n_next::Translation<'k>::clone(&self) -> i18n_next::Translation<'k>
+impl<'k> core::convert::From<&'k str> for i18n_next::Translation<'k>
+pub fn i18n_next::Translation<'k>::from(&'k str) -> Self
 pub struct i18n_next::View
 impl i18n_next::View
 pub fn i18n_next::View::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
 pub fn i18n_next::View::has(&self, &str) -> bool
 pub fn i18n_next::View::locale(&self) -> alloc::sync::Arc<str>
 pub fn i18n_next::View::page(&self, &str) -> i18n_next::View
-pub fn i18n_next::View::t(&self, &str) -> alloc::string::String
+pub fn i18n_next::View::t<'k>(&self, &'k str) -> i18n_next::Translation<'k>
 pub fn i18n_next::View::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
 pub fn i18n_next::View::tc(&self, &str, impl core::convert::Into<i18n_next::Count>) -> alloc::string::String
 pub fn i18n_next::View::tc_with(&self, &str, impl core::convert::Into<i18n_next::Count>, &i18n_next::Args<'_>) -> alloc::string::String

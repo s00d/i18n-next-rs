@@ -831,7 +831,7 @@ fn answer(
                     }
                     probe.answer(&view, key, || {
                         if args(params).is_none() && default.is_none() {
-                            view.t(key)
+                            view.t(key).into()
                         } else {
                             view.t_with(key, &a)
                         }

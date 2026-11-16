@@ -114,7 +114,7 @@ fn catalog_numbers_show_as_js_strings() {
         .unwrap();
     let shown: Vec<String> = ["a", "b", "c", "d", "e"]
         .iter()
-        .map(|k| i18n.t(k))
+        .map(|k| i18n.t(k).into())
         .collect();
     assert_eq!(
         shown,

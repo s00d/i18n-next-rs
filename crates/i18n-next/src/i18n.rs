@@ -17,6 +17,7 @@ use crate::lazy::{Layer, LazyCtl};
 use crate::loader::{self, Config};
 use crate::plural::{self, Plural};
 use crate::source::{self, Pair, Sources};
+use crate::translation::Translation;
 use std::cell::RefCell;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -752,6 +753,32 @@ impl I18n {
         Builder::default()
     }
 
+    /// `resolve` without parameters: the stored text shared, the key on a miss.
+    fn translate<'k>(
+        &self,
+        locale: Option<&str>,
+        page: Option<&str>,
+        key: &'k str,
+    ) -> Translation<'k> {
+        if key.is_empty() {
+            return Translation::key(key);
+        }
+        let report = self.inner.missing.is_some() || crate::trace::MISSES;
+        let found = self.inner.read(|s| match s.lookup(locale, page, key) {
+            // a subtree has no text: the key, not reported
+            Some(e) => Ok(e.text().cloned()),
+            None => Err((report && locale.is_none()).then(|| s.locale.clone())),
+        });
+        match found {
+            Ok(Some(text)) => Translation::shared(text),
+            Ok(None) => Translation::key(key),
+            Err(active) => {
+                self.report(locale.or(active.as_deref()), page, key);
+                Translation::key(key)
+            }
+        }
+    }
+
     fn resolve(
         &self,
         locale: Option<&str>,
@@ -860,9 +887,11 @@ impl I18n {
     /// No interpolation (`{name}` stays as written). A number or boolean comes back as JS
     /// prints it. A miss calls `missing(locale, key, "index")` and returns the key; a
     /// subtree returns the key without calling it; `t("")` is `""`.
+    ///
+    /// The [`Translation`] shares the stored text (or borrows the key): no allocation.
     #[must_use]
-    pub fn t(&self, key: &str) -> String {
-        self.resolve(None, None, key, None)
+    pub fn t<'k>(&self, key: &'k str) -> Translation<'k> {
+        self.translate(None, None, key)
     }
 
     /// [`I18n::t`] with parameters and an optional default ([`Args::or`]). Strings are
@@ -1121,7 +1150,7 @@ impl I18n {
     /// let i18n = I18n::builder().messages("en", None, r#"{"a": "A"}"#).build()?;
     /// i18n.add_messages("en", None, r#"{"a": "patched"}"#)?;
     /// i18n.reload()?;
-    /// assert_eq!((i18n.t("a"), i18n.version()), ("A".to_owned(), 2));
+    /// assert_eq!((i18n.t("a"), i18n.version()), ("A".into(), 2));
     /// # Ok::<(), i18n_next::Error>(())
     /// ```
     ///
@@ -1307,9 +1336,9 @@ impl View {
 
     /// [`I18n::t`] in this view.
     #[must_use]
-    pub fn t(&self, key: &str) -> String {
+    pub fn t<'k>(&self, key: &'k str) -> Translation<'k> {
         let (l, p) = self.parts();
-        self.i18n.resolve(l, p, key, None)
+        self.i18n.translate(l, p, key)
     }
 
     /// [`I18n::t_with`] in this view.

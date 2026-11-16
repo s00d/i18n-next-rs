@@ -16,7 +16,8 @@ use std::sync::{Arc, Mutex};
 type Stop = (&'static str, Result<String, String>);
 
 /// `got` when it equals `want`, else the difference.
-fn expect(got: String, want: &str) -> Result<String, String> {
+fn expect(got: impl Into<String>, want: &str) -> Result<String, String> {
+    let got = got.into();
     if got == want {
         Ok(got)
     } else {

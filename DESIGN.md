@@ -745,7 +745,7 @@ git diff origin/main.. > target/pr.diff && cargo mutants -p i18n-next --in-diff 
 - `gungraun` (бывший iai-callgrind, Valgrind, только linux) считает инструкции и обращения к кешу на тех же сценариях. CI-джоб `perf` запускает его на базовом коммите и на PR в одном джобе с одним toolchain и падает при росте инструкций горячего пути больше порога (по умолчанию 3%). Число инструкций не зависит от загрузки машины.
 - `tests/alloc.rs` (dhat в режиме testing) фиксирует число аллокаций:
   - `Display` у `Text` без параметров — 0;
-  - `t()` — ровно 1;
+  - `t()` — 0 (`Translation`: общий `Arc<str>` текста или сам ключ при промахе);
   - `get(key)` — 0;
   - `write_to` в готовый буфер — 0;
   - `load_page` payload — 1.

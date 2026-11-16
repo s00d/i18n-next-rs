@@ -36,7 +36,7 @@ pub fn linked_lookups_allocate_like_plain_ones() {
 
     let _profiler = dhat::Profiler::builder().testing().build();
 
-    // case: t → 1 block for a plain, a resolved and a view-resolved message alike.
+    // case: t → 0 blocks for a plain, a resolved and a view-resolved message alike.
     for (view, key) in [
         (&i18n.page(""), "plain"),
         (&i18n.page(""), "title"),
@@ -45,7 +45,7 @@ pub fn linked_lookups_allocate_like_plain_ones() {
         let n = blocks(|| {
             std::hint::black_box(view.t(key));
         });
-        dhat::assert_eq!(n, 1, "t({})", key);
+        dhat::assert_eq!(n, 0, "t({})", key);
     }
 
     // case: get / has → 0 blocks, linked or not.

@@ -242,7 +242,7 @@ pub fn meta(i18n: &I18n, locale: Option<&str>, page: Option<&str>) -> Vec<u8> {
 /// let guest = I18n::builder().build()?;
 /// let (_, bytes) = payload::encode(&server, None, None, true);
 /// assert_eq!(payload::apply(&guest, &bytes)?, 0);
-/// assert_eq!((&*guest.locale(), guest.t("hi")), ("de", "Hallo".to_owned()));
+/// assert_eq!((&*guest.locale(), guest.t("hi")), ("de", "Hallo".into()));
 /// assert!(payload::apply(&guest, b"[]").is_err());
 /// # Ok::<(), i18n_next::Error>(())
 /// ```

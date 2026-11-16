@@ -105,17 +105,15 @@ pub fn hot_path_allocations() {
     });
     dhat::assert_eq!(n, 0);
 
-    // case: t() hit without args → exactly 1 block (the result).
+    // case: t() without args → 0 blocks: a hit, through the fallback, on a page, a miss
+    // (the stored text shared, or the key borrowed).
     let n = blocks(|| {
         std::hint::black_box(i18n.t("nav.home"));
-    });
-    dhat::assert_eq!(n, 1);
-
-    // case: page view t() hit → 1 block.
-    let n = blocks(|| {
+        std::hint::black_box(i18n.t("only_en"));
         std::hint::black_box(settings.t("title"));
+        std::hint::black_box(i18n.t("nope"));
     });
-    dhat::assert_eq!(n, 1);
+    dhat::assert_eq!(n, 0);
 
     // case: building Args with ≤ 4 parameters → 0 blocks (inline storage).
     let n = blocks(|| {
@@ -433,7 +431,7 @@ pub fn hot_path_allocations() {
         let n = blocks(|| {
             std::hint::black_box(page.t("t"));
         });
-        assert_eq!(n, 1, "lazy t, evict {evict}: {n} blocks");
+        assert_eq!(n, 0, "lazy t, evict {evict}: {n} blocks");
     }
 
     // case: the first access of a lazy page allocates about what parsing the file at

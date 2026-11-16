@@ -349,14 +349,14 @@ mod tests {
         assert!(!poller.poll(0, scan_dirs(&watched)));
         assert!(poller.poll(SETTLE_MS, scan_dirs(&watched)));
         i18n.reload().unwrap();
-        assert_eq!((i18n.t("a"), i18n.version()), ("two!".to_owned(), 1));
+        assert_eq!((i18n.t("a"), i18n.version()), ("two!".into(), 1));
 
         // step 2: a half-written save → the reload fails, the old answers stay
         std::fs::write(dir.join("en.json"), r#"{"a": "thr"#).unwrap();
         assert!(!poller.poll(1000, scan_dirs(&watched)));
         assert!(poller.poll(1000 + SETTLE_MS, scan_dirs(&watched)));
         assert!(i18n.reload().is_err());
-        assert_eq!((i18n.t("a"), i18n.version()), ("two!".to_owned(), 1));
+        assert_eq!((i18n.t("a"), i18n.version()), ("two!".into(), 1));
 
         // step 3: the lazy page changes → reloaded, read again on next use
         std::fs::write(dir.join("en.json"), r#"{"a": "three"}"#).unwrap();

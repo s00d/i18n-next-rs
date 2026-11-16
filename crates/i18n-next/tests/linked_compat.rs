@@ -123,7 +123,7 @@ fn case_catalog(tag: &str, texts: &[&str]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for (i, text) in texts.iter().enumerate() {
         for m in ["upper", "lower", "capitalize"] {
-            out.insert(format!("{m}\u{0}{text}"), i18n.t(&format!("{m}{i}")));
+            out.insert(format!("{m}\u{0}{text}"), i18n.t(&format!("{m}{i}")).into());
         }
     }
     out

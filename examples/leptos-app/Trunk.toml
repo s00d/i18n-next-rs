@@ -6,11 +6,13 @@ dist = "dist"
 
 # The size of the shipped .wasm (after wasm-opt) and gzipped, in bytes, for the footer
 # (DESIGN 8a): the app fetches `wasm-size.txt` next to itself, in the browser and in Tauri.
+# Release builds only: a debug build (`trunk serve`) writes no file and shows no size, since
+# it is not what ships. gzip level 6 on every OS: .NET's `CompressionLevel.Optimal`.
 [[hooks]]
 stage = "post_build"
 command = "sh"
-command_arguments = ["-c", "cd \"$TRUNK_STAGING_DIR\" && for f in *_bg.wasm; do echo \"$(wc -c < \"$f\") $(gzip -9c \"$f\" | wc -c)\"; done | tr -s ' ' | sed 's/^ //' > wasm-size.txt"]
+command_arguments = ["-c", "[ \"$TRUNK_PROFILE\" = release ] || exit 0; cd \"$TRUNK_STAGING_DIR\" && for f in *_bg.wasm; do echo \"$(wc -c < \"$f\") $(gzip -6c \"$f\" | wc -c)\"; done | tr -s ' ' | sed 's/^ //' > wasm-size.txt"]
 
 [hooks.windows]
 command = "powershell"
-command_arguments = ["-NoProfile", "-Command", "$f = Get-Item \"$env:TRUNK_STAGING_DIR\\*_bg.wasm\"; $o = [IO.MemoryStream]::new(); $g = [IO.Compression.GZipStream]::new($o, [IO.Compression.CompressionLevel]::Optimal); $b = [IO.File]::ReadAllBytes($f.FullName); $g.Write($b, 0, $b.Length); $g.Close(); \"$($f.Length) $($o.ToArray().Length)\" | Set-Content -NoNewline \"$env:TRUNK_STAGING_DIR\\wasm-size.txt\""]
+command_arguments = ["-NoProfile", "-Command", "if ($env:TRUNK_PROFILE -ne 'release') { exit 0 }; $f = Get-Item \"$env:TRUNK_STAGING_DIR\\*_bg.wasm\"; $o = [IO.MemoryStream]::new(); $g = [IO.Compression.GZipStream]::new($o, [IO.Compression.CompressionLevel]::Optimal); $b = [IO.File]::ReadAllBytes($f.FullName); $g.Write($b, 0, $b.Length); $g.Close(); \"$($f.Length) $($o.ToArray().Length)\" | Set-Content -NoNewline \"$env:TRUNK_STAGING_DIR\\wasm-size.txt\""]

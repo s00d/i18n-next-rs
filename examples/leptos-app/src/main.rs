@@ -145,7 +145,8 @@ async fn switch(code: String, page: RwSignal<String>) -> Result<(), i18n_next::E
     show(&page.get_untracked()).await
 }
 
-/// `wasm-size.txt` of the trunk hook (`<bytes> <gzip bytes>`), shown in the footer.
+/// `wasm-size.txt` of the trunk hook (`<bytes> <gzip bytes>`, release builds only), shown in
+/// the footer; a debug build has none and shows no size.
 async fn wasm_size() -> String {
     let Ok(body) = fetch_url("wasm-size.txt").await else {
         return String::new();

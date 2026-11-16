@@ -1,0 +1,2654 @@
+{
+  "answers": {
+    "ar|about": {
+      "a.b": "own dotted",
+      "at": null,
+      "back": null,
+      "brand": "أكمي",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": null,
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi أكمي",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "الرئيسية",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": null,
+      "only_en": "only en",
+      "rev": "rev en",
+      "rev.y": null,
+      "s": null,
+      "s.x": null,
+      "t": "true",
+      "title": "About"
+    },
+    "ar|index": {
+      "a.b": "own dotted",
+      "at": null,
+      "back": null,
+      "brand": "أكمي",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": null,
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi أكمي",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "الرئيسية",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": null,
+      "only_en": "only en",
+      "rev": "rev en",
+      "rev.y": null,
+      "s": null,
+      "s.x": null,
+      "t": "true",
+      "title": null
+    },
+    "ar|settings": {
+      "a.b": "own dotted",
+      "at": null,
+      "back": "Back to الرئيسية",
+      "brand": "أكمي",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": null,
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi أكمي",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "الرئيسية",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": null,
+      "only_en": "only en",
+      "rev": "rev en",
+      "rev.y": null,
+      "s": null,
+      "s.x": "sx en",
+      "t": "true",
+      "title": "الإعدادات"
+    },
+    "de-at|about": {
+      "a.b": "nested a.b de",
+      "at": "Servus Start",
+      "back": null,
+      "brand": "AcmeDE",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": "conf de",
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi AcmeDE",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Start",
+      "nav.nope": null,
+      "nav.x": "X-at",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": "nur de",
+      "only_en": "only en",
+      "rev": null,
+      "rev.y": "rev.y de",
+      "s": null,
+      "s.x": null,
+      "t": "true",
+      "title": "About"
+    },
+    "de-at|index": {
+      "a.b": "nested a.b de",
+      "at": "Servus Start",
+      "back": null,
+      "brand": "AcmeDE",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": "conf de",
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi AcmeDE",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Start",
+      "nav.nope": null,
+      "nav.x": "X-at",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": "nur de",
+      "only_en": "only en",
+      "rev": null,
+      "rev.y": "rev.y de",
+      "s": null,
+      "s.x": null,
+      "t": "true",
+      "title": null
+    },
+    "de-at|settings": {
+      "a.b": "nested a.b de",
+      "at": "Servus Start",
+      "back": "Back to Start",
+      "brand": "AcmeDE",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": "conf de",
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi AcmeDE",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Start",
+      "nav.nope": null,
+      "nav.x": "X-at",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": "nur at",
+      "only_de": "nur de",
+      "only_en": "only en",
+      "rev": null,
+      "rev.y": "rev.y de",
+      "s": "s de",
+      "s.x": "sx en",
+      "t": "true",
+      "title": "Einstellungen"
+    },
+    "de|about": {
+      "a.b": "nested a.b de",
+      "at": null,
+      "back": null,
+      "brand": "AcmeDE",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": "conf de",
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi AcmeDE",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Start",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": "nur de",
+      "only_en": "only en",
+      "rev": null,
+      "rev.y": "rev.y de",
+      "s": null,
+      "s.x": null,
+      "t": "true",
+      "title": "About"
+    },
+    "de|index": {
+      "a.b": "nested a.b de",
+      "at": null,
+      "back": null,
+      "brand": "AcmeDE",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": "conf de",
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi AcmeDE",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Start",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": "nur de",
+      "only_en": "only en",
+      "rev": null,
+      "rev.y": "rev.y de",
+      "s": null,
+      "s.x": null,
+      "t": "true",
+      "title": null
+    },
+    "de|settings": {
+      "a.b": "nested a.b de",
+      "at": null,
+      "back": "Back to Start",
+      "brand": "AcmeDE",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": "conf de",
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi AcmeDE",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Start",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": "nur de",
+      "only_en": "only en",
+      "rev": null,
+      "rev.y": "rev.y de",
+      "s": "s de",
+      "s.x": "sx en",
+      "t": "true",
+      "title": "Einstellungen"
+    },
+    "en|about": {
+      "a.b": "own dotted",
+      "at": null,
+      "back": null,
+      "brand": "Acme",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": null,
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi Acme",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Home",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": null,
+      "only_en": "only en",
+      "rev": "rev en",
+      "rev.y": null,
+      "s": null,
+      "s.x": null,
+      "t": "true",
+      "title": "About"
+    },
+    "en|index": {
+      "a.b": "own dotted",
+      "at": null,
+      "back": null,
+      "brand": "Acme",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": null,
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi Acme",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Home",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": null,
+      "only_en": "only en",
+      "rev": "rev en",
+      "rev.y": null,
+      "s": null,
+      "s.x": null,
+      "t": "true",
+      "title": null
+    },
+    "en|settings": {
+      "a.b": "own dotted",
+      "at": null,
+      "back": "Back to Home",
+      "brand": "Acme settings",
+      "cart": "=0 empty | {count} item | {count} items",
+      "conf": null,
+      "conf.x": "conf.x en",
+      "greet": "Hello, {name}!",
+      "hi": "Hi Acme settings",
+      "list.0": "l0",
+      "list.1.k": "l1",
+      "loud": "@.upper:brand!",
+      "n": "1.5",
+      "nav.deep.a": "A",
+      "nav.home": "Home",
+      "nav.nope": null,
+      "nav.x": "X",
+      "nope": null,
+      "nul": "nul en",
+      "only_at": null,
+      "only_de": null,
+      "only_en": "only en",
+      "rev": "rev en",
+      "rev.y": null,
+      "s": null,
+      "s.x": "sx en",
+      "t": "true",
+      "title": "Settings"
+    }
+  },
+  "chunks": {
+    "30a34d86d11be651/de-at/settings.json": {
+      "data": {
+        "only_at": "nur at"
+      },
+      "linked": {
+        "back": "Back to Start",
+        "hi": "Hi AcmeDE"
+      }
+    },
+    "37f979052f548c31/en/about.json": {
+      "data": {
+        "title": "About"
+      }
+    },
+    "387e041c125eceb9/de-at/index.json": {
+      "data": {
+        "at": "Servus Start",
+        "nav": {
+          "x": "X-at"
+        },
+        "nul": null
+      },
+      "linked": {
+        "hi": "Hi AcmeDE"
+      }
+    },
+    "3f998d57dd63f8b0/ar/settings.json": {
+      "data": {
+        "title": "الإعدادات"
+      },
+      "linked": {
+        "back": "Back to الرئيسية",
+        "hi": "Hi أكمي"
+      }
+    },
+    "61150172409c038f/de/settings.json": {
+      "data": {
+        "s": "s de",
+        "title": "Einstellungen"
+      },
+      "linked": {
+        "back": "Back to Start",
+        "hi": "Hi AcmeDE"
+      }
+    },
+    "7bb4c612d01b385d/ar/about.json": {
+      "data": {},
+      "linked": {
+        "hi": "Hi أكمي"
+      }
+    },
+    "853a02907c279d34/de/index.json": {
+      "data": {
+        "a": {
+          "b": "nested a.b de"
+        },
+        "brand": "AcmeDE",
+        "conf": "conf de",
+        "nav": {
+          "home": "Start"
+        },
+        "only_de": "nur de",
+        "rev": {
+          "y": "rev.y de"
+        }
+      },
+      "linked": {
+        "hi": "Hi AcmeDE"
+      }
+    },
+    "a2f0c03fad943c36/en/index.json": {
+      "data": {
+        "a.b": "own dotted",
+        "brand": "Acme",
+        "cart": "=0 empty | {count} item | {count} items",
+        "conf": {
+          "x": "conf.x en"
+        },
+        "greet": "Hello, {name}!",
+        "hi": "Hi Acme",
+        "list": [
+          "l0",
+          {
+            "k": "l1"
+          }
+        ],
+        "loud": "@.upper:brand!",
+        "n": 1.5,
+        "nav": {
+          "deep": {
+            "a": "A"
+          },
+          "home": "Home",
+          "x": "X"
+        },
+        "nul": "nul en",
+        "only_en": "only en",
+        "rev": "rev en",
+        "t": true
+      }
+    },
+    "b04039d274dee165/de-at/about.json": {
+      "data": {},
+      "linked": {
+        "hi": "Hi AcmeDE"
+      }
+    },
+    "b04039d274dee165/de/about.json": {
+      "data": {},
+      "linked": {
+        "hi": "Hi AcmeDE"
+      }
+    },
+    "d6c0a0be23e3b9a1/ar/index.json": {
+      "data": {
+        "brand": "أكمي",
+        "nav": {
+          "home": "الرئيسية"
+        }
+      },
+      "linked": {
+        "hi": "Hi أكمي"
+      }
+    },
+    "e5f8495241e7152c/en/settings.json": {
+      "data": {
+        "back": "Back to Home",
+        "brand": "Acme settings",
+        "s": {
+          "x": "sx en"
+        },
+        "title": "Settings"
+      },
+      "linked": {
+        "hi": "Hi Acme settings"
+      }
+    }
+  },
+  "keys": [
+    "brand",
+    "hi",
+    "loud",
+    "nav.home",
+    "nav.x",
+    "nav.deep.a",
+    "a.b",
+    "conf.x",
+    "conf",
+    "rev",
+    "rev.y",
+    "n",
+    "t",
+    "list.0",
+    "list.1.k",
+    "cart",
+    "greet",
+    "only_en",
+    "only_de",
+    "nul",
+    "at",
+    "title",
+    "s.x",
+    "s",
+    "back",
+    "only_at",
+    "nope",
+    "nav.nope"
+  ],
+  "loads": {
+    "ar|about": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "brand": "أكمي",
+            "nav": {
+              "home": "الرئيسية"
+            }
+          },
+          "linked": {
+            "hi": "Hi أكمي"
+          },
+          "locale": "ar",
+          "page": "index"
+        },
+        {
+          "data": {},
+          "linked": {
+            "hi": "Hi أكمي"
+          },
+          "locale": "ar",
+          "page": "about"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        },
+        {
+          "data": {
+            "title": "About"
+          },
+          "locale": "en",
+          "page": "about"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "ar",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "ar|index": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "brand": "أكمي",
+            "nav": {
+              "home": "الرئيسية"
+            }
+          },
+          "linked": {
+            "hi": "Hi أكمي"
+          },
+          "locale": "ar",
+          "page": "index"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "ar",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "ar|settings": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "brand": "أكمي",
+            "nav": {
+              "home": "الرئيسية"
+            }
+          },
+          "linked": {
+            "hi": "Hi أكمي"
+          },
+          "locale": "ar",
+          "page": "index"
+        },
+        {
+          "data": {
+            "title": "الإعدادات"
+          },
+          "linked": {
+            "back": "Back to الرئيسية",
+            "hi": "Hi أكمي"
+          },
+          "locale": "ar",
+          "page": "settings"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        },
+        {
+          "data": {
+            "back": "Back to Home",
+            "brand": "Acme settings",
+            "s": {
+              "x": "sx en"
+            },
+            "title": "Settings"
+          },
+          "linked": {
+            "hi": "Hi Acme settings"
+          },
+          "locale": "en",
+          "page": "settings"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "ar",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "de-at|about": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "at": "Servus Start",
+            "nav": {
+              "x": "X-at"
+            },
+            "nul": null
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de-at",
+          "page": "index"
+        },
+        {
+          "data": {},
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de-at",
+          "page": "about"
+        },
+        {
+          "data": {
+            "a": {
+              "b": "nested a.b de"
+            },
+            "brand": "AcmeDE",
+            "conf": "conf de",
+            "nav": {
+              "home": "Start"
+            },
+            "only_de": "nur de",
+            "rev": {
+              "y": "rev.y de"
+            }
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "index"
+        },
+        {
+          "data": {},
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "about"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        },
+        {
+          "data": {
+            "title": "About"
+          },
+          "locale": "en",
+          "page": "about"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de-at",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "de-at|index": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "at": "Servus Start",
+            "nav": {
+              "x": "X-at"
+            },
+            "nul": null
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de-at",
+          "page": "index"
+        },
+        {
+          "data": {
+            "a": {
+              "b": "nested a.b de"
+            },
+            "brand": "AcmeDE",
+            "conf": "conf de",
+            "nav": {
+              "home": "Start"
+            },
+            "only_de": "nur de",
+            "rev": {
+              "y": "rev.y de"
+            }
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "index"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de-at",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "de-at|settings": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "at": "Servus Start",
+            "nav": {
+              "x": "X-at"
+            },
+            "nul": null
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de-at",
+          "page": "index"
+        },
+        {
+          "data": {
+            "only_at": "nur at"
+          },
+          "linked": {
+            "back": "Back to Start",
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de-at",
+          "page": "settings"
+        },
+        {
+          "data": {
+            "a": {
+              "b": "nested a.b de"
+            },
+            "brand": "AcmeDE",
+            "conf": "conf de",
+            "nav": {
+              "home": "Start"
+            },
+            "only_de": "nur de",
+            "rev": {
+              "y": "rev.y de"
+            }
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "index"
+        },
+        {
+          "data": {
+            "s": "s de",
+            "title": "Einstellungen"
+          },
+          "linked": {
+            "back": "Back to Start",
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "settings"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        },
+        {
+          "data": {
+            "back": "Back to Home",
+            "brand": "Acme settings",
+            "s": {
+              "x": "sx en"
+            },
+            "title": "Settings"
+          },
+          "linked": {
+            "hi": "Hi Acme settings"
+          },
+          "locale": "en",
+          "page": "settings"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de-at",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "de|about": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "a": {
+              "b": "nested a.b de"
+            },
+            "brand": "AcmeDE",
+            "conf": "conf de",
+            "nav": {
+              "home": "Start"
+            },
+            "only_de": "nur de",
+            "rev": {
+              "y": "rev.y de"
+            }
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "index"
+        },
+        {
+          "data": {},
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "about"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        },
+        {
+          "data": {
+            "title": "About"
+          },
+          "locale": "en",
+          "page": "about"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "de|index": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "a": {
+              "b": "nested a.b de"
+            },
+            "brand": "AcmeDE",
+            "conf": "conf de",
+            "nav": {
+              "home": "Start"
+            },
+            "only_de": "nur de",
+            "rev": {
+              "y": "rev.y de"
+            }
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "index"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "de|settings": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "a": {
+              "b": "nested a.b de"
+            },
+            "brand": "AcmeDE",
+            "conf": "conf de",
+            "nav": {
+              "home": "Start"
+            },
+            "only_de": "nur de",
+            "rev": {
+              "y": "rev.y de"
+            }
+          },
+          "linked": {
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "index"
+        },
+        {
+          "data": {
+            "s": "s de",
+            "title": "Einstellungen"
+          },
+          "linked": {
+            "back": "Back to Start",
+            "hi": "Hi AcmeDE"
+          },
+          "locale": "de",
+          "page": "settings"
+        },
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        },
+        {
+          "data": {
+            "back": "Back to Home",
+            "brand": "Acme settings",
+            "s": {
+              "x": "sx en"
+            },
+            "title": "Settings"
+          },
+          "linked": {
+            "hi": "Hi Acme settings"
+          },
+          "locale": "en",
+          "page": "settings"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "en|about": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        },
+        {
+          "data": {
+            "title": "About"
+          },
+          "locale": "en",
+          "page": "about"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "en",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "en|index": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "en",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    },
+    "en|settings": {
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "chunks": [
+        {
+          "data": {
+            "a.b": "own dotted",
+            "brand": "Acme",
+            "cart": "=0 empty | {count} item | {count} items",
+            "conf": {
+              "x": "conf.x en"
+            },
+            "greet": "Hello, {name}!",
+            "hi": "Hi Acme",
+            "list": [
+              "l0",
+              {
+                "k": "l1"
+              }
+            ],
+            "loud": "@.upper:brand!",
+            "n": 1.5,
+            "nav": {
+              "deep": {
+                "a": "A"
+              },
+              "home": "Home",
+              "x": "X"
+            },
+            "nul": "nul en",
+            "only_en": "only en",
+            "rev": "rev en",
+            "t": true
+          },
+          "locale": "en",
+          "page": "index"
+        },
+        {
+          "data": {
+            "back": "Back to Home",
+            "brand": "Acme settings",
+            "s": {
+              "x": "sx en"
+            },
+            "title": "Settings"
+          },
+          "linked": {
+            "hi": "Hi Acme settings"
+          },
+          "locale": "en",
+          "page": "settings"
+        }
+      ],
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "en",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "version": 0
+    }
+  },
+  "metas": {
+    "ar|about": {
+      "bundle": "59aecb345be9592d",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "ar",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "ar/about": "7bb4c612d01b385d",
+        "ar/index": "d6c0a0be23e3b9a1",
+        "en/about": "37f979052f548c31",
+        "en/index": "a2f0c03fad943c36"
+      },
+      "version": 0
+    },
+    "ar|index": {
+      "bundle": "8576e6ccb6c22bb0",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "ar",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "ar/index": "d6c0a0be23e3b9a1",
+        "en/index": "a2f0c03fad943c36"
+      },
+      "version": 0
+    },
+    "ar|settings": {
+      "bundle": "5df0a091e7c83442",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "ar",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "ar/index": "d6c0a0be23e3b9a1",
+        "ar/settings": "3f998d57dd63f8b0",
+        "en/index": "a2f0c03fad943c36",
+        "en/settings": "e5f8495241e7152c"
+      },
+      "version": 0
+    },
+    "de-at|about": {
+      "bundle": "279d48eb73d46343",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de-at",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "de-at/about": "b04039d274dee165",
+        "de-at/index": "387e041c125eceb9",
+        "de/about": "b04039d274dee165",
+        "de/index": "853a02907c279d34",
+        "en/about": "37f979052f548c31",
+        "en/index": "a2f0c03fad943c36"
+      },
+      "version": 0
+    },
+    "de-at|index": {
+      "bundle": "c5fbcc45e74d7717",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de-at",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "de-at/index": "387e041c125eceb9",
+        "de/index": "853a02907c279d34",
+        "en/index": "a2f0c03fad943c36"
+      },
+      "version": 0
+    },
+    "de-at|settings": {
+      "bundle": "5bc06f4273fb6c67",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de-at",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "de-at/index": "387e041c125eceb9",
+        "de-at/settings": "30a34d86d11be651",
+        "de/index": "853a02907c279d34",
+        "de/settings": "61150172409c038f",
+        "en/index": "a2f0c03fad943c36",
+        "en/settings": "e5f8495241e7152c"
+      },
+      "version": 0
+    },
+    "de|about": {
+      "bundle": "16fdf4c2f3cd4992",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "de/about": "b04039d274dee165",
+        "de/index": "853a02907c279d34",
+        "en/about": "37f979052f548c31",
+        "en/index": "a2f0c03fad943c36"
+      },
+      "version": 0
+    },
+    "de|index": {
+      "bundle": "f2ba65b36dc84d2f",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "de/index": "853a02907c279d34",
+        "en/index": "a2f0c03fad943c36"
+      },
+      "version": 0
+    },
+    "de|settings": {
+      "bundle": "610f44e6a9f256ce",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "de",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "de/index": "853a02907c279d34",
+        "de/settings": "61150172409c038f",
+        "en/index": "a2f0c03fad943c36",
+        "en/settings": "e5f8495241e7152c"
+      },
+      "version": 0
+    },
+    "en|about": {
+      "bundle": "4fcf9f61b16d260f",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "en",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "en/about": "37f979052f548c31",
+        "en/index": "a2f0c03fad943c36"
+      },
+      "version": 0
+    },
+    "en|index": {
+      "bundle": "6e8e3af0062c411b",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "en",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "en/index": "a2f0c03fad943c36"
+      },
+      "version": 0
+    },
+    "en|settings": {
+      "bundle": "455f555d9e6f098b",
+      "chains": {
+        "ar": [
+          "ar",
+          "en"
+        ],
+        "de": [
+          "de",
+          "en"
+        ],
+        "de-at": [
+          "de-at",
+          "de",
+          "en"
+        ],
+        "en": [
+          "en"
+        ]
+      },
+      "datetimeFormats": {},
+      "defaultLocale": "en",
+      "fallbackLocale": "en",
+      "locale": "en",
+      "locales": [
+        {
+          "code": "en",
+          "iso": "en-US"
+        },
+        {
+          "code": "de",
+          "iso": "de-DE"
+        },
+        {
+          "code": "de-at",
+          "iso": "de-AT"
+        },
+        {
+          "code": "ar",
+          "dir": "rtl",
+          "iso": "ar-EG"
+        }
+      ],
+      "numberFormats": {
+        "en": {
+          "money": {
+            "currency": "USD",
+            "style": "currency"
+          }
+        }
+      },
+      "tags": {
+        "en/index": "a2f0c03fad943c36",
+        "en/settings": "e5f8495241e7152c"
+      },
+      "version": 0
+    }
+  }
+}

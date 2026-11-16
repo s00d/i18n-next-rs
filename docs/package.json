@@ -9,6 +9,7 @@
     "sync": "node scripts/generate.mjs",
     "dev": "node scripts/generate.mjs && nuxt dev",
     "generate": "node scripts/generate.mjs && nuxt generate",
+    "check-links": "node scripts/check-links.mjs",
     "postinstall": "nuxt prepare",
     "typecheck": "nuxt typecheck"
   },

@@ -335,6 +335,43 @@ jobs:
       - run: cargo clippy --locked -- -D warnings
       - run: cargo build --locked
 
+  # The same playground for Android (DESIGN 8a): `gen/android` is generated here, never
+  # committed (tauri android init), then a debug APK for aarch64. The runner image has the
+  # Android SDK and NDK; the lock must not move (the CLI runs cargo without --locked).
+  tauri-android:
+    name: tauri-app android build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/tauri-app/src-tauri
+          key: android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: |
+          pnpm install --frozen-lockfile
+          pnpm -C crates/tauri-plugin-i18n-next build:lib
+      - name: Android APK (debug, aarch64)
+        working-directory: examples/tauri-app
+        run: |
+          export NDK_HOME="${ANDROID_NDK_LATEST_HOME}"
+          pnpm tauri android init --ci
+          pnpm tauri android build --apk --target aarch64 --debug --ci
+          ls -l src-tauri/gen/android/app/build/outputs/apk/universal/debug/
+          git diff --exit-code -- src-tauri/Cargo.lock
+
   # The Leptos playground (DESIGN 8a): one Rust front end that trunk builds for the browser and
   # the Tauri side embeds (tauri-guest). Two workspaces and locks, the plugin from this checkout.
   leptos-app:
@@ -374,7 +411,8 @@ jobs:
           cargo clippy --locked -- -D warnings
           cargo build --locked
 
-  # Console tour over every locale; fails on any problem (DESIGN 8a).
+  # Console tour over every locale, the axum server among its stops; fails on any problem
+  # (DESIGN 8a). The server's own test runs in the test matrix (nextest --workspace).
   playground:
     name: playground-rust --check
     runs-on: ubuntu-latest
@@ -384,6 +422,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo run -p playground-rust --locked -- --check
+
+  # Nuxt site on the same files (DESIGN 8b.19, its own pnpm project): nuxt generate, then
+  # every text of its pages must equal what playground-rust --texts prints.
+  nuxt-site:
+    name: nuxt-site generate + texts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: examples/nuxt-site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: examples/nuxt-site/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: examples/nuxt-site/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm generate
+      - name: Texts equal the Rust tour's
+        run: pnpm check
 
   compat:
     # The JS oracle (@i18n-micro/core and utils, pinned in scripts/package.json) must still

@@ -58,6 +58,11 @@ jobs:
           NUXT_APP_BASE_URL: /i18n-next-rs/
         run: pnpm generate
 
+      - name: Internal links
+        env:
+          NUXT_APP_BASE_URL: /i18n-next-rs/
+        run: pnpm check-links
+
       - name: Add .nojekyll
         if: github.event_name != 'pull_request'
         run: touch .output/public/.nojekyll

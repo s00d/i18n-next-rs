@@ -705,6 +705,29 @@ fn main() {
         out,
         "pub(crate) static SCRIPTS_KEYS: [u128; {scripts_len}] = [{script_keys}];\npub(crate) static SCRIPTS: [u16; {scripts_len}] = [{scripts}];"
     );
+    // `lang-Script` locales whose CLDR parent is the root, left out of this build: a tag
+    // with that script formats with the root, not with the bare language (format/locale.rs)
+    let mut root_scripts: Vec<u128> = f
+        .locales
+        .iter()
+        .filter(|(name, raw)| {
+            raw.parent.as_deref() == Some("und")
+                && !pos.contains_key(name.as_str())
+                && name.split('-').nth(1).is_some_and(|s| s.len() == 4)
+        })
+        .map(|(name, _)| key(name))
+        .collect();
+    root_scripts.sort_unstable();
+    let _ = writeln!(
+        out,
+        "pub(crate) static ROOT_SCRIPTS: [u128; {}] = [{}];",
+        root_scripts.len(),
+        root_scripts
+            .iter()
+            .map(|k| format!("{k:#x}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     let _ = writeln!(out, "pub(crate) static EDGE: &str = {:?};", f.edge);
     let _ = writeln!(out, "pub(crate) const EN: usize = {};", pos["en"]);
     let _ = writeln!(out, "pub(crate) const UND: usize = {};", pos["und"]);

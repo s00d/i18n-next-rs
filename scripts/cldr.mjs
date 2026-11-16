@@ -701,15 +701,22 @@ const likelyScript = (lang, region) => {
   const v = (region && likely[`${lang}-${region}`]) ?? likely[lang]
   return v ? fullParts(v).script : null
 }
+// `lang-Script` locales whose CLDR parent is the root (`uz-Cyrl`, `bs-Cyrl`): left out of a
+// build, a tag with that script formats with the root, not with `lang` of another script
+const rootScripts = new Set(all.filter((l) => /^[a-z]+-[A-Z][a-z]{3}$/.test(l) && parentOf(l) === 'und'))
 function pick({ lang, script, region }, set, scripts) {
+  // a script written in the tag: ICU truncates and never tries `lang-REGION`
+  const explicit = Boolean(script)
   if (!script && region) script = scripts.get(`${lang}-${region}`) ?? null
   if (script === '-') return 'und'
   const cands = []
   if (script && region) cands.push(`${lang}-${script}-${region}`)
   if (script) cands.push(`${lang}-${script}`)
-  if (region) cands.push(`${lang}-${region}`)
-  cands.push(lang)
-  return cands.find((c) => c !== 'und' && set.has(c)) ?? 'en'
+  if (region && !explicit) cands.push(`${lang}-${region}`)
+  const hit = cands.find((c) => c !== 'und' && set.has(c))
+  if (hit) return hit
+  if (script && rootScripts.has(`${lang}-${script}`)) return 'und'
+  return set.has(lang) && lang !== 'und' ? lang : 'en'
 }
 const fmt = (tag, o, v) => new Intl.NumberFormat(tag, o).format(v)
 const sig = (tag) =>
@@ -838,6 +845,15 @@ for (const [k] of languageAliasTable) {
 for (const [k] of regionAliasTable) {
   sigTags.add(`pt-${k}`)
   sigTags.add(`en-${k}`)
+}
+// a script spelled out: the language's usual one before a region (`de-Latn-AT`, `en-Latn-IN`),
+// and every script locale with a region it lacks (`uz-Cyrl-XX`)
+for (const l of all) {
+  const { lang, script, region } = fullParts(l)
+  const usual = likelyScript(lang, null)
+  if (!script && region && usual) sigTags.add(`${lang}-${usual}-${region}`)
+  if (!script && !region && usual) sigTags.add(`${lang}-${usual}`)
+  if (script && !region) sigTags.add(`${l}-XX`)
 }
 for (const t of ['zh-TW', 'zh-HK', 'zh-MO', 'zh-SG', 'sr-ME', 'sr-RS', 'sr-BA', 'pa-PK', 'uz-AF', 'az-IR', 'az-IQ', 'ku-IQ', 'ku-IR', 'az-Arab', 'ku-Arab', 'mn-Mong', 'ms-Arab', 'sat-Deva', 'bh', 'bh-US', 'BH', 'hy-arevmda', 'hy-arevela', 'zh-hakka', 'yue-CN', 'en_US', 'de_CH', 'xx', 'root', 'und', 'en-US-x-foo', 'de-AT-1996', 'ZH-hant-tw', 'iw-IL', 'no', 'nb-NO', 'zh-Hant-XX', 'de-XX', '']) sigTags.add(t)
 // Known differences (fixtures/compat/README.md): ICU's own `en_US_POSIX` data (no grouping,

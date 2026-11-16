@@ -6,7 +6,12 @@
 //! `sr-Latn`, `hy-arevmda` → `hyw`), region aliases (`620` → `PT`), the script a region implies
 //! where ICU aliases it (`zh-TW` → `zh-Hant-TW`, `sr-ME` → `sr-Latn-ME`; `ku-IQ` → the root,
 //! ICU lacking `ku-Arab`), then the longest selected locale of
-//! `lang-Script-REGION`, `lang-Script`, `lang-REGION`, `lang`. A language with no selected
+//! `lang-Script-REGION`, `lang-Script`, `lang-REGION`, `lang`; `lang-REGION` only when the
+//! script was not written in the tag (ICU truncates `de-Latn-AT` to `de-Latn`, then `de`).
+//! A `lang-Script` whose CLDR parent is the root (`uz-Cyrl`, `bs-Cyrl`) and which this build
+//! left out formats with the root, not with the language of another script; one ICU itself
+//! lacks (`az-Arab`) is not in that table and formats as the language, as `Intl` does
+//! (`fixtures/compat/README.md`). A language with no selected
 //! locale (`I18N_NEXT_LOCALES` left it out) formats as `en` too. `-u-nu-` and other
 //! extensions are not read (known difference: `ar-EG-u-nu-latn` keeps Arabic digits).
 //! `scripts/cldr.mjs` checks this against `Intl` on every locale and derived tag.
@@ -80,6 +85,9 @@ pub(crate) fn find(tag: &str) -> Option<usize> {
     }
     let mut cand = Buf::<17>::of(lang.as_str(), |b| b);
     let base = cand.len();
+    // a script the tag spells out: ICU truncates `lang-Script-REGION` → `lang-Script` →
+    // `lang` and never tries `lang-REGION` (`de-Latn-AT` is `de`, not `de-AT`)
+    let explicit = script.is_some();
     if script.is_none()
         && let Some(r) = &region
     {
@@ -93,6 +101,7 @@ pub(crate) fn find(tag: &str) -> Option<usize> {
             return Some(data::UND);
         }
     }
+    let mut root_parent = false;
     if let Some(s) = &script {
         cand.push("-", |b| b);
         cand.push(s.as_str(), |b| b);
@@ -108,15 +117,21 @@ pub(crate) fn find(tag: &str) -> Option<usize> {
         if let Some(i) = index(cand.as_str()) {
             return Some(i);
         }
+        // CLDR parentLocales: `uz-Cyrl`, `bs-Cyrl` … go to the root, never to `uz` / `bs`
+        root_parent = data::key(cand.as_str())
+            .is_some_and(|k| data::ROOT_SCRIPTS.binary_search(&k).is_ok());
         cand.truncate(base);
     }
-    if let Some(r) = &region {
+    if !explicit && let Some(r) = &region {
         cand.push("-", |b| b);
         cand.push(r.as_str(), |b| b);
         if let Some(i) = index(cand.as_str()) {
             return Some(i);
         }
         cand.truncate(base);
+    }
+    if root_parent {
+        return Some(data::UND);
     }
     index(cand.as_str())
 }
@@ -150,6 +165,35 @@ mod tests {
         }
         assert_eq!(name(data::UND), "und");
         assert_eq!(index("a-name-over-sixteen-bytes"), None);
+    }
+
+    /// Given a tag that spells out its language's usual script before a region, when
+    /// resolved, then ICU's truncation applies (`de-Latn-AT` → `de-Latn` → `de`), never the
+    /// `de-AT` locale; a script inferred from the region still reaches the regional locale.
+    #[test]
+    fn explicit_script_truncates_past_the_region() {
+        for (tag, want) in [("de-Latn-AT", "de"), ("en-Latn-IN", "en"), ("de-AT", "de-AT")] {
+            assert_eq!(find(tag).map(name), Some(want.to_owned()), "{tag}");
+        }
+        if index("zh-Hant").is_some() {
+            assert_eq!(find("zh-TW").map(name), Some("zh-Hant".to_owned()));
+        }
+    }
+
+    /// Given a `lang-Script` whose CLDR parent is the root and which this build left out
+    /// (`ROOT_SCRIPTS`), when a tag with it is resolved, then it formats with the root, not
+    /// the language of another script; a script locale ICU itself lacks (`az-Arab`) formats
+    /// as the language, as `Intl` does.
+    #[test]
+    fn root_parent_scripts_go_to_the_root() {
+        for k in data::ROOT_SCRIPTS {
+            let bytes = k.to_be_bytes();
+            let tag = String::from_utf8(bytes.iter().copied().take_while(|&b| b != 0).collect())
+                .unwrap();
+            assert_eq!(find(&tag), Some(data::UND), "{tag}");
+            assert_eq!(find(&format!("{tag}-XX")), Some(data::UND), "{tag}-XX");
+        }
+        assert_eq!(find("az-Arab"), find("az"));
     }
 
     /// Given every data locale, when `scripts/cldr.mjs` resolved its plural rule set once, then

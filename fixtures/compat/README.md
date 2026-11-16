@@ -225,8 +225,23 @@ not copied: `@:list.length` reads the JS `length` of an array.
 ### `number.md`, `number-locales.md`
 
 `num(…)` / `num_name(…)` lines are `FormatService.formatNumber`, `locale(tag)` the formats of the header line
-for a locale whose `iso` is `tag`, `autonym(locale)` `language_name`. Known differences, left out of the
-goldens:
+for a locale whose `iso` is `tag`, `autonym(locale)` `language_name`.
+
+Tag resolution (numbers and dates alike, `format/locale.rs`, mirrored and checked by `scripts/cldr.mjs`):
+
+- a script written in the tag truncates as ICU does: `de-Latn-AT` → `de-Latn` → `de` (never `de-AT`), so
+  `de-Latn-AT` shows `Januar`, not `Jänner`; a script the region implies (`zh-TW` → `zh-Hant-TW`) still
+  reaches the regional locale;
+- a `lang-Script` locale whose CLDR `parentLocales` parent is the root (`uz-Cyrl`, `bs-Cyrl`, `pa-Arab`,
+  `sd-Deva`, …) and which the build left out (`I18N_NEXT_LOCALES`, the `modern` default) formats with the
+  root, never with the bare language of another script (`uz` is Latin). Node has every ICU locale, so it
+  shows the locale's own data: such tags are skipped in `number-locales.md` and recorded in
+  `number-locales-all.md`, where the build has them;
+- a script locale ICU itself lacks (`az-Arab`, `ku-Arab`, `mn-Mong`, `ms-Arab`, `ha-Arab`) is not a root
+  case: `Intl` resolves it to the language (`new Intl.NumberFormat("az-Arab").resolvedOptions().locale` is
+  `az`, Node 22), and Rust does the same.
+
+Known differences, left out of the goldens:
 
 - `currencyDisplay: name` where ICU shows the number with the currency symbol (`en-DE`, `en-BE` and the other
   English locales of Europe) and currency spacing goes in between (a symbol of letters: `CHF`, an unknown

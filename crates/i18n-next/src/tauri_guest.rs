@@ -390,7 +390,18 @@ async fn follow(link: &Link) -> Result<(), Error> {
 
 /// Reads `meta` of the active locale and `page` (`primed`: read already), loads what
 /// changed, then shows it. A catalog that moves under the read is read again, three times.
-async fn show(
+/// Boxed: one state machine for every caller (inlined into each, it was two copies of
+/// 8 KB in the `.wasm`).
+fn show<'a>(
+    link: &'a Link,
+    page: &'a str,
+    route_it: bool,
+    primed: Option<Meta>,
+) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    Box::pin(show_at(link, page, route_it, primed))
+}
+
+async fn show_at(
     link: &Link,
     page: &str,
     route_it: bool,

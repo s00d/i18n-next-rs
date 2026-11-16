@@ -163,6 +163,23 @@ fn a_guest_built_from_the_meta_has_the_servers_chains() {
     assert_eq!(err.to_string(), "payload: locale must be a string");
 }
 
+/// Given a meta another plugin version wrote by hand, with `defaultLocale` and
+/// `fallbackLocale` as `null` (no value, as JS reads them), then a guest builds from it and
+/// starts in the meta's locale; `i18n.json` reads `null` the same way.
+#[test]
+fn a_meta_with_null_default_and_fallback_builds() {
+    let meta = br#"{"version": 3, "locale": "de", "defaultLocale": null, "fallbackLocale": null,
+        "locales": [{"code": "en"}, {"code": "de"}], "chains": {"en": ["en"], "de": ["de"]},
+        "tags": {}}"#;
+    let guest = payload::builder(meta).unwrap().build().unwrap();
+    assert_eq!(&*guest.locale(), "de");
+    let config = I18n::builder()
+        .config_json(r#"{"defaultLocale": null, "locales": [{"code": "en"}]}"#)
+        .build()
+        .unwrap();
+    assert_eq!(&*config.locale(), "en");
+}
+
 /// The repro of the audit: a link in the fallback resolves to the active locale's target
 /// on the server, and the payload carries that answer.
 #[test]

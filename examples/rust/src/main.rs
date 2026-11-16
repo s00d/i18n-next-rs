@@ -344,6 +344,74 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
             ),
         ),
     ]);
+    // M6: dates and relative time as `Intl` shows them (Gregorian, CLDR 48 patterns taken
+    // from ICU); `datetimeFormats` of i18n.json, a zone and a clock pinned for the tour.
+    let at = 1_704_428_640_000i64; // 2024-01-05 04:24 UTC
+    let days = I18n::builder()
+        .config(examples.join("i18n.json"))
+        .iso("ja", "ja-JP")
+        .time_zone("Europe/Berlin")
+        .clock(move || at)
+        .messages(
+            "en",
+            None,
+            r#"{"due": "Due {date}", "seen": "Seen {relativeDate}"}"#,
+        )
+        .messages(
+            "ru",
+            None,
+            r#"{"due": "Срок: {date}", "seen": "Был {relativeDate}"}"#,
+        )
+        .build()?;
+    let on = |code: &str| days.with_locale(code).td(at);
+    stops.extend([
+        (
+            "td en / ru / ar / ja",
+            expect(
+                format!("{} / {} / {} / {}", on("en"), on("ru"), on("ar"), on("ja")),
+                "1/5/2024 / 05.01.2024 / ٥\u{200f}/١\u{200f}/٢٠٢٤ / 2024/1/5",
+            ),
+        ),
+        (
+            "td_as short",
+            expect(days.with_locale("ru").td_as(at, "short"), "05.01.2024"),
+        ),
+        (
+            "Text date",
+            expect(
+                days.text("due").date(at).locale("ru").to_string(),
+                "Срок: 05.01.2024",
+            ),
+        ),
+        (
+            "tdr en / ru",
+            expect(
+                format!(
+                    "{} / {}",
+                    days.tdr(at - 3 * 86_400_000),
+                    days.with_locale("ru").tdr(at + 7_200_000)
+                ),
+                "3 days ago / через 2 часа",
+            ),
+        ),
+        (
+            "tdr auto ar",
+            expect(
+                days.with_locale("ar").tdr_with(
+                    at - 86_400_000,
+                    i18n_next::RelativeOptions::default().auto(),
+                ),
+                "أمس",
+            ),
+        ),
+        (
+            "Text relative",
+            expect(
+                days.text("seen").relative(at - 60_000).to_string(),
+                "Seen 1 minute ago",
+            ),
+        ),
+    ]);
     Ok(stops)
 }
 

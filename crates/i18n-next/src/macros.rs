@@ -11,8 +11,9 @@
 /// - `[a, b]`: positional `{0}`, `{1}`;
 /// - options with `@`, so `{page}` stays a parameter: `@page = ..`, `@locale = ..`,
 ///   `@or = ..` (default), `@html`, `@number = n` (fills `{number}` with `n` formatted in
-///   the text's locale, as `<i18n-t :number>`; feature `format`). `@date` / `@relative` are
-///   reserved for the date stage and do not compile yet.
+///   the text's locale, as `<i18n-t :number>`), `@date = t` (`{date}`, `<i18n-t :date>`),
+///   `@relative = t` (`{relativeDate}`, `<i18n-t :relative-date>`); the last three need
+///   the feature `format`.
 ///
 /// ```
 /// use i18n_next::{I18n, t};
@@ -47,16 +48,16 @@ macro_rules! t {
     (@opts $t:expr ; @number = $v:expr $(, $($rest:tt)*)?) => {
         $crate::t!(@opts $t.number($v) ; $($($rest)*)?)
     };
-    (@opts $t:expr ; @date $($rest:tt)*) => {
-        ::core::compile_error!("t!: `@date` is reserved: date formatting is not there yet (M6)")
+    (@opts $t:expr ; @date = $v:expr $(, $($rest:tt)*)?) => {
+        $crate::t!(@opts $t.date($v) ; $($($rest)*)?)
     };
-    (@opts $t:expr ; @relative $($rest:tt)*) => {
-        ::core::compile_error!("t!: `@relative` is reserved: relative dates are not there yet (M6)")
+    (@opts $t:expr ; @relative = $v:expr $(, $($rest:tt)*)?) => {
+        $crate::t!(@opts $t.relative($v) ; $($($rest)*)?)
     };
     (@opts $t:expr ; @$other:ident $($rest:tt)*) => {
         ::core::compile_error!(::core::concat!(
             "t!: unknown option `@", ::core::stringify!($other),
-            "` (known: @page, @locale, @or, @html, @number)"
+            "` (known: @page, @locale, @or, @html, @number, @date, @relative)"
         ))
     };
     (@opts $t:expr ; count = $v:expr $(, $($rest:tt)*)?) => {
@@ -143,6 +144,62 @@ macro_rules! tn {
     };
     ($n:expr $(,)?) => {
         $crate::tn($n)
+    };
+}
+
+/// A date formatted now (JS `td`), a `String`: `td!(t)` and `td!(t, "name")` (a named
+/// format) on the implicit instance, in the scope's locale; `td!(i18n => t)` and
+/// `td!(i18n => t, "name")` on an explicit [`I18n`](crate::I18n) or [`View`](crate::View).
+/// Feature `format`.
+///
+/// ```
+/// use i18n_next::{I18n, td};
+///
+/// let i18n = I18n::builder()
+///     .time_zone("UTC")
+///     .datetime_formats(r#"{"en": {"day": {"weekday": "long"}}}"#)
+///     .build()?;
+/// assert_eq!(td!(i18n => 1_704_428_640_000i64), "1/5/2024");
+/// assert_eq!(td!(i18n => 1_704_428_640_000i64, "day"), "Friday");
+/// assert_eq!(td!(i18n.with_locale("ja") => 1_704_428_640_000i64), "2024/1/5");
+/// # Ok::<(), i18n_next::Error>(())
+/// ```
+#[cfg(feature = "format")]
+#[macro_export]
+macro_rules! td {
+    ($i18n:expr => $t:expr, $name:expr $(,)?) => {
+        ($i18n).td_as($t, $name)
+    };
+    ($i18n:expr => $t:expr $(,)?) => {
+        ($i18n).td($t)
+    };
+    ($t:expr, $name:expr $(,)?) => {
+        $crate::td_as($t, $name)
+    };
+    ($t:expr $(,)?) => {
+        $crate::td($t)
+    };
+}
+
+/// A date relative to now (JS `tdr`), a `String`: `tdr!(t)` on the implicit instance,
+/// `tdr!(i18n => t)` on an explicit [`I18n`](crate::I18n) or [`View`](crate::View).
+/// Feature `format`.
+///
+/// ```
+/// use i18n_next::{I18n, tdr};
+///
+/// let i18n = I18n::builder().clock(|| 1_704_428_640_000).build()?;
+/// assert_eq!(tdr!(i18n => 1_704_428_640_000i64 - 3_600_000), "1 hour ago");
+/// # Ok::<(), i18n_next::Error>(())
+/// ```
+#[cfg(feature = "format")]
+#[macro_export]
+macro_rules! tdr {
+    ($i18n:expr => $t:expr $(,)?) => {
+        ($i18n).tdr($t)
+    };
+    ($t:expr $(,)?) => {
+        $crate::tdr($t)
     };
 }
 

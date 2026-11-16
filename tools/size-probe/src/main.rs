@@ -2,8 +2,9 @@
 //! a catalog built from embedded files (root + page), `t`, `t_with`, a page view, a
 //! plural (`tc`), a locale switch, and the M4 surface a real app uses: a `Text` with an
 //! argument, `t!` / `tc!` on the instance of a `scope().run`. The full build also formats
-//! numbers (`tn`, named currency and compact formats, a `Text` with `{number}`), so its
-//! bytes include the CLDR data of the locales `tools/size-check.sh` selects.
+//! numbers (`tn`, named currency and compact formats, a `Text` with `{number}`) and dates
+//! (`td`, a named format with its own zone, `tdr`, a `Text` with `{date}`), so its bytes
+//! include the CLDR data of the locales `tools/size-check.sh` selects and the zones of `tz`.
 //!
 //! A binary, not a cdylib: exporting from a cdylib needs `#[unsafe(no_mangle)]` (or
 //! wasm-bindgen glue, ~26 KB), and the probe stays under `forbid(unsafe_code)`. The std
@@ -56,6 +57,18 @@ fn main() {
         black_box(n.tn_as(black_box(1234.5), black_box("rub")));
         black_box(n.tn_as(black_box(1_234_567), black_box("short")));
         black_box(n.text(black_box("total")).number(black_box(12.5)).to_string());
+        // M6: dates and relative time.
+        let Ok(d) = I18n::builder()
+            .datetime_formats(black_box(r#"{"ru": {"short": {"dateStyle": "medium", "timeStyle": "short", "timeZone": "Europe/Berlin"}}}"#))
+            .locale("ru")
+            .build()
+        else {
+            return;
+        };
+        black_box(d.td(black_box(1_704_428_640_000i64)));
+        black_box(d.td_as(black_box(1_704_428_640_000i64), black_box("short")));
+        black_box(d.tdr(black_box(1_704_428_640_000i64)));
+        black_box(d.text(black_box("due")).date(black_box(1_704_428_640_000i64)).to_string());
     }
 }
 

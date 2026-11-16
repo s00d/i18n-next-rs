@@ -48,7 +48,9 @@ type Rule = Arc<dyn Fn(&PluralCtx<'_>) -> Option<String> + Send + Sync>;
 /// - with [`count`](Text::count): the plural form `tc` picks, with `{count}`;
 /// - with [`number`](Text::number): `{number}` is the number formatted in the text's locale
 ///   (`tn`), never escaped; the plural form and a custom rule are then not used (JS: the
-///   `number` prop wins over `plural`);
+///   `number` prop wins over `plural`); [`date`](Text::date) (`{date}`, `td`) and
+///   [`relative`](Text::relative) (`{relativeDate}`, `tdr`) the same, one of the three
+///   at a time, in that order of precedence;
 /// - a miss calls `missing` and shows the [`or`](Text::or) default, else the key (both
 ///   interpolated); a subtree shows the key;
 /// - [`html`](Text::html): text arguments are escaped (numbers and booleans are not), the
@@ -71,9 +73,10 @@ pub struct Text {
     page: Option<Code>,
     args: Args<'static>,
     count: Option<Count>,
-    /// `{number}` (JS `number` prop): the value and the named format.
+    /// `{number}` / `{date}` / `{relativeDate}` (JS `number` / `date` / `relativeDate`
+    /// props): the value and the named format.
     #[cfg(feature = "format")]
-    number: Option<(crate::Number, Option<Cow<'static, str>>)>,
+    number: Option<Shown>,
     default: Option<Cow<'static, str>>,
     rule: Option<Rule>,
     html: bool,
@@ -84,6 +87,27 @@ pub struct Text {
     /// `t_with`): an app that never builds a `Text` does not link its resolution (~8 KB of
     /// `.wasm`).
     shown: fn(&Text, &mut dyn fmt::Write) -> fmt::Result,
+}
+
+/// The value a `Text` formats into its placeholder (JS `formatParams`).
+#[cfg(feature = "format")]
+#[derive(Debug, Clone, PartialEq)]
+enum Shown {
+    Number(crate::Number, Option<Cow<'static, str>>),
+    /// A date or a relative date: its formatter is reached through the value, so a `Text`
+    /// that never shows one links none of the date code (or the zones of `tz`).
+    When(crate::DateArg<'static>),
+}
+
+#[cfg(feature = "format")]
+impl Shown {
+    /// JS checks `number`, then `date`, then `relativeDate`: the first one set wins.
+    fn rank(&self) -> u8 {
+        match self {
+            Shown::Number(..) => 0,
+            Shown::When(d) => 1 + u8::from(d.is_relative()),
+        }
+    }
 }
 
 /// What a custom plural rule ([`Text::plural_rule`]) gets: JS `customPluralRule(key,
@@ -299,7 +323,7 @@ struct Params<'x> {
     html: bool,
     /// Sizing pass: a nested `Text` writes nothing.
     measure: bool,
-    /// `{number}`: the value, its options and data locale, resolved in the snapshot.
+    /// `{number}` / `{date}` / `{relativeDate}`, resolved in the snapshot.
     #[cfg(feature = "format")]
     number: Option<Fill<'x>>,
     /// Blank check or comparison: a nested `Text` reports no miss.
@@ -308,13 +332,39 @@ struct Params<'x> {
     outer: &'x Outer<'x>,
 }
 
-/// A `{number}` ready to write.
+/// A `{number}`, `{date}` or `{relativeDate}` ready to write.
 #[cfg(feature = "format")]
 #[derive(Clone, Copy)]
-struct Fill<'x> {
-    value: crate::Number,
-    options: &'x crate::format::NumberOptions,
-    loc: &'static crate::format::Loc,
+enum Fill<'x> {
+    Number {
+        value: crate::Number,
+        options: &'x crate::format::NumberOptions,
+        loc: &'static crate::format::Loc,
+    },
+    When(&'x crate::DateArg<'static>),
+}
+
+#[cfg(feature = "format")]
+impl Fill<'_> {
+    fn name(&self) -> &'static str {
+        match self {
+            Fill::Number { .. } => "number",
+            Fill::When(d) if d.is_relative() => "relativeDate",
+            Fill::When(_) => "date",
+        }
+    }
+
+    /// Writes the value; a date in the outer `Text`'s instance and locale.
+    fn write(&self, outer: &Outer<'_>, out: &mut dyn fmt::Write) -> fmt::Result {
+        match *self {
+            Fill::Number {
+                value,
+                options,
+                loc,
+            } => crate::format::write(value, options, loc, out),
+            Fill::When(d) => d.write_in(outer.i18n, outer.locale.map(Code::as_str), out),
+        }
+    }
 }
 
 /// The instance, locale and page the outer `Text` resolves in.
@@ -328,9 +378,9 @@ impl Params<'_> {
     fn put(&self, name: &str, out: &mut dyn fmt::Write) -> Result<bool, fmt::Error> {
         #[cfg(feature = "format")]
         if let Some(n) = &self.number
-            && name == "number"
+            && name == n.name()
         {
-            crate::format::write(n.value, n.options, n.loc, out)?;
+            n.write(self.outer, out)?;
             return Ok(true);
         }
         if let Some(c) = self.count
@@ -365,6 +415,12 @@ impl Params<'_> {
                     out,
                 )
                 .map(|()| true)
+            }
+            #[cfg(feature = "format")]
+            Arg::Date(d) => {
+                let o = self.outer;
+                d.write_in(o.i18n, o.locale.map(Code::as_str), out)
+                    .map(|()| true)
             }
             v => v.emit(out, self.html).map(|()| true),
         }
@@ -419,6 +475,30 @@ impl fmt::Write for Same<'_> {
             None => self.ok = false,
         }
         if self.ok { Ok(()) } else { Err(fmt::Error) }
+    }
+}
+
+/// The placeholder value of `shown` in the snapshot, in `locale` (the active one when
+/// `None`); a named format nowhere to be found warns and formats with the defaults.
+#[cfg(feature = "format")]
+fn fill<'x>(s: &'x crate::i18n::Snapshot, locale: Option<&str>, shown: &'x Shown) -> Fill<'x> {
+    let loc = locale.map_or(s.number, |c| s.number_of(c));
+    let code = locale.unwrap_or(&s.locale);
+    match shown {
+        Shown::Number(value, name) => {
+            let options = name.as_deref().and_then(|n| s.meta.named_number(code, n));
+            if options.is_none()
+                && let Some(n) = name
+            {
+                crate::trace::missing_format("number", n, code);
+            }
+            Fill::Number {
+                value: *value,
+                options: options.unwrap_or(&crate::format::NumberOptions::DEFAULT),
+                loc,
+            }
+        }
+        Shown::When(d) => Fill::When(d),
     }
 }
 
@@ -527,8 +607,21 @@ impl Text {
     /// ```
     #[cfg(feature = "format")]
     #[must_use]
-    pub fn number(mut self, n: impl Into<crate::Number>) -> Self {
-        self.number = Some((n.into(), None));
+    pub fn number(self, n: impl Into<crate::Number>) -> Self {
+        self.set_shown(Shown::Number(n.into(), None))
+    }
+
+    /// Sets what the text formats, unless a stronger one is set (JS: `number`, then `date`,
+    /// then `relativeDate`).
+    #[cfg(feature = "format")]
+    fn set_shown(mut self, s: Shown) -> Self {
+        if self
+            .number
+            .as_ref()
+            .is_none_or(|old| old.rank() >= s.rank())
+        {
+            self.number = Some(s);
+        }
         self
     }
 
@@ -537,12 +630,69 @@ impl Text {
     #[cfg(feature = "format")]
     #[must_use]
     pub fn number_as(
-        mut self,
+        self,
         n: impl Into<crate::Number>,
         name: impl Into<Cow<'static, str>>,
     ) -> Self {
-        self.number = Some((n.into(), Some(name.into())));
-        self
+        self.set_shown(Shown::Number(n.into(), Some(name.into())))
+    }
+
+    /// Fills `{date}` with `t` formatted in the text's locale with the default options (JS
+    /// `<i18n-t :date>`, `td(date)`); like [`number`](Text::number) it replaces the plural
+    /// form, and a number set as well wins (JS checks `number` first). Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .time_zone("UTC")
+    ///     .messages("en", None, r#"{"due": "Due {date}"}"#)
+    ///     .messages("de", None, r#"{"due": "Fällig am {date}"}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.text("due").date(1_704_428_640_000i64), "Due 1/5/2024");
+    /// assert_eq!(i18n.text("due").date(1_704_428_640_000i64).locale("de"), "Fällig am 5.1.2024");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn date(self, t: impl Into<crate::Timestamp>) -> Self {
+        self.set_shown(Shown::When(crate::DateArg::date(t.into(), None)))
+    }
+
+    /// [`Text::date`] with the named date format `name` of the text's locale
+    /// ([`I18n::td_as`]); a missing name warns and formats with the defaults.
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn date_as(
+        self,
+        t: impl Into<crate::Timestamp>,
+        name: impl Into<Cow<'static, str>>,
+    ) -> Self {
+        self.set_shown(Shown::When(crate::DateArg::date(
+            t.into(),
+            Some(name.into()),
+        )))
+    }
+
+    /// Fills `{relativeDate}` with `t` relative to the instance's clock (JS `<i18n-t
+    /// :relative-date>`, `tdr(date)`): `3 days ago`. A number or date set as well wins.
+    /// Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let now = 1_704_428_640_000i64;
+    /// let i18n = I18n::builder()
+    ///     .clock(move || now)
+    ///     .messages("en", None, r#"{"seen": "Seen {relativeDate}"}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.text("seen").relative(now - 120_000), "Seen 2 minutes ago");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn relative(self, t: impl Into<crate::Timestamp>) -> Self {
+        self.set_shown(Shown::When(crate::DateArg::relative(t.into())))
     }
 
     /// The text shown on a miss (JS `defaultValue`), interpolated; empty counts as none.
@@ -905,25 +1055,10 @@ impl Text {
         let read = i18n.inner.read(|s| {
             #[cfg(feature = "format")]
             let params = match &self.number {
-                Some((value, name)) => {
-                    let loc = locale.map_or(s.number, |c| s.number_of(c));
-                    let options = name
-                        .as_deref()
-                        .and_then(|n| s.meta.named_number(locale.unwrap_or(&s.locale), n));
-                    if options.is_none()
-                        && let Some(n) = name
-                    {
-                        crate::trace::missing_format(n, locale.unwrap_or(&s.locale));
-                    }
-                    Params {
-                        number: Some(Fill {
-                            value: *value,
-                            options: options.unwrap_or(&crate::format::NumberOptions::DEFAULT),
-                            loc,
-                        }),
-                        ..params
-                    }
-                }
+                Some(shown) => Params {
+                    number: Some(fill(s, locale, shown)),
+                    ..params
+                },
                 None => params,
             };
             let found = s.lookup(locale, page, key);
@@ -1070,7 +1205,10 @@ impl fmt::Debug for Text {
         }
         #[cfg(feature = "format")]
         if let Some(n) = &self.number {
-            d.field("number", n);
+            match n {
+                Shown::Number(v, name) => d.field("number", &(v, name)),
+                Shown::When(v) => d.field("date", v),
+            };
         }
         if let Some(o) = &self.default {
             d.field("or", o);

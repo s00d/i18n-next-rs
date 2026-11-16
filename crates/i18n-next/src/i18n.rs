@@ -78,12 +78,20 @@ pub(crate) struct Meta {
     /// fallback link, the global fallback and `iso` codes. Each is known, with its chain.
     declared: Vec<Arc<str>>,
     aliases: FastMap<Arc<str>, Arc<str>>,
-    /// Raw `datetimeFormats` of `i18n.json`, for M6.
-    #[allow(dead_code, reason = "read by the date formats of M6")]
-    datetime_formats: Option<Box<str>>,
     /// Named number formats by locale code (`numberFormats`, [`Builder::formats`]).
     #[cfg(feature = "format")]
     pub(crate) numbers: crate::format::Formats,
+    /// Named date formats by locale code (`datetimeFormats`, [`Builder::datetime_formats`]).
+    #[cfg(feature = "format")]
+    dates: crate::format::DateFormats,
+    /// [`Builder::time_zone`]; else the system's, found on first use.
+    #[cfg(feature = "format")]
+    zone: Option<crate::format::Zone>,
+    #[cfg(feature = "format")]
+    system_zone: std::sync::OnceLock<crate::format::Zone>,
+    /// [`Builder::clock`]; else the system clock.
+    #[cfg(feature = "format")]
+    clock: Option<crate::format::api::Clock>,
     /// What `check()` reads besides the chunks (M3).
     check: check::Facts,
     /// `linked_messages(true)`: `build` and `reload` resolve links with it.
@@ -192,6 +200,38 @@ impl Meta {
             at = at.get(..at.rfind('-').unwrap_or(0)).unwrap_or("");
         }
         None
+    }
+
+    /// The named date format `name` of locale `code`, looked up as [`Meta::named_number`].
+    #[cfg(feature = "format")]
+    pub(crate) fn named_date(&self, code: &str, name: &str) -> Option<&crate::format::DateOptions> {
+        let mut at = code;
+        while !at.is_empty() {
+            if let Some(o) = self.dates.get(at).and_then(|m| m.get(name)) {
+                return Some(o);
+            }
+            at = at.get(..at.rfind('-').unwrap_or(0)).unwrap_or("");
+        }
+        None
+    }
+
+    /// The zone dates show in: [`Builder::time_zone`], else the system's.
+    #[cfg(feature = "format")]
+    pub(crate) fn zone(&self) -> &crate::format::Zone {
+        match &self.zone {
+            Some(z) => z,
+            None => self.system_zone.get_or_init(crate::format::Zone::system),
+        }
+    }
+
+    /// Now in milliseconds: [`Builder::clock`], else the system clock; `None` without one or
+    /// out of a date's range.
+    #[cfg(feature = "format")]
+    pub(crate) fn now(&self) -> Option<i64> {
+        match &self.clock {
+            Some(c) => crate::format::Timestamp::from((c.0)()).millis(),
+            None => crate::format::api::system_now(),
+        }
     }
 }
 
@@ -1190,6 +1230,44 @@ pub struct Builder {
     /// `formats(json)` texts, in call order.
     #[cfg(feature = "format")]
     formats: Vec<String>,
+    /// `datetime_formats(json)` texts, in call order.
+    #[cfg(feature = "format")]
+    datetime_formats: Vec<String>,
+    #[cfg(feature = "format")]
+    time_zone: Option<String>,
+    #[cfg(feature = "format")]
+    clock: Option<crate::format::api::Clock>,
+    /// [`setup_dates`], set by the calls that can bring date formats or a zone: a builder
+    /// that never does links none of the date options or zones (`.wasm` size).
+    #[cfg(feature = "format")]
+    dates: Option<SetupDates>,
+}
+
+#[cfg(feature = "format")]
+type SetupDates =
+    fn(&Builder, &Config, &mut Meta, &mut crate::format::options::Numbering) -> Result<(), Error>;
+
+/// Reads the named date formats (`i18n.json`, then the builder's) and the builder's zone.
+#[cfg(feature = "format")]
+fn setup_dates(
+    b: &Builder,
+    config: &Config,
+    meta: &mut Meta,
+    numbering: &mut crate::format::options::Numbering,
+) -> Result<(), Error> {
+    if let Some(json) = &config.datetime_formats {
+        let path = b.config_path();
+        crate::format::parse_date_formats(json, &path, &mut meta.dates, numbering)?;
+    }
+    for json in &b.datetime_formats {
+        crate::format::parse_date_formats(json, "datetime_formats", &mut meta.dates, numbering)?;
+    }
+    if let Some(name) = &b.time_zone {
+        let zone = crate::format::date::zone_named(name)
+            .ok_or_else(|| Error::UnknownTimeZone(name.clone()))?;
+        meta.zone = Some(zone);
+    }
+    Ok(())
 }
 
 impl fmt::Debug for Builder {
@@ -1234,6 +1312,82 @@ impl Builder {
     #[must_use]
     pub fn formats(mut self, number_formats: &str) -> Self {
         self.formats.push(number_formats.to_owned());
+        self
+    }
+
+    /// Named date formats, `datetimeFormats` of Vue I18n and `i18n.json`: `{"<locale>":
+    /// {"<name>": {<Intl.DateTimeFormat options>}}}`, for [`I18n::td_as`]. Over the ones of
+    /// `i18n.json` (a name given again wins), looked up like [`Builder::formats`]. Supported
+    /// (DESIGN 5.3): `dateStyle`, `timeStyle` (`medium`, `short`), `weekday`, `year`,
+    /// `month`, `day`, `hour`, `minute`, `second`, `hour12`, `hourCycle`, `timeZone` (IANA;
+    /// UTC only without the `tz` feature), `calendar: "gregory"`; anything else (`timeStyle:
+    /// "full"`, `timeZoneName`, `era`, …) and values `Intl` throws on fail `build` with
+    /// [`Error::UnsupportedFormat`]. Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder()
+    ///     .time_zone("UTC")
+    ///     .locale("de")
+    ///     .datetime_formats(r#"{"de": {"short": {"day": "numeric", "month": "short"}}}"#)
+    ///     .build()?;
+    /// assert_eq!(i18n.td_as(1_704_428_640_000i64, "short"), "5. Jan.");
+    /// assert!(I18n::builder().datetime_formats(r#"{"de": {"x": {"timeStyle": "full"}}}"#).build().is_err());
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn datetime_formats(mut self, datetime_formats: &str) -> Self {
+        self.datetime_formats.push(datetime_formats.to_owned());
+        self.with_dates()
+    }
+
+    /// Links [`setup_dates`] into `build` (a no-op without `format`).
+    #[allow(unused_mut, reason = "mutates with `format` only")]
+    fn with_dates(mut self) -> Self {
+        #[cfg(feature = "format")]
+        {
+            self.dates = Some(setup_dates);
+        }
+        self
+    }
+
+    /// The IANA time zone of dates (JS `FormatService({ timeZone })`); a named format's own
+    /// `timeZone` wins. Default: the system's (`TZ`, `/etc/localtime`, the browser's).
+    /// Without the `tz` feature only UTC is known. An unknown zone fails `build` with
+    /// [`Error::UnknownTimeZone`]. Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder().time_zone("UTC").build()?;
+    /// assert_eq!(i18n.td(0), "1/1/1970");
+    /// assert!(I18n::builder().time_zone("Mars/Olympus").build().is_err());
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn time_zone(mut self, iana: &str) -> Self {
+        self.time_zone = Some(iana.to_owned());
+        self.with_dates()
+    }
+
+    /// The clock of [`I18n::tdr`] in milliseconds since 1970 (JS `FormatService({ now })`):
+    /// a test pins it, a server hands the client its time. Default: the system clock
+    /// (`SystemTime`; in the browser `Date.now()` with the `tz` feature). Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder().clock(|| 1_704_428_640_000).build()?;
+    /// assert_eq!(i18n.tdr(1_704_428_640_000i64 + 61_000), "in 1 minute");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[cfg(feature = "format")]
+    #[must_use]
+    pub fn clock(mut self, now: impl Fn() -> i64 + Send + Sync + 'static) -> Self {
+        self.clock = Some(crate::format::api::Clock(Arc::new(now)));
         self
     }
 
@@ -1414,7 +1568,7 @@ impl Builder {
     #[must_use]
     pub fn config(mut self, path: impl AsRef<std::path::Path>) -> Self {
         self.config = Some(ConfigSource::Path(path.as_ref().to_path_buf()));
-        self
+        self.with_dates()
     }
 
     /// `i18n.json` as text: `defaultLocale`, `fallbackLocale`, `locales[]` (`code`, `iso`,
@@ -1422,7 +1576,7 @@ impl Builder {
     #[must_use]
     pub fn config_json(mut self, json: &str) -> Self {
         self.config = Some(ConfigSource::Json(json.to_owned()));
-        self
+        self.with_dates()
     }
 
     /// Called on every miss of `t` / `t_with` / `tc` / `tc_with` with `(locale, key, page)`;
@@ -1518,7 +1672,6 @@ impl Builder {
                 .as_deref()
                 .or(config.fallback_locale.as_deref())
                 .map(Arc::from),
-            datetime_formats: config.datetime_formats,
             ..Meta::default()
         };
         #[cfg(feature = "format")]
@@ -1532,6 +1685,10 @@ impl Builder {
             for json in &self.formats {
                 crate::format::parse_formats(json, "formats", &mut meta.numbers, &mut numbering)?;
             }
+            if let Some(setup) = self.dates {
+                setup(&self, &config, &mut meta, &mut numbering)?;
+            }
+            meta.clock = self.clock.take();
         }
         for l in &config.locales {
             if let Some(fb) = &l.fallback {

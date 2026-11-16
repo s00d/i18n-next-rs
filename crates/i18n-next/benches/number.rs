@@ -1,10 +1,12 @@
-//! criterion benches of M5 (DESIGN 5.5, 7.7): `tn` per style (decimal, integer, percent,
-//! currency by symbol and code, compact), a locale from the snapshot's table (warm) against
-//! one resolved on every call (cold), `Text` with `{number}` written into a buffer, the
-//! builder's format parsing and `language_name`. Ids follow `tests/support/inventory.rs`.
+//! criterion benches of M5 and M6 (DESIGN 5.5, 7.7): `tn` per style (decimal, integer,
+//! percent, currency by symbol and code, compact), a locale from the snapshot's table (warm)
+//! against one resolved on every call (cold), `Text` with `{number}` written into a buffer,
+//! the builder's format parsing and `language_name`; `td` by styles and by components (with
+//! a glued date and time, a zone of `tz`), `tdr` per option, warm and cold locales, dates in
+//! `Text` and `Arg`. Ids follow `tests/support/inventory.rs`.
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use i18n_next::{I18n, scope, tn, tn_as};
+use i18n_next::{Arg, I18n, RelativeOptions, Timestamp, scope, td, td_as, tdr, tn, tn_as};
 use std::fmt::Write as _;
 use std::hint::black_box;
 
@@ -93,5 +95,154 @@ fn numbers(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, numbers);
+const DATE_FORMATS: &str = r#"{"en": {"full": {"dateStyle": "full", "timeStyle": "short"},
+    "short": {"dateStyle": "short"},
+    "glued": {"weekday": "short", "month": "long", "day": "numeric", "hour": "numeric", "minute": "2-digit"},
+    "clock": {"hour": "2-digit", "minute": "2-digit", "second": "2-digit", "hourCycle": "h23"},
+    "berlin": {"timeStyle": "short", "timeZone": "Europe/Berlin"}},
+  "ar": {"long": {"dateStyle": "long"}}}"#;
+/// 2024-01-05 04:24 UTC.
+const AT: i64 = 1_704_428_640_000;
+
+fn dates(c: &mut Criterion) {
+    let i18n = I18n::builder()
+        .locale("en")
+        .iso("ar", "ar-EG")
+        .fallback("ar")
+        .time_zone("America/New_York")
+        .clock(|| AT)
+        .messages(
+            "en",
+            None,
+            r#"{"due": "Due {date}", "seen": "Seen {relativeDate}", "at": "At {at}"}"#,
+        )
+        .datetime_formats(DATE_FORMATS)
+        .build()
+        .unwrap();
+    c.bench_function("i18n/td/default", |b| {
+        b.iter(|| black_box(&i18n).td(black_box(AT)))
+    });
+    c.bench_function("i18n/td_as/style_full", |b| {
+        b.iter(|| black_box(&i18n).td_as(black_box(AT), black_box("full")))
+    });
+    c.bench_function("i18n/td_as/style_short", |b| {
+        b.iter(|| black_box(&i18n).td_as(black_box(AT), black_box("short")))
+    });
+    c.bench_function("i18n/td_as/components_glued", |b| {
+        b.iter(|| black_box(&i18n).td_as(black_box(AT), black_box("glued")))
+    });
+    c.bench_function("i18n/td_as/components_clock", |b| {
+        b.iter(|| black_box(&i18n).td_as(black_box(AT), black_box("clock")))
+    });
+    c.bench_function("i18n/td_as/zone_berlin", |b| {
+        b.iter(|| black_box(&i18n).td_as(black_box(AT), black_box("berlin")))
+    });
+    c.bench_function("i18n/tdr/days", |b| {
+        b.iter(|| black_box(&i18n).tdr(black_box(AT - 3 * 86_400_000)))
+    });
+    c.bench_function("i18n/tdr_with/auto_short", |b| {
+        let o = RelativeOptions::default().auto().short();
+        b.iter(|| black_box(&i18n).tdr_with(black_box(AT - 86_400_000), black_box(o)))
+    });
+    // warm: a known locale (data from the snapshot's table); cold: resolved on every call
+    let ar = i18n.with_locale("ar");
+    c.bench_function("view/td/warm_arabic_digits", |b| {
+        b.iter(|| black_box(&ar).td(black_box(AT)))
+    });
+    let cold = i18n.with_locale("zh-Hant-TW");
+    c.bench_function("view/td/cold_resolve", |b| {
+        b.iter(|| black_box(&cold).td(black_box(AT)))
+    });
+    c.bench_function("view/td_as/style_long", |b| {
+        b.iter(|| black_box(&ar).td_as(black_box(AT), black_box("long")))
+    });
+    c.bench_function("view/tdr/warm", |b| {
+        b.iter(|| black_box(&ar).tdr(black_box(AT - 7_200_000)))
+    });
+    c.bench_function("view/tdr/cold_resolve", |b| {
+        b.iter(|| black_box(&cold).tdr(black_box(AT - 7_200_000)))
+    });
+    c.bench_function("view/tdr_with/narrow", |b| {
+        let o = RelativeOptions::default().narrow();
+        b.iter(|| black_box(&ar).tdr_with(black_box(AT - 7_200_000), black_box(o)))
+    });
+    let due = i18n.text("due").date(AT);
+    let due_as = i18n.text("due").date_as(AT, "full");
+    let seen = i18n.text("seen").relative(AT - 60_000);
+    let at = i18n.text("at").arg("at", Arg::date_as(AT, "short"));
+    let mut buf = String::with_capacity(64);
+    c.bench_function("text/date/display", |b| {
+        b.iter(|| {
+            buf.clear();
+            write!(buf, "{}", black_box(&due)).unwrap();
+        })
+    });
+    c.bench_function("text/date_as/display", |b| {
+        b.iter(|| {
+            buf.clear();
+            write!(buf, "{}", black_box(&due_as)).unwrap();
+        })
+    });
+    c.bench_function("text/relative/display", |b| {
+        b.iter(|| {
+            buf.clear();
+            write!(buf, "{}", black_box(&seen)).unwrap();
+        })
+    });
+    c.bench_function("arg/date_as/display", |b| {
+        b.iter(|| {
+            buf.clear();
+            write!(buf, "{}", black_box(&at)).unwrap();
+        })
+    });
+    c.bench_function("arg/date/build", |b| b.iter(|| Arg::date(black_box(AT))));
+    c.bench_function("arg/relative/build", |b| {
+        b.iter(|| Arg::relative(black_box(AT)))
+    });
+    c.bench_function("timestamp/millis/f64", |b| {
+        b.iter(|| Timestamp::from(black_box(1.7e12)).millis())
+    });
+    c.bench_function("timestamp/is_valid/nan", |b| {
+        b.iter(|| Timestamp::from(black_box(f64::NAN)).is_valid())
+    });
+    c.bench_function("relative_options/auto/const", |b| {
+        b.iter(|| black_box(RelativeOptions::default()).auto())
+    });
+    c.bench_function("relative_options/short/const", |b| {
+        b.iter(|| black_box(RelativeOptions::default()).short())
+    });
+    c.bench_function("relative_options/narrow/const", |b| {
+        b.iter(|| black_box(RelativeOptions::default()).narrow())
+    });
+    c.bench_function("builder/datetime_formats/two_locales", |b| {
+        b.iter(|| {
+            I18n::builder()
+                .datetime_formats(black_box(DATE_FORMATS))
+                .build()
+                .unwrap()
+        })
+    });
+    c.bench_function("builder/time_zone/named", |b| {
+        b.iter(|| {
+            I18n::builder()
+                .time_zone(black_box("Europe/Berlin"))
+                .build()
+                .unwrap()
+        })
+    });
+    c.bench_function("builder/clock/fixed", |b| {
+        b.iter(|| I18n::builder().clock(|| AT).build().unwrap())
+    });
+    scope().instance(i18n.clone()).locale("ar").run(|| {
+        c.bench_function("global/td/scope", |b| b.iter(|| td(black_box(AT))));
+        c.bench_function("global/td_as/scope", |b| {
+            b.iter(|| td_as(black_box(AT), black_box("long")))
+        });
+        c.bench_function("global/tdr/scope", |b| {
+            b.iter(|| tdr(black_box(AT - 60_000)))
+        });
+    });
+}
+
+criterion_group!(benches, numbers, dates);
 criterion_main!(benches);

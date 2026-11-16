@@ -904,3 +904,214 @@ for (let i = 0; i < 20000; i++) {
   propLines.push([`num(${s(locale)}, ${numLit(v)}, ${JSON.stringify(o)})`, s(formatter.formatNumber(v, locale, o))])
 }
 write('number-props', 'number formats, random cases (seeded)', propLines)
+
+// ---- date: Intl.DateTimeFormat through FormatService.formatDate, named formats through BaseI18n.td ----
+// `date(locale, ms, options)`: options as JSON, each with its `timeZone` (Rust registers each
+// distinct set as a named format of every locale). `th` and `fa` go with `-u-ca-gregory`: Rust
+// formats Gregorian dates only (fixtures/compat/README.md). `date_zone()` is the instance zone
+// and `date_config()` the i18n.json of `td(code, ms)` / `td_as(code, name, ms)`.
+const DATE_LOCALES = ['en', 'de', 'ru', 'pl', 'fr', 'es', 'ar', 'ar-EG', 'hi', 'ja', 'zh-Hant', 'he', 'pt-PT', 'sw', 'th-u-ca-gregory', 'fa-u-ca-gregory']
+const ZONES = ['UTC', 'Europe/Berlin', 'America/New_York', 'Asia/Kolkata', 'Australia/Lord_Howe']
+const utcMs = (y, mo, d, h = 0, mi = 0, sec = 0, ms = 0) => {
+  const x = new Date(0)
+  x.setUTCFullYear(y, mo - 1, d)
+  x.setUTCHours(h, mi, sec, ms)
+  return x.getTime()
+}
+const INSTANTS = [
+  utcMs(1999, 5, 1),
+  utcMs(2024, 2, 29, 13, 45, 30, 250),
+  utcMs(2024, 1, 5, 4, 4, 4),
+  utcMs(2023, 12, 31, 23, 59, 59, 999),
+  utcMs(9999, 12, 31, 23, 59, 59, 999),
+  utcMs(1, 1, 1),
+  utcMs(-1, 6, 15, 12),
+  0,
+  -1,
+  // DST: Berlin forward / back, New York forward / back, Lord Howe's half hour
+  utcMs(2024, 3, 31, 0, 59, 59),
+  utcMs(2024, 3, 31, 1),
+  utcMs(2024, 10, 27, 0, 59, 59),
+  utcMs(2024, 10, 27, 1),
+  utcMs(2024, 3, 10, 6, 59, 59),
+  utcMs(2024, 3, 10, 7),
+  utcMs(2024, 11, 3, 5, 59, 59),
+  utcMs(2024, 11, 3, 6),
+  utcMs(2024, 4, 6, 14, 59, 59),
+  utcMs(2024, 4, 6, 15),
+  utcMs(2024, 10, 5, 15, 59),
+  8.64e15,
+  -8.64e15,
+  8.64e15 + 1,
+  NaN,
+  1.5,
+  -1.5,
+]
+const DATE_OPTIONS = [
+  {},
+  { dateStyle: 'full' },
+  { dateStyle: 'long' },
+  { dateStyle: 'medium' },
+  { dateStyle: 'short' },
+  { timeStyle: 'medium' },
+  { timeStyle: 'short' },
+  { dateStyle: 'full', timeStyle: 'short' },
+  { dateStyle: 'long', timeStyle: 'medium' },
+  { dateStyle: 'medium', timeStyle: 'short' },
+  { dateStyle: 'short', timeStyle: 'short' },
+  { dateStyle: 'medium', timeStyle: 'medium', hour12: false },
+  { timeStyle: 'short', hour12: true },
+  { timeStyle: 'short', hourCycle: 'h11' },
+  { timeStyle: 'medium', hourCycle: 'h24' },
+  { year: 'numeric', month: 'numeric', day: 'numeric' },
+  { year: '2-digit', month: '2-digit', day: '2-digit' },
+  { year: 'numeric', month: 'long', day: 'numeric' },
+  { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' },
+  { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' },
+  { month: 'long' },
+  { month: 'narrow' },
+  { year: 'numeric', month: 'long' },
+  { month: 'short', day: 'numeric' },
+  { weekday: 'long' },
+  { weekday: 'narrow', day: 'numeric' },
+  { year: 'numeric' },
+  { hour: 'numeric', minute: 'numeric' },
+  { hour: '2-digit', minute: '2-digit', second: '2-digit' },
+  { hour: '2-digit', minute: '2-digit', hour12: false },
+  { hour: 'numeric', hour12: true },
+  { hour: 'numeric', minute: '2-digit', hourCycle: 'h24' },
+  { hour: 'numeric', minute: '2-digit', hourCycle: 'h11' },
+  { minute: '2-digit', second: '2-digit' },
+  { second: 'numeric' },
+  { weekday: 'short', hour: 'numeric', minute: 'numeric' },
+  { month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' },
+  { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false },
+  { year: '2-digit', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+  { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h23' },
+]
+// a few options in every zone, all of them in UTC and Berlin
+const ZONED = [{}, { dateStyle: 'medium', timeStyle: 'short' }, { hour: 'numeric', minute: 'numeric' }, { timeStyle: 'medium', hour12: false }, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }]
+const dateLit = (v) => (Object.is(v, -0) ? '-0' : String(v))
+const dateLines = []
+const dateLine = (locale, v, o) => dateLines.push([`date(${s(locale)}, ${dateLit(v)}, ${JSON.stringify(o)})`, s(formatter.formatDate(v, locale, o))])
+for (const locale of DATE_LOCALES) {
+  for (const v of INSTANTS) {
+    for (const zone of ZONES) {
+      const list = zone === 'UTC' || zone === 'Europe/Berlin' ? DATE_OPTIONS : ZONED
+      for (const o of list) dateLine(locale, v, { ...o, timeZone: zone })
+    }
+  }
+}
+// i18n.json with named date formats; the instance zone is `date_zone()`
+const DATE_ZONE = 'America/New_York'
+const DATE_CONFIG = {
+  locales: [{ code: 'ar', iso: 'ar-EG' }, { code: 'ua', iso: 'uk-UA' }, { code: 'zh-tw', iso: 'zh-Hant-TW' }, { code: 'th', iso: 'th-u-ca-gregory' }],
+  datetimeFormats: {
+    en: { short: { dateStyle: 'short' }, clock: { hour: 'numeric', minute: '2-digit' }, utc: { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' } },
+    de: { short: { day: 'numeric', month: 'short' } },
+    zh: { short: { year: 'numeric', month: 'long' } },
+    'zh-Hant': { clock: { hour: 'numeric', minute: '2-digit', hourCycle: 'h23' } },
+    ar: { short: { weekday: 'long', day: 'numeric' } },
+    ua: { short: { dateStyle: 'long' } },
+    'zh-tw': { utc: { timeStyle: 'short', timeZone: 'UTC' } },
+  },
+}
+class DateCatalog extends BaseI18n {
+  constructor() {
+    super({ missingWarn: false, timeZone: DATE_ZONE, datetimeFormats: DATE_CONFIG.datetimeFormats, localeIso: Object.fromEntries(DATE_CONFIG.locales.map((l) => [l.code, l.iso])) })
+    this.locale = 'en'
+  }
+  getLocale() { return this.locale }
+  getFallbackLocale() { return 'en' }
+  getRoute() { return 'index' }
+}
+const dates = new DateCatalog()
+dateLines.push(['date_zone()', s(DATE_ZONE)], ['date_config()', s(JSON.stringify(DATE_CONFIG))])
+for (const code of ['en', 'de', 'de-AT', 'de-AT-x-y', 'zh', 'zh-Hant', 'zh-Hant-TW', 'zh-tw', 'ar', 'ua', 'th', 'xx', 'en_US', 'ru']) {
+  dates.locale = code
+  for (const v of [utcMs(2024, 1, 5, 4, 4, 4), utcMs(1999, 5, 1), NaN]) {
+    dateLines.push([`td(${s(code)}, ${dateLit(v)})`, s(dates.td(v))])
+    for (const name of ['short', 'clock', 'utc', 'missing']) dateLines.push([`td_as(${s(code)}, ${s(name)}, ${dateLit(v)})`, s(dates.td(v, name))])
+  }
+}
+write('date', 'date formats', dateLines)
+
+// ---- relative: FormatService.formatRelativeTime with a fixed `now`, BaseI18n.tdr ----
+// `rel(locale, at, now, options)`; `tdr(code, at, now)` on an instance with the `iso` of
+// `date_config()`.
+const REL_LOCALES = ['en', 'de', 'ru', 'pl', 'fr', 'es', 'ar', 'ar-EG', 'hi', 'ja', 'zh-Hant', 'he', 'pt-PT', 'sw', 'th', 'fa']
+const NOW = utcMs(2024, 1, 5, 4, 4, 4)
+const SPANS = [1, 60, 3600, 86400, 2592000, 31536000]
+const OFFSETS = [0, 499, 999, 1000, 1500, 59999, 60000, 61000, 3599999, 3600000, 7200000, 86399999, 86400000, 172800000, 259200000, 2591999999, 2592000000, 31535999999, 31536000000, 63072000000, 157680000000]
+for (const span of SPANS) OFFSETS.push(5 * span * 1000, 11 * span * 1000, 21 * span * 1000, 22 * span * 1000)
+const REL_OPTIONS = [{}, { numeric: 'auto' }, { style: 'short' }, { style: 'narrow' }, { numeric: 'auto', style: 'short' }, { numeric: 'auto', style: 'narrow' }, { numeric: 'always', style: 'long' }]
+const relLines = []
+const relFormatter = new FormatService({ now: () => NOW })
+for (const locale of REL_LOCALES) {
+  for (const d of [...new Set(OFFSETS)]) {
+    for (const at of d === 0 ? [NOW] : [NOW + d, NOW - d]) {
+      for (const o of REL_OPTIONS) relLines.push([`rel(${s(locale)}, ${dateLit(at)}, ${NOW}, ${JSON.stringify(o)})`, s(relFormatter.formatRelativeTime(at, locale, o))])
+    }
+  }
+  for (const at of [8.64e15, -8.64e15, NaN, 8.64e15 + 1, NOW + 0.5, NOW - 0.5]) relLines.push([`rel(${s(locale)}, ${dateLit(at)}, ${NOW}, {})`, s(relFormatter.formatRelativeTime(at, locale, {}))])
+}
+class RelCatalog extends BaseI18n {
+  constructor() {
+    super({ missingWarn: false, now: () => NOW, localeIso: Object.fromEntries(DATE_CONFIG.locales.map((l) => [l.code, l.iso])) })
+    this.locale = 'en'
+  }
+  getLocale() { return this.locale }
+  getFallbackLocale() { return 'en' }
+  getRoute() { return 'index' }
+}
+const rels = new RelCatalog()
+relLines.push(['date_config()', s(JSON.stringify(DATE_CONFIG))])
+for (const code of ['en', 'de-AT', 'ar', 'ua', 'zh-tw', 'xx', 'en_US']) {
+  rels.locale = code
+  for (const d of [-90000, 3 * 86400000, -400 * 86400000]) relLines.push([`tdr(${s(code)}, ${NOW + d}, ${NOW})`, s(rels.tdr(NOW + d))])
+}
+write('relative', 'relative time', relLines)
+
+// ---- date-props: random instants × modern locales × random supported options and zones (seeded) ----
+// The oracle of tests/date_compat.rs's property run. Named zones only from 1970 (the bundled
+// tzdb of a Windows build starts there), UTC over the whole range of `Date`.
+const PROP_ZONES = [...ZONES, 'Asia/Tokyo', 'America/Los_Angeles', 'Europe/Moscow', 'America/Sao_Paulo', 'Asia/Kathmandu', 'Pacific/Chatham', 'Africa/Casablanca', 'America/St_Johns']
+const pickMaybe = (list, p = 0.5) => (rnd() < p ? pickOne(list) : undefined)
+function randomDateOptions() {
+  const o = {}
+  if (rnd() < 0.25) {
+    const ds = pickMaybe(['full', 'long', 'medium', 'short'], 0.7)
+    const ts = pickMaybe(['medium', 'short'], ds ? 0.5 : 1)
+    if (ds) o.dateStyle = ds
+    if (ts) o.timeStyle = ts
+  } else {
+    for (const [k, values, p] of [
+      ['weekday', ['long', 'short', 'narrow'], 0.3],
+      ['year', ['numeric', '2-digit'], 0.5],
+      ['month', ['numeric', '2-digit', 'long', 'short', 'narrow'], 0.5],
+      ['day', ['numeric', '2-digit'], 0.5],
+      ['hour', ['numeric', '2-digit'], 0.5],
+      ['minute', ['numeric', '2-digit'], 0.5],
+      ['second', ['numeric', '2-digit'], 0.3],
+    ]) {
+      const v = pickMaybe(values, p)
+      if (v) o[k] = v
+    }
+  }
+  const cycle = Math.floor(rnd() * 5)
+  if (cycle === 1) o.hour12 = rnd() < 0.5
+  if (cycle === 2) o.hourCycle = pickOne(['h11', 'h12', 'h23', 'h24'])
+  return o
+}
+const datePropLines = []
+for (let i = 0; i < 20000; i++) {
+  const locale = pickOne(modernLocales)
+  const zone = rnd() < 0.3 ? 'UTC' : pickOne(PROP_ZONES)
+  const wide = zone === 'UTC' && rnd() < 0.5
+  const v = Math.floor(wide ? (rnd() - 0.5) * 2 * 8.64e15 : rnd() * (4102444800000 - 0))
+  const o = { ...randomDateOptions(), timeZone: zone }
+  // Gregorian only: a locale whose calendar is another (`th`, `fa`) asks for it
+  if (new Intl.DateTimeFormat(locale).resolvedOptions().calendar !== 'gregory') o.calendar = 'gregory'
+  datePropLines.push([`date(${s(locale)}, ${dateLit(v)}, ${JSON.stringify(o)})`, s(formatter.formatDate(v, locale, o))])
+}
+write('date-props', 'date formats, random cases (seeded)', datePropLines)

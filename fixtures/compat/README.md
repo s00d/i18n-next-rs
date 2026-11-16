@@ -236,6 +236,24 @@ goldens:
   Rust formats them as `en-US` (variants and `-u-` keywords other than aliases are not read).
 - `-u-nu-` and the other extensions of a tag are not read (`ar-EG-u-nu-latn` keeps Arabic digits).
 
+### `date.md`, `relative.md`, `date-props.md`
+
+`date(locale, ms, options)` is `FormatService.formatDate` (each line with its `timeZone`, so the host's zone
+plays no part), `td(code, ms)` / `td_as(code, name, ms)` `BaseI18n.td` on an instance with `date_config()`
+(an `i18n.json`) and the zone `date_zone()`; `rel(locale, at, now, options)` is `formatRelativeTime` with
+`now` as the clock, `tdr(code, at, now)` `BaseI18n.tdr` with the `iso` of `date_config()`. Rust formats
+Gregorian dates only: `th` and `fa`, whose ICU calendar is another (Buddhist, Persian; also `fa-AF`, `ps`,
+`shn-TH`), go with `-u-ca-gregory` (`date-props.md`: `calendar: "gregory"`). Known differences, left out of
+the goldens:
+
+- a locale whose default calendar is not Gregorian (the five above) without `-u-ca-gregory` or `calendar:
+  "gregory"`: JS shows its calendar, Rust the Gregorian date;
+- `-u-ca-`, `-u-hc-`, `-u-nu-` of a tag are not read (Rust: Gregorian, the locale's cycle and digits; JS
+  honours them).
+
+`date-props.md` takes named zones only from 1970 (the bundled tzdb of a Windows build starts there), UTC over
+the whole range of `Date`.
+
 ## Contract for Rust
 
 Rust `t()` returns `String`, so the markers map as follows. This mapping is the contract the Rust `compat` test

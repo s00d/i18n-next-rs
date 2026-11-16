@@ -15,23 +15,24 @@ pub(crate) fn missing(locale: &str, page: &str, key: &str) {
     let _ = (locale, page, key);
 }
 
-/// A named number format nowhere in the locale's chain of truncations (JS
-/// `warnMissingFormat`): the defaults format it.
+/// A named format (`kind`: `number` or `datetime`) nowhere in the locale's chain of
+/// truncations (JS `warnMissingFormat`): the defaults format it.
 #[cfg(feature = "format")]
 #[cold]
-pub(crate) fn missing_format(name: &str, locale: &str) {
+pub(crate) fn missing_format(kind: &str, name: &str, locale: &str) {
     #[cfg(feature = "tracing")]
     tracing::warn!(
+        kind,
         name,
         locale,
-        "i18n-next: missing number format, default options used"
+        "i18n-next: missing format, default options used"
     );
     #[cfg(all(not(feature = "tracing"), debug_assertions))]
     eprintln!(
-        "i18n-next: Not found '{name}' number format in '{locale}' locale. Falling back to default Intl options."
+        "i18n-next: Not found '{name}' {kind} format in '{locale}' locale. Falling back to default Intl options."
     );
     #[cfg(all(not(feature = "tracing"), not(debug_assertions)))]
-    let _ = (name, locale);
+    let _ = (kind, name, locale);
 }
 
 /// Whether misses are traced (the lookup then keeps the active locale for the report).

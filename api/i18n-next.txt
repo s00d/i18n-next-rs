@@ -2,9 +2,12 @@ pub mod i18n_next
 pub macro i18n_next::key!
 pub macro i18n_next::t!
 pub macro i18n_next::tc!
+pub macro i18n_next::td!
+pub macro i18n_next::tdr!
 pub macro i18n_next::tn!
 #[non_exhaustive] pub enum i18n_next::Arg<'a>
 pub i18n_next::Arg::Bool(bool)
+pub i18n_next::Arg::Date(i18n_next::DateArg<'a>)
 pub i18n_next::Arg::Float(f64)
 pub i18n_next::Arg::Int(i64)
 pub i18n_next::Arg::Null
@@ -14,6 +17,10 @@ pub i18n_next::Arg::Number::value: i18n_next::Number
 pub i18n_next::Arg::Str(&'a str)
 pub i18n_next::Arg::String(alloc::sync::Arc<str>)
 pub i18n_next::Arg::Text(alloc::boxed::Box<i18n_next::Text>)
+impl<'a> i18n_next::Arg<'a>
+pub fn i18n_next::Arg<'a>::date(impl core::convert::Into<i18n_next::Timestamp>) -> Self
+pub fn i18n_next::Arg<'a>::date_as(impl core::convert::Into<i18n_next::Timestamp>, impl core::convert::Into<alloc::borrow::Cow<'a, str>>) -> Self
+pub fn i18n_next::Arg<'a>::relative(impl core::convert::Into<i18n_next::Timestamp>) -> Self
 impl<'a> i18n_next::Arg<'a>
 pub fn i18n_next::Arg<'a>::display(impl core::fmt::Display) -> Self
 impl core::cmp::PartialEq for i18n_next::Arg<'_>
@@ -138,6 +145,7 @@ pub i18n_next::Error::NotObject::path: alloc::string::String
 pub i18n_next::Error::UnknownFile(alloc::string::String)
 pub i18n_next::Error::UnknownLocale(alloc::string::String)
 pub i18n_next::Error::UnknownPage(alloc::string::String)
+pub i18n_next::Error::UnknownTimeZone(alloc::string::String)
 pub i18n_next::Error::UnsupportedFormat
 pub i18n_next::Error::UnsupportedFormat::locale: alloc::string::String
 pub i18n_next::Error::UnsupportedFormat::name: alloc::string::String
@@ -202,8 +210,10 @@ pub fn i18n_next::Args<'a>::clone(&self) -> i18n_next::Args<'a>
 pub struct i18n_next::Builder
 impl i18n_next::Builder
 pub fn i18n_next::Builder::build(self) -> core::result::Result<i18n_next::I18n, i18n_next::Error>
+pub fn i18n_next::Builder::clock(self, impl core::ops::function::Fn() -> i64 + core::marker::Send + core::marker::Sync + 'static) -> Self
 pub fn i18n_next::Builder::config(self, impl core::convert::AsRef<std::path::Path>) -> Self
 pub fn i18n_next::Builder::config_json(self, &str) -> Self
+pub fn i18n_next::Builder::datetime_formats(self, &str) -> Self
 pub fn i18n_next::Builder::dir(self, impl core::convert::AsRef<std::path::Path>) -> Self
 pub fn i18n_next::Builder::evict_pages(self, usize) -> Self
 pub fn i18n_next::Builder::extend<I, P, B>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (P, B)>, P: core::convert::AsRef<str>, B: core::convert::AsRef<[u8]>
@@ -223,6 +233,7 @@ pub fn i18n_next::Builder::page_alias(self, &str, &str) -> Self
 pub fn i18n_next::Builder::pages(self, bool) -> Self
 pub fn i18n_next::Builder::pin_page(self, &str) -> Self
 pub fn i18n_next::Builder::remote<I>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::AsRef<str>
+pub fn i18n_next::Builder::time_zone(self, &str) -> Self
 impl core::default::Default for i18n_next::Builder
 pub fn i18n_next::Builder::default() -> i18n_next::Builder
 impl core::fmt::Debug for i18n_next::Builder
@@ -275,6 +286,13 @@ impl core::fmt::Debug for i18n_next::Count
 pub fn i18n_next::Count::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for i18n_next::Count
 impl core::marker::StructuralPartialEq for i18n_next::Count
+pub struct i18n_next::DateArg<'a>
+impl core::cmp::PartialEq for i18n_next::DateArg<'_>
+pub fn i18n_next::DateArg<'_>::eq(&self, &Self) -> bool
+impl core::fmt::Debug for i18n_next::DateArg<'_>
+pub fn i18n_next::DateArg<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::clone::Clone for i18n_next::DateArg<'a>
+pub fn i18n_next::DateArg<'a>::clone(&self) -> i18n_next::DateArg<'a>
 pub struct i18n_next::I18n
 impl i18n_next::I18n
 pub fn i18n_next::I18n::add_file(&self, &str, &[u8]) -> core::result::Result<(), i18n_next::Error>
@@ -302,6 +320,10 @@ impl i18n_next::I18n
 pub fn i18n_next::I18n::check(&self) -> i18n_next::CheckReport
 impl i18n_next::I18n
 pub fn i18n_next::I18n::language_name(&self, &str) -> core::option::Option<&'static str>
+pub fn i18n_next::I18n::td(&self, impl core::convert::Into<i18n_next::Timestamp>) -> alloc::string::String
+pub fn i18n_next::I18n::td_as(&self, impl core::convert::Into<i18n_next::Timestamp>, &str) -> alloc::string::String
+pub fn i18n_next::I18n::tdr(&self, impl core::convert::Into<i18n_next::Timestamp>) -> alloc::string::String
+pub fn i18n_next::I18n::tdr_with(&self, impl core::convert::Into<i18n_next::Timestamp>, i18n_next::RelativeOptions) -> alloc::string::String
 pub fn i18n_next::I18n::tn(&self, impl core::convert::Into<i18n_next::Number>) -> alloc::string::String
 pub fn i18n_next::I18n::tn_as(&self, impl core::convert::Into<i18n_next::Number>, &str) -> alloc::string::String
 impl i18n_next::I18n
@@ -389,6 +411,24 @@ impl i18n_next::PluralCtx<'_>
 pub fn i18n_next::PluralCtx<'_>::get(&self, &str) -> alloc::string::String
 impl<'a> core::fmt::Debug for i18n_next::PluralCtx<'a>
 pub fn i18n_next::PluralCtx<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::RelativeOptions
+impl i18n_next::RelativeOptions
+pub const fn i18n_next::RelativeOptions::auto(self) -> Self
+pub const fn i18n_next::RelativeOptions::narrow(self) -> Self
+pub const fn i18n_next::RelativeOptions::short(self) -> Self
+impl core::clone::Clone for i18n_next::RelativeOptions
+pub fn i18n_next::RelativeOptions::clone(&self) -> i18n_next::RelativeOptions
+impl core::cmp::Eq for i18n_next::RelativeOptions
+impl core::cmp::PartialEq for i18n_next::RelativeOptions
+pub fn i18n_next::RelativeOptions::eq(&self, &i18n_next::RelativeOptions) -> bool
+impl core::default::Default for i18n_next::RelativeOptions
+pub fn i18n_next::RelativeOptions::default() -> i18n_next::RelativeOptions
+impl core::fmt::Debug for i18n_next::RelativeOptions
+pub fn i18n_next::RelativeOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for i18n_next::RelativeOptions
+pub fn i18n_next::RelativeOptions::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for i18n_next::RelativeOptions
+impl core::marker::StructuralPartialEq for i18n_next::RelativeOptions
 pub struct i18n_next::Scope
 impl i18n_next::Scope
 pub fn i18n_next::Scope::instance(self, i18n_next::I18n) -> Self
@@ -416,6 +456,8 @@ impl i18n_next::Text
 pub fn i18n_next::Text::arg(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl core::convert::Into<i18n_next::Arg<'static>>) -> Self
 pub fn i18n_next::Text::args<I>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::Into<i18n_next::Arg<'static>>
 pub fn i18n_next::Text::count(self, impl core::convert::Into<i18n_next::Count>) -> Self
+pub fn i18n_next::Text::date(self, impl core::convert::Into<i18n_next::Timestamp>) -> Self
+pub fn i18n_next::Text::date_as(self, impl core::convert::Into<i18n_next::Timestamp>, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 pub fn i18n_next::Text::fold<T>(&self, impl core::ops::function::FnMut(&str) -> T, &[(&str, &dyn core::ops::function::Fn() -> T)]) -> alloc::vec::Vec<T>
 pub fn i18n_next::Text::hide_if_empty(self) -> Self
 pub fn i18n_next::Text::html(self) -> Self
@@ -426,6 +468,7 @@ pub fn i18n_next::Text::or(self, impl core::convert::Into<alloc::borrow::Cow<'st
 pub fn i18n_next::Text::page(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 pub fn i18n_next::Text::parts(&self) -> impl core::iter::traits::iterator::Iterator<Item = i18n_next::Part<'static>> + use<>
 pub fn i18n_next::Text::plural_rule(self, impl core::ops::function::Fn(&i18n_next::PluralCtx<'_>) -> core::option::Option<alloc::string::String> + core::marker::Send + core::marker::Sync + 'static) -> Self
+pub fn i18n_next::Text::relative(self, impl core::convert::Into<i18n_next::Timestamp>) -> Self
 pub fn i18n_next::Text::resolve(&self) -> core::option::Option<alloc::string::String>
 pub fn i18n_next::Text::to_string(&self) -> alloc::string::String
 pub fn i18n_next::Text::write_to(&self, &mut impl core::fmt::Write) -> core::fmt::Result
@@ -443,6 +486,27 @@ impl core::fmt::Debug for i18n_next::Text
 pub fn i18n_next::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for i18n_next::Text
 pub fn i18n_next::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct i18n_next::Timestamp(_)
+impl i18n_next::Timestamp
+pub fn i18n_next::Timestamp::is_valid(self) -> bool
+pub fn i18n_next::Timestamp::millis(self) -> core::option::Option<i64>
+impl core::clone::Clone for i18n_next::Timestamp
+pub fn i18n_next::Timestamp::clone(&self) -> i18n_next::Timestamp
+impl core::cmp::Eq for i18n_next::Timestamp
+impl core::cmp::PartialEq for i18n_next::Timestamp
+pub fn i18n_next::Timestamp::eq(&self, &i18n_next::Timestamp) -> bool
+impl core::convert::From<f64> for i18n_next::Timestamp
+pub fn i18n_next::Timestamp::from(f64) -> Self
+impl core::convert::From<i64> for i18n_next::Timestamp
+pub fn i18n_next::Timestamp::from(i64) -> Self
+impl core::convert::From<std::time::SystemTime> for i18n_next::Timestamp
+pub fn i18n_next::Timestamp::from(std::time::SystemTime) -> Self
+impl core::fmt::Debug for i18n_next::Timestamp
+pub fn i18n_next::Timestamp::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for i18n_next::Timestamp
+pub fn i18n_next::Timestamp::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for i18n_next::Timestamp
+impl core::marker::StructuralPartialEq for i18n_next::Timestamp
 pub struct i18n_next::View
 impl i18n_next::View
 pub fn i18n_next::View::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
@@ -456,10 +520,14 @@ pub fn i18n_next::View::tc_with(&self, &str, impl core::convert::Into<i18n_next:
 pub fn i18n_next::View::try_t(&self, &str) -> core::option::Option<alloc::string::String>
 pub fn i18n_next::View::with_locale(&self, &str) -> i18n_next::View
 impl i18n_next::View
-pub fn i18n_next::View::text(&self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
-impl i18n_next::View
+pub fn i18n_next::View::td(&self, impl core::convert::Into<i18n_next::Timestamp>) -> alloc::string::String
+pub fn i18n_next::View::td_as(&self, impl core::convert::Into<i18n_next::Timestamp>, &str) -> alloc::string::String
+pub fn i18n_next::View::tdr(&self, impl core::convert::Into<i18n_next::Timestamp>) -> alloc::string::String
+pub fn i18n_next::View::tdr_with(&self, impl core::convert::Into<i18n_next::Timestamp>, i18n_next::RelativeOptions) -> alloc::string::String
 pub fn i18n_next::View::tn(&self, impl core::convert::Into<i18n_next::Number>) -> alloc::string::String
 pub fn i18n_next::View::tn_as(&self, impl core::convert::Into<i18n_next::Number>, &str) -> alloc::string::String
+impl i18n_next::View
+pub fn i18n_next::View::text(&self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
 impl core::clone::Clone for i18n_next::View
 pub fn i18n_next::View::clone(&self) -> i18n_next::View
 impl core::fmt::Debug for i18n_next::View
@@ -472,6 +540,9 @@ pub fn i18n_next::page(&str) -> core::option::Option<i18n_next::View>
 pub fn i18n_next::scope() -> i18n_next::Scope
 pub fn i18n_next::set_locale(&str) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::t(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> i18n_next::Text
+pub fn i18n_next::td(impl core::convert::Into<i18n_next::Timestamp>) -> alloc::string::String
+pub fn i18n_next::td_as(impl core::convert::Into<i18n_next::Timestamp>, &str) -> alloc::string::String
+pub fn i18n_next::tdr(impl core::convert::Into<i18n_next::Timestamp>) -> alloc::string::String
 pub fn i18n_next::tn(impl core::convert::Into<i18n_next::Number>) -> alloc::string::String
 pub fn i18n_next::tn_as(impl core::convert::Into<i18n_next::Number>, &str) -> alloc::string::String
 pub fn i18n_next::version() -> &'static str

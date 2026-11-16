@@ -11,6 +11,7 @@
 //! given twice takes its last value.
 
 use super::data::{self, Loc};
+use super::date::{Cycle, DateOptions, NO_STYLE, Shape, zone_named};
 use super::number::currency_digits;
 use crate::catalog::is_js_space;
 use crate::error::Error;
@@ -218,18 +219,85 @@ fn skip_object(r: &mut Reader<'_>, path: &str) -> Result<(), Error> {
 /// Named formats by locale code, then name.
 pub(crate) type Formats = FastMap<Box<str>, FastMap<Box<str>, NumberOptions>>;
 
+/// Named date formats by locale code, then name (`datetimeFormats`).
+pub(crate) type DateFormats = FastMap<Box<str>, FastMap<Box<str>, DateOptions>>;
+
 /// A `numberingSystem` as given (lowercase, zero-padded), by locale code and format name:
 /// accepted only when it is the locale's default, checked once the locales' `iso` are known
 /// ([`check_numbering`]). Kept out of [`NumberOptions`], which every format call reads.
 pub(crate) type Numbering = Vec<(Box<str>, Box<str>, [u8; 8])>;
 
+/// The raw options of one named format, in order, a repeated key at its last value.
+type Raw<'a> = [(Box<str>, Val<'a>)];
+
 /// Reads `{ "<locale>": { "<name>": { <options> } } }` into `into` (a later name wins), the
 /// `numberingSystem`s given into `numbering`. `path` names the source in a JSON or shape error.
-pub(crate) fn parse_formats<'a>(
-    json: &'a str,
+pub(crate) fn parse_formats(
+    json: &str,
     path: &str,
     into: &mut Formats,
     numbering: &mut Numbering,
+) -> Result<(), Error> {
+    parse_named(json, path, NUMBER_SHAPES, &mut |locale, name, raw| {
+        store(locale, name, resolve(raw), into, numbering)
+    })
+}
+
+/// [`parse_formats`] for `datetimeFormats` (`Intl.DateTimeFormat` options).
+pub(crate) fn parse_date_formats(
+    json: &str,
+    path: &str,
+    into: &mut DateFormats,
+    numbering: &mut Numbering,
+) -> Result<(), Error> {
+    parse_named(json, path, DATE_SHAPES, &mut |locale, name, raw| {
+        store(locale, name, resolve_date(raw), into, numbering)
+    })
+}
+
+const NUMBER_SHAPES: [&str; 3] = [
+    "numberFormats must be an object",
+    "numberFormats.<locale> must be an object",
+    "numberFormats.<locale>.<name> must be an object",
+];
+const DATE_SHAPES: [&str; 3] = [
+    "datetimeFormats must be an object",
+    "datetimeFormats.<locale> must be an object",
+    "datetimeFormats.<locale>.<name> must be an object",
+];
+
+/// Keeps one resolved named format (`Err(option)`: the option that is not supported).
+fn store<T>(
+    locale: &str,
+    name: &str,
+    resolved: Result<(T, Option<[u8; 8]>), &'static str>,
+    into: &mut FastMap<Box<str>, FastMap<Box<str>, T>>,
+    numbering: &mut Numbering,
+) -> Result<(), Error> {
+    let (options, nu) = resolved.map_err(|option| Error::UnsupportedFormat {
+        locale: locale.to_owned(),
+        name: name.to_owned(),
+        option: option.to_owned(),
+    })?;
+    if name != "__proto__" && locale != "__proto__" {
+        numbering.retain(|(l, n, _)| (&**l, &**n) != (locale, name));
+        if let Some(nu) = nu {
+            numbering.push((Box::from(locale), Box::from(name), nu));
+        }
+        into.entry(Box::from(locale))
+            .or_default()
+            .insert(Box::from(name), options);
+    }
+    Ok(())
+}
+
+/// The shape of named formats, each handed to `each` with its raw options: one copy of the
+/// reader for number and date formats.
+fn parse_named<'a>(
+    json: &'a str,
+    path: &str,
+    shapes: [&'static str; 3],
+    each: &mut dyn FnMut(&str, &str, &Raw<'_>) -> Result<(), Error>,
 ) -> Result<(), Error> {
     let mut r = Reader::new(json.as_bytes());
     let shape = |reason| Error::Config {
@@ -238,15 +306,15 @@ pub(crate) fn parse_formats<'a>(
     };
     let next = |r: &mut Reader<'a>| next_event(r, path);
     if !matches!(next(&mut r)?, Event::ObjectStart) {
-        return Err(shape("numberFormats must be an object"));
+        return Err(shape(shapes[0]));
     }
     while let Event::Key(locale) = next(&mut r)? {
         if !matches!(next(&mut r)?, Event::ObjectStart) {
-            return Err(shape("numberFormats.<locale> must be an object"));
+            return Err(shape(shapes[1]));
         }
         while let Event::Key(name) = next(&mut r)? {
             if !matches!(next(&mut r)?, Event::ObjectStart) {
-                return Err(shape("numberFormats.<locale>.<name> must be an object"));
+                return Err(shape(shapes[2]));
             }
             let mut raw: Vec<(Box<str>, Val<'_>)> = Vec::new();
             while let Event::Key(key) = next(&mut r)? {
@@ -265,20 +333,7 @@ pub(crate) fn parse_formats<'a>(
                 raw.retain(|(k, _)| **k != *key);
                 raw.push((Box::from(&*key), v));
             }
-            let (options, nu) = resolve(&raw).map_err(|option| Error::UnsupportedFormat {
-                locale: locale.to_string(),
-                name: name.to_string(),
-                option: option.to_owned(),
-            })?;
-            if &*name != "__proto__" && &*locale != "__proto__" {
-                numbering.retain(|(l, n, _)| (&**l, &**n) != (&*locale, &*name));
-                if let Some(nu) = nu {
-                    numbering.push((Box::from(&*locale), Box::from(&*name), nu));
-                }
-                into.entry(Box::from(&*locale))
-                    .or_default()
-                    .insert(Box::from(&*name), options);
-            }
+            each(&locale, &name, &raw)?;
         }
     }
     match r.next() {
@@ -341,9 +396,24 @@ fn number(v: &Val<'_>, lo: u8, hi: u8) -> Option<u8> {
     (n >= f64::from(lo) && n <= f64::from(hi)).then(|| n.floor() as u8)
 }
 
+/// A `numberingSystem` as given: the `type` subtag of a Unicode locale id (3..8
+/// alphanumerics, lowercased), else `Intl` throws.
+fn numbering_system(nu: Option<&str>) -> Result<Option<[u8; 8]>, &'static str> {
+    let Some(nu) = nu else { return Ok(None) };
+    let b = nu.as_bytes();
+    if !(3..=8).contains(&b.len()) || !b.iter().all(u8::is_ascii_alphanumeric) {
+        return Err("numberingSystem");
+    }
+    let mut given = [0u8; 8];
+    for (slot, c) in given.iter_mut().zip(b) {
+        *slot = c.to_ascii_lowercase();
+    }
+    Ok(Some(given))
+}
+
 /// The options of one named format; `Err(option)` for the first one that is not supported.
 /// With the `numberingSystem` given, for [`check_numbering`].
-fn resolve(raw: &[(Box<str>, Val<'_>)]) -> Result<(NumberOptions, Option<[u8; 8]>), &'static str> {
+fn resolve(raw: &Raw<'_>) -> Result<(NumberOptions, Option<[u8; 8]>), &'static str> {
     let get = |k: &str| raw.iter().find(|(key, _)| &**key == k).map(|(_, v)| v);
     let string = |k: &str| get(k).map(Val::string);
     // Options that change nothing at these values are fine; any other value is not supported.
@@ -393,19 +463,7 @@ fn resolve(raw: &[(Box<str>, Val<'_>)]) -> Result<(NumberOptions, Option<[u8; 8]
         Some("long") if !o.compact => {}
         Some(_) => return Err("compactDisplay"),
     }
-    let mut numbering = None;
-    if let Some(nu) = string("numberingSystem") {
-        // the `type` subtag of a Unicode locale id (3..8 alphanumerics), else `Intl` throws
-        let b = nu.as_bytes();
-        if !(3..=8).contains(&b.len()) || !b.iter().all(u8::is_ascii_alphanumeric) {
-            return Err("numberingSystem");
-        }
-        let mut given = [0u8; 8];
-        for (slot, c) in given.iter_mut().zip(b) {
-            *slot = c.to_ascii_lowercase();
-        }
-        numbering = Some(given);
-    }
+    let numbering = numbering_system(string("numberingSystem").as_deref())?;
     if let Some(c) = string("currency") {
         let b = c.as_bytes();
         if b.len() != 3 || !b.iter().all(u8::is_ascii_alphabetic) {
@@ -476,4 +534,95 @@ fn resolve(raw: &[(Box<str>, Val<'_>)]) -> Result<(NumberOptions, Option<[u8; 8]
         o.grouping = Grouping::Min2;
     }
     Ok((o, numbering))
+}
+
+/// The `Intl.DateTimeFormat` options of one named format (DESIGN 5.3), resolved as
+/// ECMA-402 `CreateDateTimeFormat` reads them: each component one of its values (else
+/// `RangeError`), styles not mixed with components (`TypeError`), nothing asked for → year,
+/// month and day. `timeStyle: full / long`, `timeZoneName`, `era`, `dayPeriod`,
+/// `fractionalSecondDigits` and calendars other than `gregory` are not supported; an unknown
+/// `timeZone` is refused like JS refuses it.
+fn resolve_date(raw: &Raw<'_>) -> Result<(DateOptions, Option<[u8; 8]>), &'static str> {
+    let get = |k: &str| raw.iter().find(|(key, _)| &**key == k).map(|(_, v)| v);
+    let string = |k: &str| get(k).map(Val::string);
+    let pick = |k: &'static str, values: &[&str]| -> Result<u8, &'static str> {
+        match string(k) {
+            None => Ok(0),
+            Some(v) => values
+                .iter()
+                .position(|x| *x == v)
+                .map(|i| i as u8 + 1)
+                .ok_or(k),
+        }
+    };
+    for (key, v) in raw {
+        match &**key {
+            "era" | "timeZoneName" | "dayPeriod" | "fractionalSecondDigits" => {
+                return Err(match &**key {
+                    "era" => "era",
+                    "timeZoneName" => "timeZoneName",
+                    "dayPeriod" => "dayPeriod",
+                    _ => "fractionalSecondDigits",
+                });
+            }
+            "calendar" if v.string().eq_ignore_ascii_case("gregory") => {}
+            "calendar" => return Err("calendar"),
+            "localeMatcher" if matches!(&*v.string(), "best fit" | "lookup") => {}
+            "localeMatcher" => return Err("localeMatcher"),
+            "formatMatcher" if matches!(&*v.string(), "best fit" | "basic") => {}
+            "formatMatcher" => return Err("formatMatcher"),
+            _ => {}
+        }
+    }
+    let numeric = ["numeric", "2-digit"];
+    let weekday = pick("weekday", &["long", "short", "narrow"])?;
+    let year = pick("year", &numeric)?;
+    let month = pick("month", &["numeric", "2-digit", "long", "short", "narrow"])?;
+    let day = pick("day", &numeric)?;
+    let hour = pick("hour", &numeric)?;
+    let minute = pick("minute", &numeric)?;
+    let second = pick("second", &numeric)?;
+    let styles = ["full", "long", "medium", "short"];
+    let date_style = pick("dateStyle", &styles)?;
+    let time_style = pick("timeStyle", &styles)?;
+    let hour12 = get("hour12").map(Val::truthy);
+    let cycle = match (hour12, pick("hourCycle", &["h11", "h12", "h23", "h24"])?) {
+        (Some(h), _) => Cycle::Hour12(h),
+        (None, 1) => Cycle::H11,
+        (None, 2) => Cycle::H12,
+        (None, 3) => Cycle::H23,
+        (None, 4) => Cycle::H24,
+        _ => Cycle::Locale,
+    };
+    let zone = match string("timeZone") {
+        Some(name) => Some(zone_named(&name).ok_or("timeZone")?),
+        None => None,
+    };
+    let components = weekday | year | month | day | hour | minute | second != 0;
+    let shape = if date_style != 0 || time_style != 0 {
+        if components {
+            return Err(if date_style != 0 {
+                "dateStyle"
+            } else {
+                "timeStyle"
+            });
+        }
+        // full and long times show the zone's name
+        if matches!(time_style, 1 | 2) {
+            return Err("timeStyle");
+        }
+        Shape::Styles {
+            date: date_style.checked_sub(1).unwrap_or(NO_STYLE),
+            time: time_style.checked_sub(1).unwrap_or(NO_STYLE),
+        }
+    } else if components {
+        Shape::Components {
+            date: ((year * 6 + month) * 3 + day) * 4 + weekday,
+            time: (hour * 3 + minute) * 3 + second,
+        }
+    } else {
+        DateOptions::DEFAULT.shape
+    };
+    let numbering = numbering_system(string("numberingSystem").as_deref())?;
+    Ok((DateOptions { shape, cycle, zone }, numbering))
 }

@@ -41,6 +41,19 @@ pub(crate) struct Loc {
     /// dollars`), not by the decimal pattern.
     #[cfg(feature = "currency-names")]
     pub(crate) name_cur: bool,
+    /// Date data (M6): the rows of [`DATE_PATS`], [`DATE_TIMES`], [`DATE_NAMES`] and [`DATE_REL`], the
+    /// row of [`DATE_B`] (`u16::MAX`: no flexible day periods), the overrides
+    /// `DATE_OVER[dover..dover + dover_len]` and the hour letters of `hour12: true` /
+    /// `false` (`h` or `K`, `H` or `k`).
+    pub(crate) dpats: u16,
+    pub(crate) dtimes: u16,
+    pub(crate) dnames: u16,
+    pub(crate) drel: u16,
+    pub(crate) db: u16,
+    pub(crate) dover: u32,
+    pub(crate) dover_len: u16,
+    pub(crate) hc12: u8,
+    pub(crate) hc24: u8,
 }
 
 /// A parsed pattern: positive / negative prefix and suffix (signs in place, `¤` for the
@@ -113,26 +126,37 @@ pub(crate) fn numbering(digits: u16) -> &'static str {
         .map_or("", |&(_, name)| s(name))
 }
 
+/// String `i` of an interned table (`text`, `ends`).
+#[inline]
+fn at<E: Copy + Into<u32>>(text: &'static str, ends: &[E], i: usize) -> &'static str {
+    let start = i
+        .checked_sub(1)
+        .and_then(|j| ends.get(j))
+        .map_or(0, |&e| e.into() as usize);
+    let end = ends.get(i).map_or(start, |&e| e.into() as usize);
+    text.get(start..end).unwrap_or("")
+}
+
 /// Interned string `i`.
 #[inline]
 pub(crate) fn s(i: u16) -> &'static str {
-    let i = usize::from(i);
-    let start = i
-        .checked_sub(1)
-        .and_then(|j| ENDS.get(j))
-        .map_or(0, |&e| e as usize);
-    let end = ENDS.get(i).map_or(start, |&e| e as usize);
-    STR.get(start..end).unwrap_or("")
+    at(STR, &ENDS, usize::from(i))
+}
+
+/// Compiled date pattern `i` (`build.rs`: `\x01`, letter, width digit per field).
+#[inline]
+pub(crate) fn dpat(i: u16) -> &'static str {
+    at(DPAT_STR, &DPAT_ENDS, usize::from(i))
+}
+
+/// Date name or relative-time string `i`.
+#[inline]
+pub(crate) fn dname(i: u16) -> &'static str {
+    at(DNAME_STR, &DNAME_ENDS, usize::from(i))
 }
 
 /// Currency name string `i`.
 #[cfg(feature = "currency-names")]
 pub(crate) fn name_str(i: u32) -> &'static str {
-    let i = i as usize;
-    let start = i
-        .checked_sub(1)
-        .and_then(|j| NAME_ENDS.get(j))
-        .map_or(0, |&e| e as usize);
-    let end = NAME_ENDS.get(i).map_or(start, |&e| e as usize);
-    NAME_STR.get(start..end).unwrap_or("")
+    at(NAME_STR, &NAME_ENDS, i as usize)
 }

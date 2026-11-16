@@ -203,7 +203,7 @@ impl W<'_> {
 }
 
 /// The ten digits of the locale, as `&str` each (`["0", …]` for Latin).
-fn digit_table(loc: &Loc) -> [&'static str; 10] {
+pub(super) fn digit_table(loc: &Loc) -> [&'static str; 10] {
     const LATN: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
     let all = data::s(loc.digits);
     if all.is_empty() {

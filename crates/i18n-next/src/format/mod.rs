@@ -1,15 +1,22 @@
-//! Formats (DESIGN 5): CLDR number data selected by `build.rs` ([`data`]), the tag →
-//! data locale resolution of `Intl` ([`locale`]), `Intl.NumberFormat` options ([`options`])
-//! and the formatter ([`number`]). Feature `format`.
+//! Formats (DESIGN 5): CLDR number and date data selected by `build.rs` ([`data`]), the tag →
+//! data locale resolution of `Intl` ([`locale`]), `Intl.NumberFormat` and
+//! `Intl.DateTimeFormat` options ([`options`]), the formatters ([`number`], [`date`],
+//! [`relative`]). Feature `format`.
 
 pub(crate) mod api;
 pub(crate) mod data;
+pub(crate) mod date;
 pub(crate) mod locale;
 mod number;
 pub(crate) mod options;
+pub(crate) mod relative;
 
+pub use api::DateArg;
 pub(crate) use data::Loc;
-pub(crate) use options::{Formats, NumberOptions, parse_formats};
+pub use date::Timestamp;
+pub(crate) use date::{DateOptions, Zone};
+pub(crate) use options::{DateFormats, Formats, NumberOptions, parse_date_formats, parse_formats};
+pub use relative::RelativeOptions;
 use std::fmt;
 
 /// A number for [`I18n::tn`](crate::I18n::tn): any primitive integer or float, held as JS
@@ -52,13 +59,19 @@ pub(crate) fn write(
 /// Formats into a new `String` of the exact size: one allocation (a stack buffer first;
 /// past 256 bytes, `1e300` in Devanagari digits, the `String` grows).
 pub(crate) fn to_string(n: Number, o: &NumberOptions, loc: &Loc) -> String {
+    string_of(|out| number::write(n.0, o, loc, out))
+}
+
+/// What `write` writes, as a `String` of the exact size (one allocation, a stack buffer
+/// first).
+pub(crate) fn string_of(write: impl FnOnce(&mut dyn fmt::Write) -> fmt::Result) -> String {
     let mut buf = Stack {
         bytes: [0; 256],
         len: 0,
         spill: None,
     };
     // Writing to the buffer cannot fail.
-    let _ = number::write(n.0, o, loc, &mut buf);
+    let _ = write(&mut buf);
     match buf.spill {
         Some(s) => s,
         None => {

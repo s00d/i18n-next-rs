@@ -55,6 +55,62 @@ pub enum Arg<'a> {
         /// A named format ([`I18n::tn_as`](crate::I18n::tn_as)), else the defaults.
         format: Option<Cow<'a, str>>,
     },
+    /// A date (JS `td`) or a relative date (`tdr`) formatted when shown, like
+    /// [`Arg::Number`]: in the outer `Text`'s instance and locale, with a named format of
+    /// that locale or the defaults. Built by [`Arg::date`], [`Arg::date_as`],
+    /// [`Arg::relative`]. Feature `format`.
+    #[cfg(feature = "format")]
+    Date(crate::DateArg<'a>),
+}
+
+#[cfg(feature = "format")]
+impl<'a> Arg<'a> {
+    /// A date formatted when shown with the default options (JS `td(date)`).
+    ///
+    /// ```
+    /// use i18n_next::{Arg, I18n};
+    ///
+    /// let i18n = I18n::builder().time_zone("UTC").messages("en", None, r#"{"due": "Due {at}"}"#).build()?;
+    /// assert_eq!(i18n.text("due").arg("at", Arg::date(1_704_428_640_000i64)), "Due 1/5/2024");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn date(at: impl Into<crate::Timestamp>) -> Self {
+        Arg::Date(crate::DateArg::date(at.into(), None))
+    }
+
+    /// A date formatted when shown with the named date format `name` (JS `td(date, name)`).
+    ///
+    /// ```
+    /// use i18n_next::{Arg, I18n, t};
+    ///
+    /// let i18n = I18n::builder()
+    ///     .time_zone("UTC")
+    ///     .datetime_formats(r#"{"en": {"short": {"month": "short", "day": "numeric"}}}"#)
+    ///     .messages("en", None, r#"{"due": "Due {at}"}"#)
+    ///     .build()?;
+    /// assert_eq!(t!(i18n => "due", at = Arg::date_as(1_704_428_640_000i64, "short")), "Due Jan 5");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn date_as(at: impl Into<crate::Timestamp>, name: impl Into<Cow<'a, str>>) -> Self {
+        Arg::Date(crate::DateArg::date(at.into(), Some(name.into())))
+    }
+
+    /// An instant relative to the instance's clock when shown (JS `tdr(date)`): `3 days ago`.
+    ///
+    /// ```
+    /// use i18n_next::{Arg, I18n};
+    ///
+    /// let now = 1_704_428_640_000i64;
+    /// let i18n = I18n::builder().clock(move || now).messages("en", None, r#"{"seen": "Seen {at}"}"#).build()?;
+    /// assert_eq!(i18n.text("seen").arg("at", Arg::relative(now - 7_200_000)), "Seen 2 hours ago");
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn relative(at: impl Into<crate::Timestamp>) -> Self {
+        Arg::Date(crate::DateArg::relative(at.into()))
+    }
 }
 
 impl PartialEq for Arg<'_> {
@@ -78,6 +134,8 @@ impl PartialEq for Arg<'_> {
                     format: fb,
                 },
             ) => a == b && fa == fb,
+            #[cfg(feature = "format")]
+            (Arg::Date(a), Arg::Date(b)) => a == b,
             _ => false,
         }
     }
@@ -165,6 +223,10 @@ impl Arg<'_> {
             Arg::Number { value, format } => {
                 let _ = crate::format::api::write_in(None, None, *value, format.as_deref(), out);
             }
+            #[cfg(feature = "format")]
+            Arg::Date(d) => {
+                let _ = d.write_in(None, None, out);
+            }
             other => other.scalar(out),
         }
     }
@@ -184,7 +246,7 @@ impl Arg<'_> {
             Arg::Null => out.push_str("null"),
             Arg::Str(_) | Arg::String(_) | Arg::Text(_) => {}
             #[cfg(feature = "format")]
-            Arg::Number { .. } => {}
+            Arg::Number { .. } | Arg::Date(_) => {}
         }
     }
 
@@ -203,6 +265,8 @@ impl Arg<'_> {
             Arg::Number { value, format } => {
                 crate::format::api::write_in(None, None, *value, format.as_deref(), out)
             }
+            #[cfg(feature = "format")]
+            Arg::Date(d) => d.write_in(None, None, out),
             other => {
                 let mut b = Small::new();
                 other.scalar(&mut b);
@@ -225,7 +289,7 @@ impl Arg<'_> {
             Arg::Text(_) => MAX_SCALAR_LEN,
             // a guess: it only sizes a buffer
             #[cfg(feature = "format")]
-            Arg::Number { .. } => 2 * MAX_SCALAR_LEN,
+            Arg::Number { .. } | Arg::Date(_) => 2 * MAX_SCALAR_LEN,
         }
     }
 }

@@ -58,6 +58,22 @@ fn hot_path_allocations() {
         .unwrap();
     #[cfg(feature = "format")]
     let _ = num.tn(1);
+    // dates: a zone of `tz` (read once at build), a fixed clock
+    #[cfg(all(feature = "format", feature = "tz"))]
+    let day = I18n::builder()
+        .locale("de")
+        .time_zone("Europe/Berlin")
+        .clock(|| 1_704_428_640_000)
+        .messages(
+            "de",
+            None,
+            r#"{"due": "Fällig: {date}", "seen": "Gesehen {relativeDate}"}"#,
+        )
+        .datetime_formats(r#"{"de": {"long": {"dateStyle": "full", "timeStyle": "short"}}}"#)
+        .build()
+        .unwrap();
+    #[cfg(all(feature = "format", feature = "tz"))]
+    let _ = (day.td(0), day.tdr(0));
 
     let _profiler = dhat::Profiler::builder().testing().build();
 
@@ -580,6 +596,37 @@ fn hot_path_allocations() {
         dhat::assert_eq!(n, 0);
         assert_eq!(buf, "Summe: 1.234,5Summe: 1.234,50\u{a0}€");
         assert_eq!(num.tn_as(1234567, "short"), "1,2\u{a0}Mio.");
+    }
+
+    // case: dates (DESIGN 5.5): td / td_as / tdr → exactly 1 block (the result, sized on
+    // the stack); a Text with `{date}` or `{relativeDate}` displayed into a buffer → 0.
+    #[cfg(all(feature = "format", feature = "tz"))]
+    {
+        let at = 1_704_428_640_000i64;
+        let n = blocks(|| {
+            std::hint::black_box(day.td(std::hint::black_box(at)));
+        });
+        dhat::assert_eq!(n, 1);
+        let n = blocks(|| {
+            std::hint::black_box(day.td_as(std::hint::black_box(at), "long"));
+        });
+        dhat::assert_eq!(n, 1);
+        let n = blocks(|| {
+            std::hint::black_box(day.tdr(std::hint::black_box(at - 7_200_000)));
+        });
+        dhat::assert_eq!(n, 1);
+        let due = day.text("due").date_as(at, "long");
+        let seen = day.text("seen").relative(at - 7_200_000);
+        buf.clear();
+        let n = blocks(|| {
+            write!(buf, "{due}").unwrap();
+            seen.write_to(&mut buf).unwrap();
+        });
+        dhat::assert_eq!(n, 0);
+        assert_eq!(
+            buf,
+            "Fällig: Freitag, 5. Januar 2024 um 05:24Gesehen vor 2 Stunden"
+        );
     }
 
     // case: a miss down the whole chain with a default → 1 block (the interpolated

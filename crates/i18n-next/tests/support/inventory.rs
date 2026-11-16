@@ -520,12 +520,15 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
             "scope",
             "set_locale",
             "t",
+            "td",
+            "td_as",
+            "tdr",
             "tn",
             "tn_as",
         ]
         .map(str::to_owned)
         .to_vec();
-        want.extend(methods("Arg", &["display"]));
+        want.extend(methods("Arg", &["date", "date_as", "display", "relative"]));
         want.extend(methods(
             "Args",
             &[
@@ -536,8 +539,10 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
             "Builder",
             &[
                 "build",
+                "clock",
                 "config",
                 "config_json",
+                "datetime_formats",
                 "dir",
                 "evict_pages",
                 "extend",
@@ -557,6 +562,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "pages",
                 "pin_page",
                 "remote",
+                "time_zone",
             ],
         ));
         want.extend(methods("CheckReport", &["is_clean"]));
@@ -583,6 +589,10 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "t_with",
                 "tc",
                 "tc_with",
+                "td",
+                "td_as",
+                "tdr",
+                "tdr_with",
                 "text",
                 "tn",
                 "tn_as",
@@ -593,6 +603,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
         ));
         want.extend(methods("Key", &["args", "new"]));
         want.extend(methods("PluralCtx", &["get"]));
+        want.extend(methods("RelativeOptions", &["auto", "narrow", "short"]));
         want.extend(methods(
             "Scope",
             &["instance", "locale", "page", "run", "wrap"],
@@ -603,6 +614,8 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "arg",
                 "args",
                 "count",
+                "date",
+                "date_as",
                 "fold",
                 "hide_if_empty",
                 "html",
@@ -613,6 +626,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "page",
                 "parts",
                 "plural_rule",
+                "relative",
                 "resolve",
                 "to_string",
                 "write_to",
@@ -629,6 +643,10 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "t_with",
                 "tc",
                 "tc_with",
+                "td",
+                "td_as",
+                "tdr",
+                "tdr_with",
                 "text",
                 "tn",
                 "tn_as",
@@ -636,6 +654,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "with_locale",
             ],
         ));
+        want.extend(methods("Timestamp", &["is_valid", "millis"]));
         assert_eq!(api("i18n-next"), want.into_iter().collect::<BTreeSet<_>>());
         assert_eq!(api("tauri-plugin-i18n-next"), set(&["init", "ping"]));
     }

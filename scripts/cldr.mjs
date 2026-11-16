@@ -952,3 +952,471 @@ writeFileSync(
   ].join('\n'),
 )
 console.log(`number-locales-all.md: ${allLines.length} lines`)
+
+// ---- dates (M6) ----
+// DESIGN 5.2 / 5.3, spikes S9 / S10. Names (months, weekdays, day periods, eras) and relative-time
+// patterns come from cldr-dates-full; the pattern of every supported option combination comes
+// from Node's ICU: `formatToParts` on probe dates, each field's symbol picked as the one that
+// renders the field on every probe (single-digit values fix the width, the months and weekdays
+// of the year fix width and context, hours 0 and 12 the cycle). `renderDate` below mirrors
+// `format/date.rs`; every derived pattern and every combination the runtime builds from them
+// (date and time joined by the locale's glue, forced hour cycles) is re-rendered and compared
+// with Intl `format()` here, where V8 shows U+202F as a space. Writes
+// `crates/i18n-next/src/format/data/dates.txt`: each locale as the difference from its parent.
+// Dates are Gregorian only: ICU's patterns are derived with `calendar: 'gregory'` (`th`, `fa`
+// default to other calendars, fixtures/compat/README.md).
+const DAT = here('./node_modules/cldr-dates-full/main')
+const sp = (s) => s.replace(/\u202f/g, ' ')
+const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+const WIDTHS = [['a', 'abbreviated'], ['w', 'wide'], ['n', 'narrow']]
+const periodRules = supp('dayPeriods').dayPeriodRuleSet
+const weekData = supp('weekData').weekData
+// The tag ICU formats with the data of locale `l`: the root has none of its own (`ku-IQ` is
+// aliased onto it, as for numbers).
+const dateTag = (l) => (l === 'und' ? 'ku-IQ' : l)
+function dateNames(l) {
+  const g = JSON.parse(readFileSync(`${DAT}/${l}/ca-gregorian.json`, 'utf8')).main[l].dates.calendars.gregorian
+  const n = new Map()
+  const set = (k, list) => n.set(k, list.map((v) => sp(clean(v, `${l} ${k}`))))
+  for (const [c, ctx] of [['f', 'format'], ['s', 'stand-alone']]) {
+    for (const [w, wn] of WIDTHS) set(`M.${c}${w}`, Array.from({ length: 12 }, (_, i) => g.months[ctx][wn][String(i + 1)]))
+    for (const [w, wn] of [...WIDTHS, ['s', 'short']]) set(`E.${c}${w}`, DAYS.map((d) => g.days[ctx][wn][d]))
+  }
+  const eraKey = { a: 'eraAbbr', w: 'eraNames', n: 'eraNarrow' }
+  for (const [w, wn] of WIDTHS) {
+    const p = g.dayPeriods.format[wn]
+    set(`a.${w}`, [p.am, p.pm])
+    set(`G.${w}`, [g.eras[eraKey[w]]['0'], g.eras[eraKey[w]]['1']])
+    // flexible day periods (`B`): the period of each hour by the language's rules, then `noon`
+    const lang = l.split('-')
+    const key = [lang.join('_'), lang.slice(0, 2).join('_'), lang[0]].find((k) => periodRules[k])
+    const rules = key ? Object.entries(periodRules[key]) : []
+    const hours = Array.from({ length: 24 }, (_, h) => {
+      for (const [name, r] of rules) {
+        if (!r._from || !p[name]) continue
+        const from = Number(r._from.slice(0, 2))
+        const before = Number(r._before.slice(0, 2))
+        if (from < before ? h >= from && h < before : h >= from || h < before) return p[name]
+      }
+      return h < 12 ? p.am : p.pm
+    })
+    const noon = rules.some(([name]) => name === 'noon') && p.noon ? p.noon : ''
+    set(`B.${w}`, [...hours, noon])
+  }
+  return { n, g }
+}
+const pad = (v, w) => String(v).padStart(w, '0')
+const WID = { 3: 'a', 4: 'w', 5: 'n', 6: 's' }
+// ISO week-numbering year (`Y`, only in the data of locales whose weeks are ISO ones)
+const isoWeekYear = (c) => {
+  const x = new Date(0)
+  x.setUTCFullYear(c.y, c.mo - 1, c.d)
+  const iso = (c.wd + 6) % 7 // Monday 0
+  x.setUTCDate(x.getUTCDate() - iso + 3) // the Thursday of the week
+  return x.getUTCFullYear()
+}
+function dateField(f, c, n, digits, ctx) {
+  const ch = f[0]
+  const len = f.length
+  let num
+  switch (ch) {
+    case 'y': {
+      // the year of the era: 2 BC for -1
+      const ey = c.y > 0 ? c.y : 1 - c.y
+      num = len === 2 ? pad(ey % 100, 2) : pad(ey, len)
+      break
+    }
+    case 'Y': {
+      // the ISO week year, signed (ICU's extended year)
+      const y = isoWeekYear(c)
+      num = pad(len === 2 ? Math.abs(y) % 100 : Math.abs(y), len)
+      if (y < 0) return n.get('minus') + (digits ? num.replace(/[0-9]/g, (x) => [...digits][Number(x)]) : num)
+      break
+    }
+    case 'M':
+    case 'L':
+      if (len > 2) return n.get(`M.${ch === 'M' ? 'f' : 's'}${WID[len]}`)[c.mo - 1]
+      num = pad(c.mo, len)
+      break
+    case 'r':
+      // not CLDR's: a numeric month in lowercase Roman numerals (`haw`, `M=romanlow`)
+      return ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x', 'xi', 'xii'][c.mo - 1]
+    case 'd':
+      num = pad(c.d, len)
+      break
+    case 'E':
+    case 'c':
+      return n.get(`E.${ch === 'E' ? 'f' : 's'}${WID[Math.max(len, 3)]}`)[c.wd]
+    case 'h':
+      num = pad(c.h % 12 || 12, len)
+      break
+    case 'H':
+      num = pad(c.h, len)
+      break
+    case 'K':
+      num = pad(c.h % 12, len)
+      break
+    case 'k':
+      num = pad(c.h || 24, len)
+      break
+    case 'm':
+      num = pad(c.mi, len)
+      break
+    case 's':
+      num = pad(c.s, len)
+      break
+    case 'a':
+      return n.get(`a.${WID[Math.max(len, 3)]}`)[c.h < 12 ? 0 : 1]
+    case 'B': {
+      const t = n.get(`B.${WID[Math.max(len, 3)]}`)
+      if (c.h === 12 && t[24] && (!ctx.m || c.mi === 0) && (!ctx.s || c.s === 0)) return t[24]
+      return t[c.h]
+    }
+    case 'G':
+      return n.get(`G.${len <= 3 ? 'a' : WID[len]}`)[c.y > 0 ? 1 : 0]
+    default:
+      throw new Error(`symbol ${f}`)
+  }
+  return digits ? num.replace(/[0-9]/g, (x) => [...digits][Number(x)]) : num
+}
+// tokens: { lit } | { f } | { glue: 0 | 1 }
+function renderDate(tokens, c, n, digits, parts = {}) {
+  const ctx = { m: tokens.some((t) => t.f?.[0] === 'm'), s: tokens.some((t) => t.f?.[0] === 's') }
+  let out = ''
+  for (const t of tokens) {
+    if (t.lit !== undefined) out += t.lit
+    else if (t.glue !== undefined) out += renderDate(t.glue === 0 ? parts.time : parts.date, c, n, digits)
+    else out += dateField(t.f, c, n, digits, ctx)
+  }
+  return out
+}
+const civilOf = (ms) => {
+  const x = new Date(ms)
+  return { y: x.getUTCFullYear(), mo: x.getUTCMonth() + 1, d: x.getUTCDate(), wd: x.getUTCDay(), h: x.getUTCHours(), mi: x.getUTCMinutes(), s: x.getUTCSeconds() }
+}
+const utcAt = (y, mo, d, h, mi, s) => {
+  const x = new Date(0)
+  x.setUTCFullYear(y, mo - 1, d)
+  x.setUTCHours(h, mi, s, 0)
+  return x.getTime()
+}
+// every month and weekday, every hour, minutes and seconds 0 and 4, years 5, -1 (2 BC), the
+// proleptic 1500 and the last one of JS
+const DATE_PROBES = []
+for (let k = 0; k < 24; k++) DATE_PROBES.push(utcAt(2024, ((k * 5) % 12) + 1, k < 12 ? 5 : 8, (k * 7) % 24, k % 2 ? 4 : 0, k % 3 ? 4 : 0))
+DATE_PROBES.push(utcAt(5, 3, 5, 12, 0, 0), utcAt(-1, 11, 25, 0, 0, 0), utcAt(1500, 7, 9, 23, 59, 59), utcAt(275760, 9, 12, 12, 30, 0), utcAt(2024, 12, 30, 12, 0, 4))
+const DATE_CIVIL = DATE_PROBES.map(civilOf)
+const CAND = {
+  year: ['y', 'yy', 'yyyy', 'Y', 'YY'],
+  month: ['M', 'MM', 'MMM', 'MMMM', 'MMMMM', 'LLL', 'LLLL', 'LLLLL', 'r'],
+  day: ['d', 'dd'],
+  weekday: ['EEE', 'EEEE', 'EEEEE', 'EEEEEE', 'ccc', 'cccc', 'ccccc', 'cccccc'],
+  hour: ['h', 'hh', 'H', 'HH', 'K', 'KK', 'k', 'kk'],
+  minute: ['m', 'mm'],
+  second: ['s', 'ss'],
+  dayPeriod: ['a', 'aaaa', 'aaaaa', 'B', 'BBBB', 'BBBBB'],
+  era: ['G', 'GGGG', 'GGGGG'],
+}
+const checkRender = (tokens, f, n, digits) => DATE_PROBES.every((p, k) => sp(f.format(p)) === renderDate(tokens, DATE_CIVIL[k], n, digits))
+// The pattern of a formatter, from its parts on the probes.
+function deriveParts(f, n, digits) {
+  const parts = DATE_PROBES.map((p) => f.formatToParts(p))
+  const sig = (ps) => ps.map((p) => p.type + (p.type === 'literal' ? `:${sp(p.value)}` : '')).join('|')
+  const first = sig(parts[0])
+  for (const ps of parts) if (sig(ps) !== first) throw new Error(`structure ${first} vs ${sig(ps)}`)
+  const tokens = parts[0].map((p, i) => {
+    if (p.type === 'literal') return { lit: sp(p.value) }
+    const f = (CAND[p.type] ?? []).find((s) => parts.every((ps, k) => sp(ps[i].value) === renderDate([{ f: s }], DATE_CIVIL[k], n, digits)))
+    if (!f) throw new Error(`no symbol for ${p.type} ${parts.slice(0, 4).map((ps) => ps[i].value)}`)
+    return { f }
+  })
+  return tokens
+}
+// V8 cannot `formatToParts` a pattern with `Y` (it aborts): such a pattern is found from
+// `format()` alone, as the one parse of a probe into the asked fields and literals that
+// renders every probe.
+function deriveText(f, n, digits, types) {
+  const outs = DATE_PROBES.map((p) => sp(f.format(p)))
+  const s = outs[0]
+  const search = (i, left, acc) => {
+    if (i === s.length) {
+      if (left.length > 0) return null
+      const tokens = []
+      for (const t of acc) {
+        if (t.lit !== undefined && tokens.at(-1)?.lit !== undefined) tokens.at(-1).lit += t.lit
+        else tokens.push({ ...t })
+      }
+      return DATE_PROBES.every((p, k) => outs[k] === renderDate(tokens, DATE_CIVIL[k], n, digits)) ? tokens : null
+    }
+    for (const type of left) {
+      for (const sym of CAND[type]) {
+        const v = renderDate([{ f: sym }], DATE_CIVIL[0], n, digits)
+        if (v && s.startsWith(v, i)) {
+          const r = search(i + v.length, left.filter((x) => x !== type), [...acc, { f: sym }])
+          if (r) return r
+        }
+      }
+    }
+    return /[0-9]/.test(s[i]) ? null : search(i + 1, left, [...acc, { lit: s[i] }])
+  }
+  const r = search(0, types, [])
+  if (!r) throw new Error(`no parse of ${JSON.stringify(s)}`)
+  return r
+}
+const toAscii = (s, digits) => (digits ? s.replace(/./gu, (ch) => String([...digits].indexOf(ch) >= 0 ? [...digits].indexOf(ch) : ch)) : s)
+function derivePattern(f, n, digits, o, weekYears) {
+  let tokens
+  if (weekYears && o.year) {
+    // 2024-12-30 is in the first ISO week of 2025
+    const shown = toAscii(sp(f.format(utcAt(2024, 12, 30, 0, 0, 0))), digits)
+    if (shown.includes(o.year === '2-digit' ? '25' : '2025')) tokens = deriveText(f, n, digits, ['year', 'month', 'day', 'weekday'].filter((k) => o[k]))
+  }
+  tokens ??= deriveParts(f, n, digits)
+  if (!checkRender(tokens, f, n, digits)) throw new Error(`render differs: ${JSON.stringify(tokens)}`)
+  return tokens
+}
+// CLDR pattern syntax: letters and quotes quoted
+const patText = (tokens) =>
+  tokens
+    .map((t) => {
+      if (t.f) return t.f
+      if (t.glue !== undefined) return `{${t.glue}}`
+      return /[A-Za-z'{}]/.test(t.lit) ? `'${t.lit.replace(/'/g, "''")}'` : t.lit
+    })
+    .join('')
+// the reverse, for glue patterns from CLDR
+function parsePattern(p) {
+  const tokens = []
+  const lit = (s) => {
+    if (tokens.at(-1)?.lit !== undefined) tokens.at(-1).lit += s
+    else tokens.push({ lit: s })
+  }
+  for (let i = 0; i < p.length; ) {
+    const ch = p[i]
+    if (ch === "'") {
+      if (p[i + 1] === "'") {
+        lit("'")
+        i += 2
+        continue
+      }
+      const end = p.indexOf("'", i + 1)
+      let text = p.slice(i + 1, end)
+      let j = end
+      while (p[j + 1] === "'") {
+        const next = p.indexOf("'", j + 2)
+        text += `'${p.slice(j + 2, next)}`
+        j = next
+      }
+      lit(text)
+      i = j + 1
+    } else if (ch === '{' && /^\{[01]\}/.test(p.slice(i))) {
+      tokens.push({ glue: Number(p[i + 1]) })
+      i += 3
+    } else if (/[A-Za-z]/.test(ch)) {
+      let j = i
+      while (p[j] === ch) j++
+      tokens.push({ f: ch.repeat(j - i) })
+      i = j
+    } else {
+      lit(sp(ch))
+      i++
+    }
+  }
+  return tokens
+}
+const YEARS = [undefined, 'numeric', '2-digit']
+const MONTHS = [undefined, 'numeric', '2-digit', 'long', 'short', 'narrow']
+const DAY_OPT = [undefined, 'numeric', '2-digit']
+const WEEKDAYS = [undefined, 'long', 'short', 'narrow']
+const CLOCK = [undefined, 'numeric', '2-digit']
+// combination indices, as format/date.rs computes them
+const dateCombo = (i) => ({ year: YEARS[Math.floor(i / 72)], month: MONTHS[Math.floor(i / 12) % 6], day: DAY_OPT[Math.floor(i / 4) % 3], weekday: WEEKDAYS[i % 4] })
+const timeCombo = (i) => ({ hour: CLOCK[Math.floor(i / 9)], minute: CLOCK[Math.floor(i / 3) % 3], second: CLOCK[i % 3] })
+const defined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined))
+// the glue of a date part (ICU DateTimePatternGenerator): long month with a weekday → full,
+// long → long, short → medium, else short
+const glueWidth = (i) => {
+  const m = Math.floor(i / 12) % 6
+  if (m === 3) return i % 4 ? 0 : 1
+  return m === 4 ? 2 : 3
+}
+const HC_CHAR = { h11: 'K', h12: 'h', h23: 'H', h24: 'k' }
+// forced hour cycles: each has its own patterns (ICU's generator treats `k` and `K` unlike
+// `H` and `h` in odd combinations), `hour12` is the locale's 12- or 24-hour cycle
+const CYCLES = ['h11', 'h12', 'h23', 'h24']
+const renderGlued = (g, c, n, digits) => renderDate(g.glue, c, n, digits, { date: g.date, time: g.time })
+const checkGlued = (g, f, n, digits) => DATE_PROBES.every((p, k) => sp(f.format(p)) === renderGlued(g, DATE_CIVIL[k], n, digits))
+// a few locales are checked on every date × time × mode combination
+const EXHAUSTIVE = new Set(['en', 'de', 'ja', 'ar', 'zh-Hant', 'ru', 'fr', 'hi', 'he', 'ko'])
+const UNITS_REL = ['year', 'month', 'day', 'hour', 'minute', 'second']
+const REL_STYLES = ['long', 'short', 'narrow']
+const REL_VALUES = [-0, 0, 1, -1, 2, -2, 3, -3, 5, -5, 11, -11, 21, -21, 22, 100, -101, 1000, -1234567, 1e6]
+let overrideCount = 0
+let derivedCount = 0
+let textDerived = 0
+function datesOf(l) {
+  const tag = dateTag(l)
+  const { n, g } = dateNames(l)
+  const digits = fields.get(l).f.get('digits')
+  // the negative prefix of the locale's numbers (a week year before 1)
+  n.set('minus', new Intl.NumberFormat(tag).formatToParts(-1).filter((x) => x.type !== 'integer').map((x) => x.value).join(''))
+  const region = fullParts(l).region ?? fullParts(likely[l.split('-')[0]] ?? '').region
+  // `Y` in a pattern Intl can use (week-of-year formats aside)
+  const avail = Object.entries(g.dateTimeFormats.availableFormats).filter(([k]) => !/[wW]/.test(k))
+  const weekYears = [...Object.values(g.dateFormats), ...avail.map(([, v]) => v)].some((v) => typeof v === 'string' && /Y/.test(v.replace(/'[^']*'/g, '')))
+  if (weekYears && (weekData.firstDay[region] ?? weekData.firstDay['001']) !== 'mon') throw new Error(`${l}: week years outside ISO weeks`)
+  if (weekYears && (weekData.minDays[region] ?? weekData.minDays['001']) !== '4') throw new Error(`${l}: week years outside ISO weeks`)
+  const fmt = (o) => new Intl.DateTimeFormat(tag, { timeZone: 'UTC', calendar: 'gregory', ...o })
+  const out = new Map()
+  const tok = new Map()
+  const derive = (key, o) => {
+    const t = derivePattern(fmt(o), n, digits, o, weekYears)
+    if (t.some((x) => x.lit === undefined && x.f === undefined)) throw new Error('glue in a pattern')
+    tok.set(key, t)
+    out.set(key, patText(t))
+    derivedCount++
+    return t
+  }
+  for (let i = 1; i < 216; i++) derive(`d${i}`, defined(dateCombo(i)))
+  for (let i = 1; i < 27; i++) {
+    const o = defined(timeCombo(i))
+    if (i < 9) derive(`t${i}`, o)
+    else {
+      derive(`j${i - 9}`, o)
+      for (const hc of CYCLES) derive(`${HC_CHAR[hc]}${i - 9}`, { ...o, hourCycle: hc })
+    }
+  }
+  const STYLES = ['full', 'long', 'medium', 'short']
+  for (let w = 0; w < 4; w++) derive(`ds${w}`, { dateStyle: STYLES[w] })
+  for (const w of [2, 3]) {
+    derive(`tsj${w}`, { timeStyle: STYLES[w] })
+    for (const hc of CYCLES) derive(`ts${HC_CHAR[hc]}${w}`, { timeStyle: STYLES[w], hourCycle: hc })
+  }
+  const hc12 = HC_CHAR[fmt({ hour: 'numeric', hour12: true }).resolvedOptions().hourCycle]
+  const hc24 = HC_CHAR[fmt({ hour: 'numeric', hour12: false }).resolvedOptions().hourCycle]
+  out.set('hc', `${hc12}${hc24}`)
+  // `hour12` is the locale's 12- or 24-hour cycle
+  for (const [h12, hc] of [[true, hc12], [false, hc24]]) {
+    for (let i = 0; i < 18; i++) {
+      if (!checkRender(tok.get(`${hc}${i}`), fmt({ ...defined(timeCombo(i + 9)), hour12: h12 }), n, digits)) throw new Error(`${l}: time ${i} with hour12 ${h12}`)
+    }
+    for (const w of [2, 3]) if (!checkRender(tok.get(`ts${hc}${w}`), fmt({ timeStyle: STYLES[w], hour12: h12 }), n, digits)) throw new Error(`${l}: timeStyle ${w} with hour12 ${h12}`)
+  }
+  // the glue: what ICU puts around the date and time parts (its data differs from cldr-json in
+  // places: `fr-ML`), read off the first probe
+  const pickGlue = (date, time, f) => {
+    const s = sp(f.format(DATE_PROBES[0]))
+    const ds = renderDate(date, DATE_CIVIL[0], n, digits)
+    const ts = renderDate(time, DATE_CIVIL[0], n, digits)
+    const cands = []
+    for (const [a, b, ga, gb] of [[ds, ts, 1, 0], [ts, ds, 0, 1]]) {
+      const i = s.indexOf(a)
+      const j = i < 0 ? -1 : s.indexOf(b, i + a.length)
+      if (j < 0) continue
+      cands.push([{ lit: s.slice(0, i) }, { glue: ga }, { lit: s.slice(i + a.length, j) }, { glue: gb }, { lit: s.slice(j + b.length) }].filter((t) => t.lit !== ''))
+    }
+    return cands.find((glue) => checkGlued({ glue, date, time }, f, n, digits)) ?? null
+  }
+  const glue = []
+  const glueS = []
+  for (let w = 0; w < 4; w++) {
+    // a date part of this width: year, day and the month (weekday for full)
+    const d = 72 + [3 * 12 + 4 + 1, 3 * 12 + 4, 4 * 12 + 4, 1 * 12 + 4][w]
+    const time = tok.get('j3') // hour + minute, numeric
+    glue[w] = pickGlue(tok.get(`d${d}`), time, fmt({ ...defined(dateCombo(d)), hour: 'numeric', minute: 'numeric' }))
+    if (!glue[w]) throw new Error(`${l}: no glue for width ${w}`)
+    out.set(`g${w}`, patText(glue[w]))
+    glueS[w] = pickGlue(tok.get(`ds${w}`), tok.get('tsj3'), fmt({ dateStyle: STYLES[w], timeStyle: 'short' }))
+    if (!glueS[w]) throw new Error(`${l}: no style glue for width ${w}`)
+    out.set(`gs${w}`, patText(glueS[w]))
+  }
+  // date × time: the glue of the date part's width, else an override
+  const modes = ['j', ...CYCLES.map((hc) => HC_CHAR[hc])]
+  const modeOption = (m) => (m === 'j' ? {} : { hourCycle: CYCLES.find((hc) => HC_CHAR[hc] === m) })
+  const timeTokens = (t, m) => (t < 9 ? tok.get(`t${t}`) : tok.get(`${m}${t - 9}`))
+  const combined = (d, t, m) => {
+    const o = { ...defined(dateCombo(d)), ...defined(timeCombo(t)), ...(t < 9 ? {} : modeOption(m)) }
+    const f = fmt(o)
+    if (checkGlued({ glue: glue[glueWidth(d)], date: tok.get(`d${d}`), time: timeTokens(t, m) }, f, n, digits)) return
+    out.set(`x${d}.${t}.${m}`, patText(derivePattern(f, n, digits, o, weekYears)))
+    overrideCount++
+  }
+  const exhaustive = EXHAUSTIVE.has(l)
+  for (let d = 1; d < 216; d++) {
+    for (let t = 1; t < 27; t++) {
+      for (const m of t < 9 ? ['j'] : modes) {
+        if (d < 4 || exhaustive || (t === 13 && m === 'j') || (t === 22 && m === 'H') || t === 4) combined(d, t, m)
+      }
+    }
+  }
+  // dateStyle × timeStyle in every mode
+  for (let w = 0; w < 4; w++) {
+    for (const tw of [2, 3]) {
+      for (const m of modes) {
+        const f = fmt({ dateStyle: STYLES[w], timeStyle: STYLES[tw], ...modeOption(m) })
+        if (checkGlued({ glue: glueS[w], date: tok.get(`ds${w}`), time: tok.get(`ts${m}${tw}`) }, f, n, digits)) continue
+        out.set(`y${w}.${tw}.${m}`, patText(deriveParts(f, n, digits)))
+        overrideCount++
+      }
+    }
+  }
+  // names the patterns use; `B` only where some pattern has it
+  const used = [...out.values()].join('')
+  const usesB = /B/.test(used.replace(/'[^']*'/g, ''))
+  for (const [k, v] of n) if (k !== 'minus' && (!k.startsWith('B.') || usesB)) out.set(k, v.join('\t'))
+  // relative time, read back from ICU (its data differs from cldr-json in places: `ccp`): the
+  // pattern of each plural form from `formatToParts` of an integer of that form, the words of
+  // `numeric: 'auto'` where they differ from the number
+  const nf = new Intl.NumberFormat(tag)
+  const pr = new Intl.PluralRules(tag)
+  const sample = new Map()
+  for (const v of [...Array(1101).keys(), 1e6, 1e7, 1e9]) if (!sample.has(pr.select(v))) sample.set(pr.select(v), v)
+  const relPattern = (rtf, v, u) =>
+    rtf
+      .formatToParts(v, u)
+      .map((x) => (x.type === 'literal' ? clean(x.value, 'relative') : '\u0000'))
+      .join('')
+      .replace(/\u0000+/, '{0}')
+  for (const u of UNITS_REL) {
+    for (const style of REL_STYLES) {
+      const always = new Intl.RelativeTimeFormat(tag, { style })
+      const auto = new Intl.RelativeTimeFormat(tag, { style, numeric: 'auto' })
+      const words = [-2, -1, 0, 1, 2].map((v) => (auto.format(v, u) === always.format(v, u) ? '' : clean(auto.format(v, u), 'relative')))
+      const future = CATS.map((c) => (sample.has(c) ? relPattern(always, sample.get(c), u) : ''))
+      const past = CATS.map((c) => (sample.has(c) ? relPattern(always, -sample.get(c), u) : ''))
+      out.set(`r.${u}.${style}`, [...words, ...future, ...past].join('\t'))
+      for (const numeric of ['always', 'auto']) {
+        const rtf = new Intl.RelativeTimeFormat(tag, { numeric, style })
+        for (const v of REL_VALUES) {
+          const word = numeric === 'auto' && Math.abs(v) <= 2 ? words[v + 2] : ''
+          const list = v > 0 || Object.is(v, 0) ? future : past
+          const pick = (c) => list[CATS.indexOf(c)] || list[5]
+          const want = word || pick(pr.select(Math.abs(v))).replace('{0}', nf.format(Math.abs(v)))
+          const got = rtf.format(v, u)
+          if (got !== want) throw new Error(`${l}: relative ${v} ${u} ${style} ${numeric}: ${JSON.stringify(got)}, predicted ${JSON.stringify(want)}`)
+        }
+      }
+    }
+  }
+  if (weekYears) textDerived++
+  return out
+}
+const dateStart = Date.now()
+const dateFields = new Map(all.map((l) => [l, datesOf(l)]))
+const dtxt = []
+dtxt.push(`# generated by scripts/cldr.mjs from cldr-dates-full ${CLDR_VERSION} and Node ICU ${process.versions.icu} (patterns) — do not edit`)
+dtxt.push('# read by crates/i18n-next/build.rs; a locale section holds the fields that differ from its parent (`key<tab>value`, lists tab-separated)')
+let dateDiff = 0
+for (const l of all) {
+  const own = dateFields.get(l)
+  const p = parentOf(l)
+  const base = p === null ? null : dateFields.get(p)
+  dtxt.push(`locale ${l} ${p ?? '-'}`)
+  const before = dtxt.length
+  for (const [k, v] of own) if (base?.get(k) !== v) dtxt.push(`${k}\t${v}`)
+  if (base) for (const k of base.keys()) if (!own.has(k)) dtxt.push(`${k}\t-`)
+  dateDiff += dtxt.length - before
+}
+dtxt.push('')
+writeFileSync(here('../crates/i18n-next/src/format/data/dates.txt'), dtxt.join('\n'))
+console.log(`dates.txt: ${all.length} locales, ${derivedCount} patterns derived (${textDerived} locales with week years), ${overrideCount} overrides, ${dateDiff} field lines, ${Date.now() - dateStart} ms`)

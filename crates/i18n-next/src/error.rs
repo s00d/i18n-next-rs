@@ -50,11 +50,13 @@ pub enum Error {
     AlreadyInstalled,
     /// A free function (`set_locale`) needs an instance: none is installed, no scope sets one.
     NotInstalled,
-    /// A named number format (`numberFormats` of `i18n.json`, `Builder::formats`) uses an
-    /// `Intl.NumberFormat` option outside the supported subset (`signDisplay: "always"`,
-    /// `style: "unit"`, `notation: "scientific"`…) or a value `Intl` throws on (`currency:
-    /// "usdx"`, `minimumFractionDigits` over `maximumFractionDigits`): refused at `build`
-    /// rather than formatted differently from the front end.
+    /// A named format (`numberFormats` / `datetimeFormats` of `i18n.json`,
+    /// `Builder::formats` / `Builder::datetime_formats`) uses an `Intl` option outside the
+    /// supported subset (`signDisplay: "always"`, `style: "unit"`, `timeStyle: "full"`,
+    /// `timeZoneName`…) or a value `Intl` throws on (`currency: "usdx"`,
+    /// `minimumFractionDigits` over `maximumFractionDigits`, `month: "numerical"`, a time
+    /// zone the platform does not know): refused at `build` rather than formatted
+    /// differently from the front end.
     UnsupportedFormat {
         /// The locale code the format is listed under.
         locale: String,
@@ -63,6 +65,9 @@ pub enum Error {
         /// The option (`signDisplay`, `notation`, `maximumFractionDigits`…).
         option: String,
     },
+    /// `Builder::time_zone` names a zone the platform does not know (JS `RangeError`); without
+    /// the `tz` feature only UTC is known.
+    UnknownTimeZone(String),
     /// The fetch closure of `ensure_async` failed for one file; the catalog is unchanged.
     Fetch {
         /// The manifest path that was being fetched.
@@ -92,8 +97,9 @@ impl fmt::Display for Error {
                 option,
             } => write!(
                 f,
-                "number format \"{name}\" of \"{locale}\": option \"{option}\" is not supported"
+                "format \"{name}\" of \"{locale}\": option \"{option}\" is not supported"
             ),
+            Error::UnknownTimeZone(name) => write!(f, "unknown time zone \"{name}\""),
             Error::AlreadyInstalled => f.write_str("an i18n instance is installed already"),
             Error::NotInstalled => {
                 f.write_str("no i18n instance: install() one or set it in a scope")

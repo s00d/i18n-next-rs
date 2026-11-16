@@ -37,6 +37,14 @@ measure() {
     --target wasm32-unknown-unknown --target-dir "${target_dir}" "${features[@]}" >&2 || return 1
   local wasm="${target_dir}/wasm32-unknown-unknown/release/size_probe.wasm"
   local opt="${OUT}/$(basename "${repo}")-${variant}.wasm"
+  # A probe that links `js-sys` (the browser zones of `tz`) carries wasm-bindgen's describe
+  # metadata (~290 KB) that an app's build removes: run wasm-bindgen as that build does.
+  if grep -q '__wasm_bindgen_unstable' "${wasm}"; then
+    local bindgen="${WASM_BINDGEN:-wasm-bindgen}"
+    command -v "${bindgen}" >/dev/null || { echo "size-check: ${bindgen} not found (needed for a js-sys probe)" >&2; return 1; }
+    "${bindgen}" --target web --out-dir "${target_dir}/bindgen-${variant}" "${wasm}" >&2 || return 1
+    wasm="${target_dir}/bindgen-${variant}/size_probe_bg.wasm"
+  fi
   wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
     "${wasm}" -o "${opt}" || return 1
   wc -c < "${opt}" | tr -d ' ' || return 1

@@ -24,7 +24,10 @@ mod source;
 mod text;
 mod trace;
 #[cfg(feature = "tz")]
-#[allow(dead_code, reason = "filled in by stage M6")]
+#[allow(
+    dead_code,
+    reason = "backends of other platforms (Android, browser) and items only tests read"
+)]
 mod tz;
 #[cfg(all(
     feature = "watch",
@@ -37,9 +40,9 @@ pub use change::{Change, Subscription};
 pub use check::{CheckItem, CheckReport, LinkError};
 pub use error::Error;
 #[cfg(feature = "format")]
-pub use format::Number;
+pub use format::api::{td, td_as, tdr, tn, tn_as};
 #[cfg(feature = "format")]
-pub use format::api::{tn, tn_as};
+pub use format::{DateArg, Number, RelativeOptions, Timestamp};
 pub use i18n::{Builder, I18n, LocaleInfo, View};
 #[doc(hidden)]
 pub use macros::__ident;

@@ -7,6 +7,8 @@
 
 #[path = "support/compat.rs"]
 mod compat;
+#[path = "support/date.rs"]
+mod date;
 #[path = "support/number.rs"]
 mod number;
 #[path = "support/platform.rs"]
@@ -37,6 +39,18 @@ fn number_goldens_in_wasm() {
     for golden in [number::NUMBER, number::PROPS, number::LOCALES] {
         if let Err(diff) = number::run(golden) {
             panic!("number goldens differ:\n{diff}");
+        }
+    }
+}
+
+/// Given the date goldens (Node `Intl.DateTimeFormat` / `RelativeTimeFormat`), when they
+/// are replayed in wasm, then every line matches: the zones come from the platform's `Intl`
+/// there (the `tz` browser backend), the patterns and the renderer are the same code.
+#[wasm_bindgen_test]
+fn date_goldens_in_wasm() {
+    for golden in [date::DATE, date::RELATIVE, date::PROPS] {
+        if let Err(diff) = date::run(golden) {
+            panic!("date goldens differ:\n{diff}");
         }
     }
 }

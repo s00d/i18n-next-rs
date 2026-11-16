@@ -157,6 +157,15 @@ jobs:
         run: |
           curl -sSfL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar xz -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+      # The full probe links `js-sys` (browser zones): tools/size-check.sh runs wasm-bindgen
+      # as an app's build does, which drops its describe metadata. Version as in Cargo.lock.
+      - name: Install wasm-bindgen
+        run: |
+          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version' | head -n1)
+          echo "WASM_BINDGEN_VERSION=$v" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@${{ env.WASM_BINDGEN_VERSION }}
       - name: Size check
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -176,10 +185,10 @@ jobs:
       # Every target (`--target all`), so a `cfg(windows)` or wasm-only dependency counts too.
       - name: cargo tree must list only allowlisted dependencies
         run: |
-          # Allowed direct runtime dependencies, one name per entry. Empty in M0. DESIGN 2.3
-          # allows only `wasm-bindgen` and `js-sys`, for wasm32 with `tz` / `tauri-guest`:
-          # add them here (one line) when they arrive.
-          allow=()
+          # Allowed direct runtime dependencies, one name per entry. DESIGN 2.3 allows only
+          # `wasm-bindgen` and `js-sys`, for wasm32 with `tz` / `tauri-guest`: `js-sys` is the
+          # browser's zones and clock (wasm32-unknown-unknown with `tz` only).
+          allow=(js-sys)
           tree=$(cargo tree -e normal -p i18n-next --depth 1 --target all --locked --prefix none)
           echo "$tree"
           bad=()

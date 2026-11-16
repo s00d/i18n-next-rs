@@ -6,7 +6,8 @@ with no runtime dependencies.
 
 **Status: early.** The catalog (root and page chunks, fallback chains, `i18n.json`),
 plurals (CLDR rules as in `Intl.PluralRules`), `Text`, `t!`, global access and number formats
-(`tn`, CLDR 48 as in `Intl.NumberFormat`) work; dates and the Tauri plugin come stage by stage.
+(`tn`, CLDR 48 as in `Intl.NumberFormat`), dates and relative time (`td`, `tdr`, as `Intl` shows
+them, own time zones) work; the Tauri plugin comes stage by stage.
 Do not depend on it yet.
 
 ```rust

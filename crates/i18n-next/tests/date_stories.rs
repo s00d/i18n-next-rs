@@ -1,0 +1,244 @@
+//! Stories of dates (DESIGN 5.3, 5.4): refused options, invalid dates, the injected clock,
+//! named formats looked up by truncated codes, the `iso` of a locale, dates in a `Text`, in
+//! arguments and the macros. Every instance pins its zone and clock: nothing reads real time.
+
+// zones and CLDR data: features `format` and `tz` (defaults)
+#![cfg(all(feature = "format", feature = "tz"))]
+
+use i18n_next::{Arg, Error, I18n, RelativeOptions, scope, t, td, tdr};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
+
+/// 2024-01-05 04:24:00 UTC, a Friday.
+const AT: i64 = 1_704_428_640_000;
+const DAY: i64 = 86_400_000;
+
+/// Given named date formats with options outside the subset (or values `Intl` throws on),
+/// when the catalog is built, then `build` fails naming the locale, the format and the
+/// option; an unknown builder zone fails with `UnknownTimeZone`.
+#[test]
+fn unsupported_date_options_fail_the_build() {
+    for (options, option) in [
+        (r#"{"timeStyle": "full"}"#, "timeStyle"),
+        (
+            r#"{"dateStyle": "short", "timeStyle": "long"}"#,
+            "timeStyle",
+        ),
+        (
+            r#"{"hour": "numeric", "timeZoneName": "short"}"#,
+            "timeZoneName",
+        ),
+        (r#"{"year": "numeric", "era": "short"}"#, "era"),
+        (r#"{"hour": "numeric", "dayPeriod": "short"}"#, "dayPeriod"),
+        (
+            r#"{"second": "numeric", "fractionalSecondDigits": 2}"#,
+            "fractionalSecondDigits",
+        ),
+        (r#"{"calendar": "buddhist"}"#, "calendar"),
+        (r#"{"dateStyle": "short", "hour": "numeric"}"#, "dateStyle"),
+        (r#"{"timeStyle": "short", "year": "numeric"}"#, "timeStyle"),
+        (r#"{"month": "numerical"}"#, "month"),
+        (r#"{"year": true}"#, "year"),
+        (r#"{"hourCycle": "h25"}"#, "hourCycle"),
+        (r#"{"timeZone": "Mars/Olympus"}"#, "timeZone"),
+        (r#"{"numberingSystem": "x"}"#, "numberingSystem"),
+    ] {
+        let err = I18n::builder()
+            .datetime_formats(&format!(r#"{{"en": {{"x": {options}}}}}"#))
+            .build()
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("format \"x\" of \"en\": option \"{option}\" is not supported"),
+            "{options}"
+        );
+    }
+    // a numbering system other than the locale's default, from `i18n.json`
+    let config = r#"{"locales": [{"code": "ar", "iso": "ar-EG"}],
+        "datetimeFormats": {"ar": {"latn": {"numberingSystem": "latn"}}}}"#;
+    assert!(matches!(
+        I18n::builder().config_json(config).build(),
+        Err(Error::UnsupportedFormat { option, .. }) if option == "numberingSystem"
+    ));
+    assert!(matches!(
+        I18n::builder().time_zone("Mars/Olympus").build(),
+        Err(Error::UnknownTimeZone(z)) if z == "Mars/Olympus"
+    ));
+    // values at their default and unknown keys are fine, as for `Intl`
+    let ok = I18n::builder()
+        .time_zone("utc")
+        .datetime_formats(r#"{"en": {"x": {"calendar": "gregory", "localeMatcher": "lookup", "formatMatcher": "basic", "hour12": true, "foo": 1}}}"#)
+        .build()
+        .unwrap();
+    assert_eq!(ok.td_as(AT, "x"), "1/5/2024");
+}
+
+/// Given dates JS cannot hold (`NaN`, past ±8.64e15 ms), when they are formatted, then
+/// every form shows `Invalid Date`; the ends of the range still format.
+#[test]
+fn invalid_dates_show_invalid_date() {
+    let i18n = I18n::builder()
+        .time_zone("UTC")
+        .clock(|| AT)
+        .messages(
+            "en",
+            None,
+            r#"{"due": "Due {date}", "seen": "Seen {relativeDate}"}"#,
+        )
+        .build()
+        .unwrap();
+    for bad in [f64::NAN, f64::INFINITY, 8.64e15 + 1.0] {
+        assert_eq!(i18n.td(bad), "Invalid Date");
+        assert_eq!(i18n.tdr(bad), "Invalid Date");
+        assert_eq!(i18n.text("due").date(bad), "Due Invalid Date");
+        assert_eq!(i18n.text("seen").relative(bad), "Seen Invalid Date");
+    }
+    assert_eq!(i18n.td(8_640_000_000_000_000i64), "9/13/275760");
+    assert_eq!(i18n.td(-8_640_000_000_000_000i64), "4/20/271822");
+    assert_eq!(i18n.td(-1i64), "12/31/1969");
+}
+
+/// Given a clock the test moves, when `tdr` and a `Text` with a relative date are shown
+/// again, then they follow the clock: the unit grows, the past turns to `ago`, and under
+/// a second in the past is `0 seconds ago`, as `formatRelativeTime` says.
+#[test]
+fn relative_dates_follow_the_injected_clock() {
+    let now = Arc::new(AtomicI64::new(AT));
+    let clock = now.clone();
+    let i18n = I18n::builder()
+        .clock(move || clock.load(Ordering::SeqCst))
+        .messages("en", None, r#"{"seen": "Seen {relativeDate}"}"#)
+        .messages("de", None, r#"{"seen": "Gesehen {relativeDate}"}"#)
+        .build()
+        .unwrap();
+    let seen = i18n.text("seen").relative(AT);
+    assert_eq!(i18n.tdr(AT), "in 0 seconds");
+    now.store(AT + 500, Ordering::SeqCst);
+    assert_eq!(i18n.tdr(AT), "0 seconds ago");
+    now.store(AT + 90_000, Ordering::SeqCst);
+    assert_eq!(seen, "Seen 1 minute ago");
+    now.store(AT + 3 * DAY, Ordering::SeqCst);
+    assert_eq!(seen, "Seen 3 days ago");
+    i18n.set_locale("de").unwrap();
+    assert_eq!(seen, "Gesehen vor 3 Tagen");
+    now.store(AT - 400 * DAY, Ordering::SeqCst);
+    assert_eq!(i18n.tdr(AT), "in 1 Jahr");
+    let auto = RelativeOptions::default().auto();
+    now.store(AT + DAY, Ordering::SeqCst);
+    assert_eq!(i18n.tdr_with(AT, auto), "gestern");
+    assert_eq!(
+        i18n.with_locale("en").tdr_with(AT, auto.narrow()),
+        "yesterday"
+    );
+    assert_eq!(
+        i18n.with_locale("en")
+            .tdr_with(AT - 5 * DAY, RelativeOptions::default().short()),
+        "6 days ago"
+    );
+}
+
+/// Given named date formats under `zh`, `zh-Hant` and `de`, when a longer code formats with
+/// a name, then the format of the longest listed truncation is used (`zh-Hant-TW` →
+/// `zh-Hant`, `de-AT` → `de`); a name nowhere to be found formats with the defaults.
+#[test]
+fn named_date_formats_are_found_by_truncated_codes() {
+    let i18n = I18n::builder()
+        .time_zone("UTC")
+        .datetime_formats(
+            r#"{"zh": {"m": {"month": "long"}, "y": {"year": "numeric"}},
+                "zh-Hant": {"m": {"month": "short"}},
+                "de": {"d": {"weekday": "long", "day": "numeric", "month": "long"}}}"#,
+        )
+        .build()
+        .unwrap();
+    assert_eq!(i18n.with_locale("zh-Hant-TW").td_as(AT, "m"), "1月");
+    assert_eq!(i18n.with_locale("zh-Hant-TW").td_as(AT, "y"), "2024年");
+    assert_eq!(
+        i18n.with_locale("de-AT").td_as(AT, "d"),
+        "Freitag, 5. Jänner"
+    );
+    assert_eq!(i18n.with_locale("de-AT").td_as(AT, "missing"), "5.1.2024");
+}
+
+/// Given locale codes with an `iso` (`ua` → `uk-UA`, `ar` → `ar-EG`) and one `Intl` does
+/// not know, when they format dates, then the data is the tag's (Arabic digits, Ukrainian
+/// months) and the unknown code formats as `en`, as `FormatService` does.
+#[test]
+fn dates_use_the_iso_of_a_locale() {
+    let i18n = I18n::builder()
+        .time_zone("UTC")
+        .clock(|| AT)
+        .iso("ua", "uk-UA")
+        .iso("ar", "ar-EG")
+        .datetime_formats(r#"{"ua": {"long": {"dateStyle": "long"}}}"#)
+        .build()
+        .unwrap();
+    assert_eq!(i18n.with_locale("ua").td_as(AT, "long"), "5 січня 2024 р.");
+    assert_eq!(i18n.with_locale("ar").td(AT), "٥‏/١‏/٢٠٢٤");
+    assert_eq!(i18n.with_locale("ar").tdr(AT - 2 * DAY), "قبل يومين");
+    assert_eq!(i18n.with_locale("xx").td(AT), "1/5/2024");
+}
+
+/// Given a zone on the instance and one in a named format, when the same instant is shown,
+/// then the format's zone wins and both cross DST as `Intl` does.
+#[test]
+fn zones_of_the_instance_and_of_a_format() {
+    let i18n = I18n::builder()
+        .time_zone("America/New_York")
+        .datetime_formats(r#"{"en": {"berlin": {"timeStyle": "short", "timeZone": "Europe/Berlin"}, "here": {"timeStyle": "short"}}}"#)
+        .build()
+        .unwrap();
+    // 2024-03-31 01:00 UTC: Berlin has just moved to summer time, New York already had
+    let spring = 1_711_846_800_000i64;
+    assert_eq!(i18n.td_as(spring, "berlin"), "3:00 AM");
+    assert_eq!(i18n.td_as(spring - 1000, "berlin"), "1:59 AM");
+    assert_eq!(i18n.td_as(spring, "here"), "9:00 PM");
+}
+
+/// Given a `Text` with a number, a date and a relative date, when it is shown, then the
+/// number wins, then the date (JS checks `number`, `date`, `relativeDate` in that order);
+/// dates also go in as arguments and through the macros, on the scope's instance.
+#[test]
+fn dates_in_texts_arguments_and_macros() {
+    let i18n = I18n::builder()
+        .time_zone("UTC")
+        .clock(|| AT)
+        .datetime_formats(r#"{"en": {"day": {"weekday": "long"}}}"#)
+        .messages(
+            "en",
+            None,
+            r#"{"all": "{number}|{date}|{relativeDate}", "due": "Due {at}", "on": "On {date}"}"#,
+        )
+        .build()
+        .unwrap();
+    let all = i18n.text("all").relative(AT).date(AT).number(7);
+    assert_eq!(all, "7|{date}|{relativeDate}");
+    assert_eq!(
+        i18n.text("all").relative(AT - DAY).date(AT),
+        "{number}|1/5/2024|{relativeDate}"
+    );
+    assert_eq!(
+        i18n.text("all").relative(AT - DAY),
+        "{number}|{date}|1 day ago"
+    );
+    assert_eq!(i18n.text("on").date_as(AT, "day"), "On Friday");
+    assert_eq!(t!(i18n => "on", @date = AT), "On 1/5/2024");
+    assert_eq!(
+        t!(i18n => "all", @relative = AT + 2 * DAY),
+        "{number}|{date}|in 2 days"
+    );
+    assert_eq!(
+        t!(i18n => "due", at = Arg::date_as(AT, "day")),
+        "Due Friday"
+    );
+    assert_eq!(
+        t!(i18n => "due", at = Arg::relative(AT - 60_000)),
+        "Due 1 minute ago"
+    );
+    scope().instance(i18n.clone()).locale("ru").run(|| {
+        assert_eq!(td!(AT), "05.01.2024");
+        assert_eq!(tdr!(AT - 3_600_000), "1 час назад");
+        assert_eq!(td(AT), "05.01.2024");
+        assert_eq!(tdr(AT + 3_600_000), "через 1 час");
+    });
+}

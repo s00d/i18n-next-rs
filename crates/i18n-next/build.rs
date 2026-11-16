@@ -13,6 +13,12 @@
 //! place (`¤` stays, for the currency), grouping sizes and zeros as numbers. Strings are
 //! interned; regional variants keep only the currency symbols (and names) that differ from
 //! their parent, the formatter walks the chain for those.
+//!
+//! Dates (M6): `src/format/data/dates.txt` the same way, resolved through the parents: per
+//! locale a row of patterns (every option combination of `format/date.rs`), a row of names,
+//! a row of relative-time strings and the overrides, each row interned. Patterns come
+//! compiled: a field is `\x01`, its CLDR letter and its width as a digit (`\x01M4`), `{0}` /
+//! `{1}` of a glue is `\x01{0` / `\x01{1`, the rest is literal text.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
@@ -420,6 +426,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/format/data/numbers.txt");
     println!("cargo:rerun-if-changed=src/format/data/currency-names.txt");
+    println!("cargo:rerun-if-changed=src/format/data/dates.txt");
     println!("cargo:rerun-if-env-changed=I18N_NEXT_LOCALES");
     if std::env::var_os("CARGO_FEATURE_FORMAT").is_none() {
         return;
@@ -431,6 +438,8 @@ fn main() {
         std::fs::read_to_string(dir.join("currency-names.txt")).expect("currency-names.txt")
     });
     let f = parse(&text, names_text.as_deref());
+    let date_text = std::fs::read_to_string(dir.join("dates.txt")).expect("dates.txt");
+    let date_file = parse_dates(&date_text);
 
     // ---- selection ----
     let wanted = std::env::var("I18N_NEXT_LOCALES").unwrap_or_default();
@@ -487,7 +496,10 @@ fn main() {
     let mut names_out: Vec<String> = Vec::new();
     let mut memo = HashMap::new();
     let mut locs = String::new();
+    let mut dates = Dates::new();
+    let mut date_memo = HashMap::new();
     for l in &order {
+        let date_fields = dates.locale(&resolve_dates(&date_file, l, &mut date_memo));
         let r = resolve(&f, l, &mut memo);
         let raw = &f.locales[*l];
         let get = |k: &str| r.fields.get(k).map(String::as_str).unwrap_or("");
@@ -567,7 +579,7 @@ fn main() {
             "    Loc {{ parent: {parent}, digits: {}, decimal: {}, group: {}, cur_decimal: {}, cur_group: {}, nan: {}, infinity: {}, \
              decimal_pat: {decimal_pat}, percent_pat: {percent_pat}, currency_pat: {currency_pat}, \
              min_grouping: {min_grouping}, compact: {compact_at}, compact_len: {}, currencies: {cur_at}, \
-             currencies_len: {}, autonym: {}, plural: {}{units_field} }},",
+             currencies_len: {}, autonym: {}, plural: {}{units_field}, {date_fields} }},",
             s.add(get("digits")),
             s.add(get("decimal")),
             s.add(get("group")),
@@ -726,6 +738,388 @@ fn main() {
             names_out.join(", ")
         );
     }
+    out.push_str(&dates.finish());
     let path = Path::new(&std::env::var("OUT_DIR").unwrap()).join("numbers.rs");
     std::fs::write(path, out).unwrap();
+}
+
+// ---- dates (M6) ----
+
+/// `dates.txt`: per locale its parent and the fields that differ from it (`-`: removed).
+fn parse_dates(text: &str) -> HashMap<String, (Option<String>, BTreeMap<String, String>)> {
+    let mut out: HashMap<String, (Option<String>, BTreeMap<String, String>)> = HashMap::new();
+    let mut current = String::new();
+    for line in text.lines() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("locale ") {
+            let mut w = rest.split(' ');
+            current = w.next().unwrap().to_owned();
+            let parent = w.next().filter(|p| *p != "-").map(str::to_owned);
+            out.insert(current.clone(), (parent, BTreeMap::new()));
+            continue;
+        }
+        let (k, v) = line.split_once('\t').expect("dates.txt: key<tab>value");
+        out.get_mut(&current)
+            .unwrap()
+            .1
+            .insert(k.to_owned(), v.to_owned());
+    }
+    out
+}
+
+fn resolve_dates(
+    f: &HashMap<String, (Option<String>, BTreeMap<String, String>)>,
+    name: &str,
+    memo: &mut HashMap<String, BTreeMap<String, String>>,
+) -> BTreeMap<String, String> {
+    if let Some(r) = memo.get(name) {
+        return r.clone();
+    }
+    let (parent, own) = f
+        .get(name)
+        .unwrap_or_else(|| panic!("dates.txt: no locale {name}"));
+    let mut r = parent
+        .as_deref()
+        .map(|p| resolve_dates(f, p, memo))
+        .unwrap_or_default();
+    for (k, v) in own {
+        if v == "-" {
+            r.remove(k);
+        } else {
+            r.insert(k.clone(), v.clone());
+        }
+    }
+    memo.insert(name.to_owned(), r.clone());
+    r
+}
+
+/// A CLDR pattern compiled for `format/date.rs` (see the module docs).
+fn compile(p: &str) -> String {
+    let c: Vec<char> = p.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < c.len() {
+        match c[i] {
+            '\'' if c.get(i + 1) == Some(&'\'') => {
+                out.push('\'');
+                i += 2;
+            }
+            '\'' => {
+                i += 1;
+                while i < c.len() {
+                    if c[i] == '\'' {
+                        if c.get(i + 1) == Some(&'\'') {
+                            out.push('\'');
+                            i += 2;
+                            continue;
+                        }
+                        i += 1;
+                        break;
+                    }
+                    out.push(c[i]);
+                    i += 1;
+                }
+            }
+            '{' if matches!(c.get(i + 1), Some('0' | '1')) && c.get(i + 2) == Some(&'}') => {
+                out.push('\u{1}');
+                out.push('{');
+                out.push(c[i + 1]);
+                i += 3;
+            }
+            ch if ch.is_ascii_alphabetic() => {
+                let mut j = i;
+                while j < c.len() && c[j] == ch {
+                    j += 1;
+                }
+                assert!(j - i <= 9, "{p}: field too long");
+                out.push('\u{1}');
+                out.push(ch);
+                out.push(char::from(b'0' + (j - i) as u8));
+                i = j;
+            }
+            '\u{1}' => panic!("{p}: control character"),
+            ch => {
+                out.push(ch);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Slots of the two pattern rows, as `format/date.rs` reads them. The date row: date
+/// combinations, the date styles, the glues of components and of styles. The time row: time
+/// combinations without an hour, the five hour tables (`j` as ICU picks, `K` `h` `H` `k`
+/// forced), the time styles per table. Split, so that locales sharing their times (most
+/// regional variants) share that row.
+const MODES: [&str; 5] = ["j", "K", "h", "H", "k"];
+const DATE_ROW: usize = 228;
+const TIME_ROW: usize = 109;
+fn pattern_slots() -> (Vec<String>, Vec<String>) {
+    let mut date = vec![String::new(); DATE_ROW];
+    for (i, k) in date.iter_mut().enumerate().take(216).skip(1) {
+        *k = format!("d{i}");
+    }
+    for w in 0..4 {
+        date[216 + w] = format!("ds{w}");
+        date[220 + w] = format!("g{w}");
+        date[224 + w] = format!("gs{w}");
+    }
+    let mut time = vec![String::new(); TIME_ROW];
+    for (i, k) in time.iter_mut().enumerate().take(9).skip(1) {
+        *k = format!("t{i}");
+    }
+    for (m, mode) in MODES.iter().enumerate() {
+        for i in 0..18 {
+            time[9 + m * 18 + i] = format!("{mode}{i}");
+        }
+        for w in 0..2 {
+            time[99 + m * 2 + w] = format!("ts{mode}{}", w + 2);
+        }
+    }
+    (date, time)
+}
+/// Name lists of a names row, in order: months (12 each), weekdays (7), AM / PM, eras (BC, AD).
+const NAME_SETS: [(&str, usize); 20] = [
+    ("M.fa", 12),
+    ("M.fw", 12),
+    ("M.fn", 12),
+    ("M.sa", 12),
+    ("M.sw", 12),
+    ("M.sn", 12),
+    ("E.fa", 7),
+    ("E.fw", 7),
+    ("E.fn", 7),
+    ("E.fs", 7),
+    ("E.sa", 7),
+    ("E.sw", 7),
+    ("E.sn", 7),
+    ("E.ss", 7),
+    ("a.a", 2),
+    ("a.w", 2),
+    ("a.n", 2),
+    ("G.a", 2),
+    ("G.w", 2),
+    ("G.n", 2),
+];
+const REL_UNITS: [&str; 6] = ["year", "month", "day", "hour", "minute", "second"];
+const REL_STYLES: [&str; 3] = ["long", "short", "narrow"];
+
+struct Dates {
+    pats: Strings,
+    names: Strings,
+    rows: Vec<Vec<u16>>,
+    row_index: HashMap<(u8, Vec<u16>), usize>,
+    pat_rows: Vec<usize>,
+    time_rows: Vec<usize>,
+    rel_parts: Vec<usize>,
+    name_rows: Vec<usize>,
+    rel_rows: Vec<usize>,
+    b_rows: Vec<usize>,
+    over: Vec<(u32, u32)>,
+    over_index: HashMap<Vec<(u32, u32)>, usize>,
+    slots: (Vec<String>, Vec<String>),
+}
+
+impl Dates {
+    fn new() -> Dates {
+        Dates {
+            pats: Strings::new(),
+            names: Strings::new(),
+            rows: Vec::new(),
+            row_index: HashMap::new(),
+            pat_rows: Vec::new(),
+            time_rows: Vec::new(),
+            rel_parts: Vec::new(),
+            name_rows: Vec::new(),
+            rel_rows: Vec::new(),
+            b_rows: Vec::new(),
+            over: Vec::new(),
+            over_index: HashMap::new(),
+            slots: pattern_slots(),
+        }
+    }
+
+    /// The index of `row` among the rows of its kind (interned).
+    fn row(&mut self, kind: u8, row: Vec<u16>) -> usize {
+        let list = match kind {
+            0 => &mut self.pat_rows,
+            1 => &mut self.name_rows,
+            2 => &mut self.rel_rows,
+            3 => &mut self.b_rows,
+            4 => &mut self.time_rows,
+            _ => &mut self.rel_parts,
+        };
+        *self
+            .row_index
+            .entry((kind, row.clone()))
+            .or_insert_with(|| {
+                self.rows.push(row);
+                list.push(self.rows.len() - 1);
+                list.len() - 1
+            })
+    }
+
+    fn pat(&mut self, p: &str) -> u16 {
+        let i = self.pats.add(&compile(p));
+        u16::try_from(i).expect("more than 65535 date patterns")
+    }
+
+    fn name(&mut self, s: &str) -> u16 {
+        u16::try_from(self.names.add(s)).expect("more than 65535 date strings")
+    }
+
+    /// The date fields of one `Loc`.
+    fn locale(&mut self, r: &BTreeMap<String, String>) -> String {
+        let slots = std::mem::take(&mut self.slots);
+        let pats: Vec<u16> = slots
+            .0
+            .iter()
+            .map(|k| r.get(k).map_or(0, |p| self.pat(p)))
+            .collect();
+        let times: Vec<u16> = slots
+            .1
+            .iter()
+            .map(|k| r.get(k).map_or(0, |p| self.pat(p)))
+            .collect();
+        self.slots = slots;
+        let mut names = Vec::new();
+        for (k, n) in NAME_SETS {
+            let list: Vec<&str> = r.get(k).map_or_else(Vec::new, |v| v.split('\t').collect());
+            assert!(
+                list.is_empty() || list.len() == n,
+                "{k}: {} names",
+                list.len()
+            );
+            for i in 0..n {
+                names.push(self.name(list.get(i).copied().unwrap_or("")));
+            }
+        }
+        let mut rel = Vec::new();
+        for u in REL_UNITS {
+            for st in REL_STYLES {
+                let v = r
+                    .get(&format!("r.{u}.{st}"))
+                    .unwrap_or_else(|| panic!("r.{u}.{st}"));
+                let list: Vec<&str> = v.split('\t').collect();
+                assert_eq!(list.len(), 17, "r.{u}.{st}");
+                let part: Vec<u16> = list.into_iter().map(|s| self.name(s)).collect();
+                // one unit and style: shared between locales (and units) that say it alike
+                let part = self.row(5, part);
+                rel.push(u16::try_from(part).expect("relative parts"));
+            }
+        }
+        let b = if r.contains_key("B.a") {
+            let mut row = Vec::new();
+            for w in ["B.a", "B.w", "B.n"] {
+                let list: Vec<&str> = r[w].split('\t').collect();
+                assert_eq!(list.len(), 25, "{w}");
+                for s in list {
+                    row.push(self.name(s));
+                }
+            }
+            self.row(3, row)
+        } else {
+            u16::MAX as usize
+        };
+        // overrides: `x<date>.<time>.<mode>` (kind 0) and `y<dateStyle>.<timeStyle>.<mode>` (1)
+        let mut own: Vec<(u32, u32)> = Vec::new();
+        for (k, v) in r {
+            let kind = match k.as_bytes()[0] {
+                b'x' => 0u32,
+                b'y' => 1,
+                _ => continue,
+            };
+            let mut parts = k[1..].split('.');
+            let a: u32 = parts.next().unwrap().parse().unwrap();
+            let t: u32 = parts.next().unwrap().parse().unwrap();
+            let m = parts.next().unwrap();
+            let mode = MODES.iter().position(|x| *x == m).expect("override mode") as u32;
+            own.push((
+                (kind << 20) | (a << 12) | (t << 4) | mode,
+                u32::from(self.pat(v)),
+            ));
+        }
+        own.sort();
+        // a regional variant mostly has its parent's overrides: one copy of each list
+        let over = match self.over_index.get(&own) {
+            Some(&at) => at,
+            None => {
+                let at = self.over.len();
+                self.over.extend(own.iter().copied());
+                self.over_index.insert(own.clone(), at);
+                at
+            }
+        };
+        let hc = r.get("hc").expect("hc").as_bytes();
+        let pats = self.row(0, pats);
+        let times = self.row(4, times);
+        let names = self.row(1, names);
+        let rel = self.row(2, rel);
+        format!(
+            "dpats: {pats}, dtimes: {times}, dnames: {names}, drel: {rel}, db: {b}, dover: {over}, dover_len: {}, hc12: b'{}', hc24: b'{}'",
+            own.len(),
+            char::from(hc[0]),
+            char::from(hc[1])
+        )
+    }
+
+    fn finish(&self) -> String {
+        let mut out = String::new();
+        // ends as `u16` while the text fits (a few locales), else `u32`
+        let table = |out: &mut String, name: &str, s: &Strings| {
+            let ty = if s.text.len() <= usize::from(u16::MAX) {
+                "u16"
+            } else {
+                "u32"
+            };
+            let _ = writeln!(out, "pub(crate) static {name}_STR: &str = {:?};", s.text);
+            let _ = writeln!(
+                out,
+                "pub(crate) static {name}_ENDS: [{ty}; {}] = {:?};",
+                s.ends.len(),
+                s.ends
+            );
+        };
+        table(&mut out, "DPAT", &self.pats);
+        table(&mut out, "DNAME", &self.names);
+        let rows = |out: &mut String, name: &str, list: &[usize], len: usize| {
+            let _ = writeln!(
+                out,
+                "pub(crate) static {name}: [[u16; {len}]; {}] = [",
+                list.len()
+            );
+            for &i in list {
+                let _ = writeln!(out, "    {:?},", self.rows[i]);
+            }
+            out.push_str("];\n");
+        };
+        rows(&mut out, "DATE_PATS", &self.pat_rows, DATE_ROW);
+        rows(&mut out, "DATE_TIMES", &self.time_rows, TIME_ROW);
+        rows(
+            &mut out,
+            "DATE_NAMES",
+            &self.name_rows,
+            NAME_SETS.iter().map(|(_, n)| n).sum(),
+        );
+        rows(
+            &mut out,
+            "DATE_REL",
+            &self.rel_rows,
+            REL_UNITS.len() * REL_STYLES.len(),
+        );
+        rows(&mut out, "DATE_REL_PARTS", &self.rel_parts, 17);
+        rows(&mut out, "DATE_B", &self.b_rows, 75);
+        let _ = writeln!(
+            out,
+            "pub(crate) static DATE_OVER_KEYS: [u32; {}] = {:?};\npub(crate) static DATE_OVER: [u16; {}] = {:?};",
+            self.over.len(),
+            self.over.iter().map(|o| o.0).collect::<Vec<_>>(),
+            self.over.len(),
+            self.over.iter().map(|o| o.1).collect::<Vec<_>>()
+        );
+        out
+    }
 }

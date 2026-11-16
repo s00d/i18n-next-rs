@@ -49,7 +49,7 @@ fn unsupported_options_fail_the_build() {
             .unwrap_err();
         assert_eq!(
             err.to_string(),
-            format!("number format \"x\" of \"en\": option \"{option}\" is not supported"),
+            format!("format \"x\" of \"en\": option \"{option}\" is not supported"),
             "{options}"
         );
     }
@@ -213,7 +213,7 @@ fn options_read_like_intl() {
             .unwrap_err();
         assert_eq!(
             err.to_string(),
-            format!("number format \"x\" of \"{locale}\": option \"{option}\" is not supported"),
+            format!("format \"x\" of \"{locale}\": option \"{option}\" is not supported"),
             "{options}"
         );
     }

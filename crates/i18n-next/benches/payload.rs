@@ -2,7 +2,8 @@
 //! `tests/support/inventory.rs`): `encode` of the root chain of 1k / 10k keys with and
 //! without meta, `encode_page` of a typical page, one `chunk` (a cached `Arc`), the
 //! protocol's `bundle` (served and with a stale tag, which builds no body), `meta`, and
-//! `apply` of the 1k payload (one pass).
+//! `apply` of the 1k payload (one pass), and a guest's `builder` from the meta (alone and
+//! built).
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use i18n_next::{I18n, payload};
@@ -80,6 +81,16 @@ fn encode(c: &mut Criterion) {
     c.bench_function("payload/apply/meta_page_1000x2", |b| {
         b.iter(|| black_box(payload::apply(&guest, black_box(&bytes)).unwrap()))
     });
+    // a guest's start: the builder from the meta, alone and built (config, chains, formats)
+    let meta = payload::meta(&i18n, None, Some("settings"));
+    let mut g = c.benchmark_group("payload/builder");
+    g.bench_function("meta", |b| {
+        b.iter(|| black_box(payload::builder(black_box(&meta)).unwrap()))
+    });
+    g.bench_function("meta_and_build", |b| {
+        b.iter(|| black_box(payload::builder(black_box(&meta)).unwrap().build().unwrap()))
+    });
+    g.finish();
 }
 
 criterion_group!(benches, encode);

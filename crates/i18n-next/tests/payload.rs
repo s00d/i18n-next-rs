@@ -87,7 +87,11 @@ fn view(i: &I18n, l: &str, p: Option<&str>) -> i18n_next::View {
 
 fn round_trip(c: &Catalog) -> Result<(), TestCaseError> {
     let server = server(c);
-    let guest = builder().build().unwrap();
+    // a guest built the way `tauri_guest::connect` builds one: from the server's meta
+    let guest = payload::builder(&payload::meta(&server, None, None))
+        .unwrap()
+        .build()
+        .unwrap();
     // every view's payload: chunks are per pair, so the guest ends with all of them
     for l in LOCALES {
         for p in PAGES {
@@ -121,6 +125,42 @@ fn a_guest_answers_like_the_server_with_linked_messages() {
     let mut runner =
         TestRunner::new_with_rng(config, TestRng::from_seed(RngAlgorithm::ChaCha, &[31; 32]));
     runner.run(&catalog(), |c| round_trip(&c)).unwrap();
+}
+
+/// `"chains":{…}` of a meta answer.
+fn chains(meta: &[u8]) -> String {
+    let text = std::str::from_utf8(meta).unwrap();
+    let start = text.find("\"chains\":").unwrap();
+    let end = start + text[start..].find('}').unwrap();
+    text[start..=end].to_owned()
+}
+
+/// Given configs with and without a global fallback, links into the fallback and a fallback
+/// with links of its own, when a guest is built from the meta, then it has the server's
+/// locales, chains and start locale (a meta without a fallback says `null`).
+#[test]
+fn a_guest_built_from_the_meta_has_the_servers_chains() {
+    let configs = [
+        r#"{"locales": [{"code": "en"}, {"code": "de"}]}"#,
+        r#"{"fallbackLocale": "en", "locales": [{"code": "x", "fallbackLocale": "de-at"},
+            {"code": "de-at", "fallbackLocale": "de"}, {"code": "de"}]}"#,
+        // `a` links to the fallback, which links on: `a → en → b`; `c` reads `c → en` only
+        r#"{"fallbackLocale": "en", "locales": [{"code": "a", "fallbackLocale": "en"},
+            {"code": "en", "fallbackLocale": "b"}, {"code": "b"}, {"code": "c"}]}"#,
+        r#"{"defaultLocale": "de", "locales": [{"code": "de", "iso": "de-DE", "dir": "ltr"},
+            {"code": "ar", "dir": "rtl", "displayName": "العربية"}]}"#,
+    ];
+    for config in configs {
+        let server = I18n::builder().config_json(config).build().unwrap();
+        let meta = payload::meta(&server, None, None);
+        let guest = payload::builder(&meta).unwrap().build().unwrap();
+        let again = payload::meta(&guest, None, None);
+        assert_eq!(chains(&again), chains(&meta), "{config}");
+        assert_eq!(guest.locales(), server.locales(), "{config}");
+        assert_eq!(guest.locale(), server.locale(), "{config}");
+    }
+    let err = payload::builder(br#"{"version": 0, "locale": 1}"#).unwrap_err();
+    assert_eq!(err.to_string(), "payload: locale must be a string");
 }
 
 /// The repro of the audit: a link in the fallback resolves to the active locale's target

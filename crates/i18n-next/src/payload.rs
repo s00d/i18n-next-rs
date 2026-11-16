@@ -303,6 +303,148 @@ pub fn apply(i18n: &I18n, bytes: &[u8]) -> Result<u64, Error> {
     Ok(version)
 }
 
+/// A [`Builder`] set up as a [`meta`] answer describes the catalog: its locales (`iso`,
+/// `dir`, `displayName`), `defaultLocale`, the fallback chain of every locale, the named
+/// formats, the zone dates show in (`timeZone`, feature `format`) and the active locale.
+/// What a Rust guest builds its instance from before it [`apply`]s chunks (the
+/// `tauri-guest` feature does this in `connect`); add a `missing` handler or a clock, then
+/// `build`.
+///
+/// ```
+/// use i18n_next::{I18n, payload};
+///
+/// let server = I18n::builder()
+///     .config_json(r#"{"fallbackLocale": "en", "locales": [{"code": "de-at", "fallbackLocale": "de"}]}"#)
+///     .messages("de", None, r#"{"a": "A-de"}"#)
+///     .messages("en", None, r#"{"a": "A", "b": "B"}"#)
+///     .locale("de-at")
+///     .build()?;
+/// let guest = payload::builder(&payload::meta(&server, None, None))?.build()?;
+/// payload::apply(&guest, &payload::encode(&server, None, None, false).1)?;
+/// assert_eq!((&*guest.locale(), guest.t("a"), guest.t("b")), ("de-at", "A-de".into(), "B".into()));
+/// # Ok::<(), i18n_next::Error>(())
+/// ```
+///
+/// # Errors
+/// [`Error::Json`] / [`Error::NotObject`] / [`Error::Config`] for a broken meta (path
+/// `payload`); `build` then checks the formats and the zone as for `i18n.json`.
+pub fn builder(meta: &[u8]) -> Result<crate::i18n::Builder, Error> {
+    let m = Meta::read(meta)?;
+    let text = std::str::from_utf8(meta).map_err(|_| Error::Config {
+        path: "payload".to_owned(),
+        reason: "meta is not UTF-8",
+    })?;
+    Ok(m.builder(text))
+}
+
+/// The parts of a [`meta`] answer a guest acts on.
+#[derive(Debug, Default)]
+pub(crate) struct Meta {
+    pub(crate) version: u64,
+    pub(crate) locale: String,
+    pub(crate) fallback: Option<String>,
+    /// Every locale's chain, strongest first.
+    pub(crate) chains: Vec<(String, Vec<String>)>,
+    /// `("<locale>/<page>", tag)` of every chunk of the chain with data.
+    pub(crate) tags: Vec<(String, String)>,
+    pub(crate) time_zone: Option<String>,
+}
+
+impl Meta {
+    pub(crate) fn read(bytes: &[u8]) -> Result<Meta, Error> {
+        let shape = |reason: &'static str| Error::Config {
+            path: "payload".to_owned(),
+            reason,
+        };
+        let mut r = Payload {
+            r: Reader::new(bytes),
+            budget: 0,
+        };
+        if !matches!(r.next()?, Event::ObjectStart) {
+            return Err(Error::NotObject {
+                path: "payload".to_owned(),
+            });
+        }
+        let mut m = Meta::default();
+        let text_or_null = |r: &mut Payload<'_>, reason| match r.next()? {
+            Event::Str(s) => Ok(Some(s.into_owned())),
+            Event::Null => Ok(None),
+            _ => Err(shape(reason)),
+        };
+        while let Event::Key(key) = r.next()? {
+            match &*key {
+                "version" => match r.next()? {
+                    Event::Num(n) => m.version = n.parse().map_err(|_| shape("version"))?,
+                    _ => return Err(shape("version must be a number")),
+                },
+                "locale" => {
+                    m.locale = text_or_null(&mut r, "locale must be a string")?
+                        .ok_or(shape("locale must be a string"))?;
+                }
+                "fallbackLocale" => {
+                    m.fallback = text_or_null(&mut r, "fallbackLocale must be a string")?;
+                }
+                "timeZone" => m.time_zone = text_or_null(&mut r, "timeZone must be a string")?,
+                "chains" => {
+                    if !matches!(r.next()?, Event::ObjectStart) {
+                        return Err(shape("chains must be an object"));
+                    }
+                    while let Event::Key(code) = r.next()? {
+                        if !matches!(r.next()?, Event::ArrayStart) {
+                            return Err(shape("chains{} must hold arrays"));
+                        }
+                        let mut chain = Vec::new();
+                        loop {
+                            match r.next()? {
+                                Event::ArrayEnd => break,
+                                Event::Str(c) => chain.push(c.into_owned()),
+                                _ => return Err(shape("chains{}[] must hold strings")),
+                            }
+                        }
+                        m.chains.push((code.into_owned(), chain));
+                    }
+                }
+                "tags" => {
+                    if !matches!(r.next()?, Event::ObjectStart) {
+                        return Err(shape("tags must be an object"));
+                    }
+                    while let Event::Key(at) = r.next()? {
+                        match r.next()? {
+                            Event::Str(t) => m.tags.push((at.into_owned(), t.into_owned())),
+                            _ => return Err(shape("tags{} must hold strings")),
+                        }
+                    }
+                }
+                _ => r.skip_value()?,
+            }
+        }
+        r.r.next().map_err(json_error)?;
+        Ok(m)
+    }
+
+    /// `text` (the meta itself) read as `i18n.json` gives the locales, `defaultLocale`, the
+    /// global fallback and the formats; the chains become `fallback_for` links.
+    fn builder(&self, text: &str) -> crate::i18n::Builder {
+        let mut b = crate::i18n::Builder::default()
+            .config_json(text)
+            .locale(&self.locale);
+        for (code, chain) in &self.chains {
+            // a chain of `code` and the global fallback alone needs no link: the fallback
+            // closes every chain, never expanded through its own links
+            if let Some(next) = chain.get(1)
+                && !(chain.len() == 2 && self.fallback.as_deref() == Some(next.as_str()))
+            {
+                b = b.fallback_for(code, next);
+            }
+        }
+        #[cfg(feature = "format")]
+        if let Some(zone) = &self.time_zone {
+            b = b.time_zone(zone);
+        }
+        b
+    }
+}
+
 /// Named formats of `i18n.json` and then of the builder's calls, kept as given and merged
 /// by name on first use: the `numberFormats` / `datetimeFormats` objects of the payload.
 /// Lazy, so an app that never encodes a payload links none of the merge code.

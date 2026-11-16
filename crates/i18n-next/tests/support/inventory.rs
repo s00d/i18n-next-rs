@@ -660,7 +660,16 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
         want.extend(methods("Timestamp", &["is_valid", "millis"]));
         // `payload` (the snapshot is taken with `--features payload`)
         want.extend(
-            ["apply", "bundle", "chunk", "encode", "encode_page", "meta"].map(str::to_owned),
+            [
+                "apply",
+                "builder",
+                "bundle",
+                "chunk",
+                "encode",
+                "encode_page",
+                "meta",
+            ]
+            .map(str::to_owned),
         );
         assert_eq!(api("i18n-next"), want.into_iter().collect::<BTreeSet<_>>());
         let mut plugin: Vec<String> = [

@@ -1,6 +1,7 @@
 pub mod i18n_next
 pub mod i18n_next::payload
 pub fn i18n_next::payload::apply(&i18n_next::I18n, &[u8]) -> core::result::Result<u64, i18n_next::Error>
+pub fn i18n_next::payload::builder(&[u8]) -> core::result::Result<i18n_next::Builder, i18n_next::Error>
 pub fn i18n_next::payload::bundle(&i18n_next::I18n, &str, core::option::Option<&str>, core::option::Option<u64>) -> (u64, core::option::Option<alloc::vec::Vec<u8>>)
 pub fn i18n_next::payload::chunk(&i18n_next::I18n, &str, core::option::Option<&str>) -> (u64, alloc::sync::Arc<str>)
 pub fn i18n_next::payload::encode(&i18n_next::I18n, core::option::Option<&str>, core::option::Option<&str>, bool) -> (u64, alloc::vec::Vec<u8>)

@@ -171,6 +171,14 @@ impl<'a> ConfigReader<'a> {
         }
     }
 
+    fn string_or_null(&mut self, reason: &'static str) -> Result<Option<String>, Error> {
+        match self.next()? {
+            Event::Str(s) => Ok(Some(s.into_owned())),
+            Event::Null => Ok(None),
+            _ => Err(self.shape(reason)),
+        }
+    }
+
     /// The raw text of the next value.
     fn raw(&mut self) -> Result<Box<str>, Error> {
         let start = self.r.offset();
@@ -237,11 +245,12 @@ impl Config {
         let mut config = Config::default();
         while let Event::Key(key) = c.next()? {
             match &*key {
+                // `null` is no value, as JS reads it (a payload meta sends `fallbackLocale: null`)
                 "defaultLocale" => {
-                    config.default_locale = Some(c.string("defaultLocale must be a string")?);
+                    config.default_locale = c.string_or_null("defaultLocale must be a string")?;
                 }
                 "fallbackLocale" => {
-                    config.fallback_locale = Some(c.string("fallbackLocale must be a string")?);
+                    config.fallback_locale = c.string_or_null("fallbackLocale must be a string")?;
                 }
                 "locales" => {
                     if !matches!(c.next()?, Event::ArrayStart) {

@@ -147,6 +147,20 @@ fn lookup(c: &mut Criterion) {
     c.bench_function("versus/lookup_hit/i18n_next", |b| {
         b.iter(|| ours.t(black_box("s3.g4.k5")))
     });
+    // `get`: the stored text shared as `Arc<str>`, no allocation, like the borrowed
+    // `Cow` of rust-i18n and fluent; `t` above returns an owned `String`
+    assert_eq!(ours.get("s3.g4.k5").as_deref(), Some(&*ours.t("s3.g4.k5")));
+    assert_eq!(ours.get("only_en").as_deref(), Some(&*ours.t("only_en")));
+    assert_eq!(ours.get("s3.g4.nope"), None);
+    c.bench_function("versus/lookup_hit/i18n_next_get", |b| {
+        b.iter(|| ours.get(black_box("s3.g4.k5")))
+    });
+    c.bench_function("versus/lookup_fallback/i18n_next_get", |b| {
+        b.iter(|| ours.get(black_box("only_en")))
+    });
+    c.bench_function("versus/lookup_miss/i18n_next_get", |b| {
+        b.iter(|| ours.get(black_box("s3.g4.nope")))
+    });
     c.bench_function("versus/lookup_hit/rust_i18n", |b| {
         b.iter(|| t!(black_box("s3.g4.k5"), locale = "de"))
     });

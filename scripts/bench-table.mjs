@@ -62,6 +62,7 @@ const machine = [
 // versus/<workload>/<lib>
 const libs = [
   ['i18n_next', 'i18n-next'],
+  ['i18n_next_get', 'i18n-next `get`'],
   ['rust_i18n', 'rust-i18n'],
   ['fluent', 'fluent-bundle'],
   ['icu4x', 'ICU4X'],

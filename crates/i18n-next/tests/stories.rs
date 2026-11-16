@@ -1268,6 +1268,31 @@ fn negotiate_refusals_scripts_and_bad_weights() {
     assert_eq!(negotiate("de;Q=0.5, en;q=0.4", both).as_deref(), Some("de"));
 }
 
+/// Given a hostile `Accept-Language` (thousands of entries, megabytes of bytes), when it is
+/// negotiated, then only the first 32 entries within 4 KiB count: the work is bounded by
+/// those caps, not by the header, and the result is the one those entries give.
+#[test]
+fn negotiate_bounds_a_huge_header() {
+    use i18n_next::negotiate;
+    let filler = |n: usize| vec!["xx;q=0"; n].join(",");
+    // step 1: the 32nd entry counts, the 33rd and everything after it do not
+    assert_eq!(
+        negotiate(&format!("{},de", filler(31)), ["de"]).as_deref(),
+        Some("de")
+    );
+    assert_eq!(negotiate(&format!("{},de", filler(32)), ["de"]), None);
+    // step 2: 100 000 refusals behind a match: the match wins, the tail is never read
+    let huge = format!("fr;q=0.1,{}", filler(100_000));
+    assert!(huge.len() > 500_000);
+    assert_eq!(negotiate(&huge, ["en", "fr"]).as_deref(), Some("fr"));
+    // step 3: past 4 KiB the header is cut at the last `,`, never inside a tag
+    let long = format!("{},de-AT", "a-".repeat(2050));
+    assert!(long.len() > 4096);
+    assert_eq!(negotiate(&long, ["de"]), None);
+    let one_tag = format!("{}en", "a-".repeat(5_000));
+    assert_eq!(negotiate(&one_tag, ["en", "a"]), None);
+}
+
 fn nesting_catalog() -> I18n {
     I18n::builder()
         .locale("en")

@@ -353,7 +353,9 @@ impl<F: Future> Future for Scoped<F> {
 /// `zh-hans`); `*` takes the first available. A tag with `q=0` is refused: never chosen,
 /// not by `*` and not by shortening or the same-language step. An entry with a malformed
 /// weight (`q=2`, `q = 0.5`, any other parameter) is dropped (RFC 9110). Case-insensitive,
-/// `_` equals `-`. Returns the code as `available` spells it.
+/// `_` equals `-`. Returns the code as `available` spells it. Only the first 32 entries
+/// within the first 4 KiB count (cut at the last `,` in that span): the work stays bounded
+/// for any header a client sends.
 ///
 /// ```
 /// use i18n_next::negotiate;
@@ -370,10 +372,19 @@ where
     I: IntoIterator,
     I::Item: AsRef<str>,
 {
-    let available: Vec<I::Item> = available.into_iter().collect();
+    const MAX_ENTRIES: usize = 32;
+    const MAX_BYTES: usize = 4096;
+    let accept = match accept.as_bytes().get(..=MAX_BYTES) {
+        // `,` is ASCII, so the cut is on a char boundary.
+        Some(head) => accept
+            .get(..head.iter().rposition(|&b| b == b',').unwrap_or(0))
+            .unwrap_or(""),
+        None => accept,
+    };
     let mut refused: Vec<&str> = Vec::new();
     let mut entries: Vec<(&str, u16)> = accept
         .split(',')
+        .take(MAX_ENTRIES)
         .filter_map(|entry| {
             let mut fields = entry.split(';');
             let tag = fields.next()?.trim();
@@ -396,11 +407,13 @@ where
         .collect();
     entries.sort_by_key(|e| std::cmp::Reverse(e.1));
     let ok = |a: &str| !refused.iter().any(|r| same_tag(a, r));
+    // Refusals are checked once per available code, not on every lookup.
+    let available: Vec<I::Item> = available.into_iter().filter(|a| ok(a.as_ref())).collect();
     let find = |hit: &dyn Fn(&str) -> bool| {
         available
             .iter()
             .map(AsRef::as_ref)
-            .find(|a| ok(a) && hit(a))
+            .find(|a| hit(a))
             .map(str::to_owned)
     };
     for (tag, _) in entries {

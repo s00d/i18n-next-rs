@@ -521,3 +521,32 @@ jobs:
         run: |
           cargo semver-checks -p i18n-next --features payload
           cargo semver-checks -p tauri-plugin-i18n-next
+
+  # The docs site (docs/, its own pnpm project): the reference pages generated from the
+  # sources, the static build, and every internal link and anchor of it.
+  docs:
+    name: docs (generate + links)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: docs/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: docs/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Generate (reference pages + nuxt generate)
+        env:
+          NUXT_APP_BASE_URL: /i18n-next-rs/
+        run: pnpm generate
+      - name: Internal links
+        env:
+          NUXT_APP_BASE_URL: /i18n-next-rs/
+        run: pnpm check-links

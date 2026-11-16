@@ -140,8 +140,11 @@ impl JsZone {
 
 /// The name `Intl` resolves `name` to (`europe/berlin` → `Europe/Berlin`), `None` if it
 /// throws on it: the key of the zone cache, so spellings of one zone share one entry.
+/// `Factory` is not a zone on any platform (tz/mod.rs `named`), though newer ICU takes it.
 pub(crate) fn canonical(name: &str) -> Option<String> {
-    get(&formatter(Some(name))?.resolved_options(), "timeZone")?.as_string()
+    get(&formatter(Some(name))?.resolved_options(), "timeZone")?
+        .as_string()
+        .filter(|c| !c.eq_ignore_ascii_case("Factory"))
 }
 
 /// The zone `name` if this engine's `Intl` knows it.

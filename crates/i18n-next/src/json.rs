@@ -699,7 +699,7 @@ fn exp_digits(v: f64, digits: &mut [u8; 20]) -> (usize, i32) {
         digits[k] = b;
         k += 1;
     }
-    if k > 0 && digits[k - 1] & 1 == 1 {
+    if digits[..k].last().is_some_and(|d| d & 1 == 1) {
         even_tie(v, &mut digits[..k], exp);
     }
     (k, exp + 1)
@@ -723,16 +723,11 @@ fn even_tie(v: f64, digits: &mut [u8], exp: i32) {
     if exact % 10 != 5 || u128_len(exact) != k + 1 {
         return;
     }
-    let below = exact / 10;
-    let alt = if d == below + 1 {
-        below
-    } else if d == below {
-        below + 1
-    } else {
-        return;
-    };
-    // `alt` ending in 0 would be shorter than the shortest: never a real tie.
-    if alt % 10 == 0 || u128_len(alt) != k {
+    // `{:e}` breaks the tie upward, so the odd `digits` are the neighbour above and the
+    // even one is below (`alt` ending in 0 or shorter never reads back: a shorter shortest
+    // would exist).
+    let alt = exact / 10;
+    if d != alt + 1 {
         return;
     }
     // `alt` × 10^(exp - k + 1) as text, parsed: the one exact check that it reads back.
@@ -754,40 +749,24 @@ fn even_tie(v: f64, digits: &mut [u8], exp: i32) {
     }
 }
 
-/// The digits of the exact value of `v` (finite, > 0) without trailing zeros, when there
-/// are at most 19 of them (`None`: more, so no tie with ≤ 17 shortest digits is possible).
-/// `v = m · 2^e`: for `e < 0` the exact value is `m · 5^-e` × 10^e; for `e ≥ 0` the factors
-/// 5 of `m` pair with factors 2 into trailing zeros.
+/// The digits of the exact value of `v` (finite, > 0) without trailing zeros, when it is a
+/// fraction whose digits fit a `u128` (`None`: else no tie with the shortest digits is
+/// possible). `v = m · 2^e` with `m` odd and `e < 0`: the exact value is `m · 5^-e` × 10^e.
 #[cfg(feature = "format")]
 fn exact_digits(v: f64) -> Option<u128> {
     let bits = v.to_bits();
     let biased = ((bits >> 52) & 0x7ff) as i32;
-    let fraction = bits & ((1 << 52) - 1);
-    let (m, e) = if biased == 0 {
-        (fraction, -1074)
-    } else {
-        (fraction | 1 << 52, biased - 1075)
-    };
-    if m == 0 {
+    // A subnormal is `m · 2^-1074`: hundreds of digits. An integer (`e ≥ 0`) below 2^53 is
+    // its own shortest digits and above ends in an even digit: neither ties.
+    let m = (bits & ((1 << 52) - 1)) + (1 << 52);
+    let tz = m.trailing_zeros();
+    let e = biased - 1075 + tz as i32;
+    if biased == 0 || e >= 0 {
         return None;
     }
-    let tz = m.trailing_zeros();
-    let (mut m, e) = (m >> tz, e + tz as i32);
-    let digits = if e < 0 {
-        // 5^28 has 20 digits: more than 19 already.
-        let q = u32::try_from(-e).ok().filter(|&q| q <= 27)?;
-        u128::from(m) * 5u128.pow(q)
-    } else {
-        let mut z = 0;
-        while z < e && m % 5 == 0 {
-            m /= 5;
-            z += 1;
-        }
-        // 2^64 has 20 digits.
-        let shift = u32::try_from(e - z).ok().filter(|&s| s <= 63)?;
-        u128::from(m) << shift
-    };
-    Some(digits)
+    5u128
+        .checked_pow(e.unsigned_abs())?
+        .checked_mul(u128::from(m >> tz))
 }
 
 /// How many decimal digits `n` has.

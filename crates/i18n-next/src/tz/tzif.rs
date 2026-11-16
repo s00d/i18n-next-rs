@@ -43,16 +43,6 @@ impl Clone for Table {
     }
 }
 
-/// What the zone says; the cached years follow from it and the hint is no part of it.
-impl PartialEq for Table {
-    fn eq(&self, other: &Self) -> bool {
-        (&self.times, &self.offsets, self.initial, &self.rule)
-            == (&other.times, &other.offsets, other.initial, &other.rule)
-    }
-}
-
-impl Eq for Table {}
-
 impl Table {
     pub(crate) fn new(
         times: Box<[i64]>,

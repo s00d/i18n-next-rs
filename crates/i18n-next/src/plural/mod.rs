@@ -96,7 +96,9 @@ impl Operands {
                 Some(p) if zeros < 18 => (digits % (I_MOD / p)) * p,
                 _ => 0,
             },
-            None => digits_of_huge(x),
+            // From 2^126 up: at most 17 significant digits of 38 or more, so the last 18
+            // are zeros.
+            None => 0,
         };
         Operands {
             n: x,
@@ -126,30 +128,6 @@ impl Operands {
             c: 0,
         }
     }
-}
-
-/// The last 18 of the shortest digits of a whole `f64` from 2^126 up (a count only an
-/// `f64` reaches): `{}` spells them padded with zeros, never with an exponent.
-#[cfg(feature = "format")]
-fn digits_of_huge(x: f64) -> u64 {
-    struct Digits(u64);
-    impl std::fmt::Write for Digits {
-        fn write_str(&mut self, s: &str) -> std::fmt::Result {
-            for b in s.bytes().filter(u8::is_ascii_digit) {
-                self.0 = (self.0 % (I_MOD / 10)) * 10 + u64::from(b - b'0');
-            }
-            Ok(())
-        }
-    }
-    let mut d = Digits(0);
-    let _ = std::fmt::Write::write_fmt(&mut d, format_args!("{x}"));
-    d.0
-}
-
-/// Without `format` a whole count past 2^53 comes from an integer (at most 2^64), never here.
-#[cfg(not(feature = "format"))]
-fn digits_of_huge(_: f64) -> u64 {
-    0
 }
 
 /// The shortest round-trip digits of a whole `f64` `x` (2^53 ≤ x < 2^126), as JS
@@ -316,8 +294,8 @@ impl Plural {
     pub(crate) fn category(&self, count: Whole) -> Category {
         match count {
             Whole::Int(n) => match self.small.get(n as usize) {
-                Some(&c) if n < PROBE as u64 => c,
-                _ => (self.select)(&Operands::int(n)),
+                Some(&c) => c,
+                None => (self.select)(&Operands::int(n)),
             },
             Whole::Big(x) => (self.select)(&Operands::whole_f64(x)),
         }
@@ -600,20 +578,13 @@ fn parse(tag: &str) -> Option<Tag<'_>> {
 
 /// `unicode_locale_extensions` after `-u` (`ext`: its subtags joined by `-`): attributes
 /// (3..8), then keywords: a key (alphanumeric + letter) and its type subtags (3..8).
+/// [`parse`] has checked every subtag is 2..8 alphanumerics, so only a key's second
+/// character is left to check.
 fn unicode_extension(ext: &str) -> bool {
-    let mut keys = false;
-    for p in ext.split('-') {
-        let b = p.as_bytes();
-        if b.len() == 2 {
-            if !b.get(1).is_some_and(u8::is_ascii_alphabetic) {
-                return false;
-            }
-            keys = true;
-        } else if !keys && !(3..=8).contains(&b.len()) {
-            return false;
-        }
-    }
     !ext.is_empty()
+        && ext
+            .split('-')
+            .all(|p| p.len() != 2 || p.as_bytes().get(1).is_some_and(u8::is_ascii_alphabetic))
 }
 
 /// `transformed_extensions` after `-t` (`ext`: its subtags joined by `-`): an optional
@@ -647,13 +618,11 @@ fn transformed_extension(ext: &str) -> bool {
         if !(b.len() == 2 && b[0].is_ascii_alphabetic() && b[1].is_ascii_digit()) {
             return false;
         }
-        let mut values = 0;
-        while it.next_if(|s| (3..=8).contains(&s.len())).is_some() {
-            values += 1;
-        }
-        if values == 0 {
+        let value = |s: &&str| (3..=8).contains(&s.len());
+        if it.next_if(value).is_none() {
             return false;
         }
+        while it.next_if(value).is_some() {}
         fields = true;
     }
     lang || fields

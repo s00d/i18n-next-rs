@@ -165,69 +165,12 @@ impl Zone {
     }
 }
 
-/// H. Hinnant's calendar algorithms, for a build without `tz` (which has its own).
+// The calendar arithmetic of `tz`, for a build without it.
 #[cfg(not(feature = "tz"))]
-fn days_from_civil(y: i64, m: u8, d: u8) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * ((i64::from(m) + 9) % 12) + 2) / 5 + i64::from(d) - 1;
-    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
-}
-
-/// Calendar fields of unix seconds (a build without `tz`).
+#[path = "../tz/civil.rs"]
+mod civil;
 #[cfg(not(feature = "tz"))]
-#[derive(Debug, Clone, Copy)]
-struct Civil {
-    year: i64,
-    month: u8,
-    day: u8,
-    hour: u8,
-    minute: u8,
-    second: u8,
-    /// 0 = Sunday
-    weekday: u8,
-}
-
-#[cfg(not(feature = "tz"))]
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "rem_euclid"
-)]
-fn civil_from_unix(t: i64) -> Civil {
-    let days = t.div_euclid(86_400);
-    let secs = t.rem_euclid(86_400) as u32;
-    let (year, month, day) = civil_from_days(days);
-    Civil {
-        year,
-        month,
-        day,
-        hour: (secs / 3600) as u8,
-        minute: (secs / 60 % 60) as u8,
-        second: (secs % 60) as u8,
-        // 1970-01-01 was a Thursday
-        weekday: (days + 4).rem_euclid(7) as u8,
-    }
-}
-
-#[cfg(not(feature = "tz"))]
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "month and day"
-)]
-fn civil_from_days(z: i64) -> (i64, u8, u8) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u8;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
-    (yoe + era * 400 + i64::from(m <= 2), m, d)
-}
+use civil::{Civil, civil_from_days, civil_from_unix, days_from_civil};
 
 /// A zone by its IANA name as `Intl` takes it (`UTC`, `Etc/UTC`, `GMT` in any case are UTC),
 /// `None` when the platform has no such zone (JS throws a `RangeError`).

@@ -1,0 +1,25 @@
+{
+  "name": "i18n-next-tauri-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Front end of the Tauri playground (DESIGN 8a): Vue 3 + vue-router + @i18n-micro/vue fed by tauri-plugin-i18n-next",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@i18n-micro/vue": "2.1.1",
+    "@tauri-apps/api": "2.12.4",
+    "tauri-plugin-i18n-next-api": "workspace:*",
+    "vue": "3.5.45",
+    "vue-router": "4.6.5"
+  },
+  "devDependencies": {
+    "@i18n-micro/types-generator": "2.1.1",
+    "@tauri-apps/cli": "2.12.4",
+    "@vitejs/plugin-vue": "6.0.11",
+    "vite": "^8.3.8"
+  }
+}

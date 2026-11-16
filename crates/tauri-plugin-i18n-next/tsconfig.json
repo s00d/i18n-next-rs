@@ -7,7 +7,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "noImplicitAny": true,
-    "noEmit": true
+    "noEmit": true,
+    "resolveJsonModule": true
   },
   "include": ["guest-js/*.ts", "tests/guest-js/**/*.ts"],
   "exclude": ["dist-js", "node_modules"]

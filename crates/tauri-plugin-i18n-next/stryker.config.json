@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Local only (PLAN: mutants run once, in M10): pnpm mutate. Mutates guest-js, kills with the vitest suite.",
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.config.ts" },
+  "mutate": ["guest-js/**/*.ts"],
+  "reporters": ["clear-text", "progress"],
+  "coverageAnalysis": "perTest",
+  "tempDirName": "node_modules/.cache/stryker-tmp",
+  "thresholds": { "high": 100, "low": 95, "break": null }
+}

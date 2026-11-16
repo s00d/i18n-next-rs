@@ -61,25 +61,49 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "prepublishOnly": "pnpm build",
-    "check:dist": "publint --strict && attw --pack . && node scripts/check-dist.mjs"
+    "check:dist": "publint --strict && attw --pack . && node scripts/check-dist.mjs",
+    "bench": "vitest run --mode bench",
+    "mutate": "stryker run"
   },
   "dependencies": {
     "@tauri-apps/api": ">=2.0.0"
   },
   "peerDependencies": {
-    "@i18n-micro/vue": "^2.1.0"
+    "@i18n-micro/vue": "^2.1.0",
+    "vue": "^3.3.0"
   },
   "peerDependenciesMeta": {
     "@i18n-micro/vue": {
+      "optional": true
+    },
+    "vue": {
       "optional": true
     }
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@i18n-micro/preact": "2.1.0",
+    "@i18n-micro/react": "2.1.0",
+    "@i18n-micro/runtime": "2.1.0",
+    "@i18n-micro/solid": "2.1.0",
+    "@i18n-micro/vue": "2.1.1",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "fast-check": "4.10.2",
+    "happy-dom": "21.0.4",
+    "preact": "11.2.0",
     "publint": "^0.3.25",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "solid-js": "1.9.19",
+    "tinybench": "6.2.3",
     "typescript": "^6.0.3",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "vue": "3.5.45",
+    "vue-router": "4.6.5"
   },
   "engines": {
     "node": ">=20.19"

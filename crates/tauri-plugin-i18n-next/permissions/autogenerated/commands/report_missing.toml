@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-report-missing"
+description = "Enables the report_missing command without any pre-configured scope."
+commands.allow = ["report_missing"]
+
+[[permission]]
+identifier = "deny-report-missing"
+description = "Denies the report_missing command without any pre-configured scope."
+commands.deny = ["report_missing"]

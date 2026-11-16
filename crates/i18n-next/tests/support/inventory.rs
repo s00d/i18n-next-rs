@@ -656,6 +656,38 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
         ));
         want.extend(methods("Timestamp", &["is_valid", "millis"]));
         assert_eq!(api("i18n-next"), want.into_iter().collect::<BTreeSet<_>>());
-        assert_eq!(api("tauri-plugin-i18n-next"), set(&["init", "ping"]));
+        let mut plugin: Vec<String> = [
+            "available_locales",
+            "get_locale",
+            "handle",
+            "load",
+            "load_page",
+            "missing",
+            "pages",
+            "report_missing",
+            "set_locale",
+        ]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+        plugin.extend(methods(
+            "Builder",
+            &[
+                "build",
+                "data_dir",
+                "global",
+                "new",
+                "persist",
+                "system_locale",
+                "watch",
+            ],
+        ));
+        plugin.extend(methods("Handle", &["bind", "unbind"]));
+        plugin.extend(methods("ManagerExt", &["i18n"]));
+        plugin.extend(methods("Relabel", &["relabel"]));
+        assert_eq!(
+            api("tauri-plugin-i18n-next"),
+            plugin.into_iter().collect::<BTreeSet<_>>()
+        );
     }
 }

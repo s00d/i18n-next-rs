@@ -295,22 +295,94 @@
       "type": "string",
       "oneOf": [
         {
-          "description": "Enables the ping command without any pre-configured scope.",
+          "description": "Enables the available_locales command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-ping",
-          "markdownDescription": "Enables the ping command without any pre-configured scope."
+          "const": "allow-available-locales",
+          "markdownDescription": "Enables the available_locales command without any pre-configured scope."
         },
         {
-          "description": "Denies the ping command without any pre-configured scope.",
+          "description": "Denies the available_locales command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-ping",
-          "markdownDescription": "Denies the ping command without any pre-configured scope."
+          "const": "deny-available-locales",
+          "markdownDescription": "Denies the available_locales command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-ping`",
+          "description": "Enables the get_locale command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-locale",
+          "markdownDescription": "Enables the get_locale command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_locale command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-locale",
+          "markdownDescription": "Denies the get_locale command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load",
+          "markdownDescription": "Enables the load command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load",
+          "markdownDescription": "Denies the load command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_page command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-page",
+          "markdownDescription": "Enables the load_page command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_page command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-page",
+          "markdownDescription": "Denies the load_page command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pages command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pages",
+          "markdownDescription": "Enables the pages command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pages command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pages",
+          "markdownDescription": "Denies the pages command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the report_missing command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-report-missing",
+          "markdownDescription": "Enables the report_missing command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the report_missing command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-report-missing",
+          "markdownDescription": "Denies the report_missing command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_locale command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-locale",
+          "markdownDescription": "Enables the set_locale command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_locale command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-locale",
+          "markdownDescription": "Denies the set_locale command without any pre-configured scope."
+        },
+        {
+          "description": "What the front end needs (DESIGN 8b.2): load the payload and pages, read and switch the locale. `report_missing` (dev only) is not included: add `i18n-next:allow-report-missing` to a dev capability.\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-load-page`\n- `allow-get-locale`\n- `allow-available-locales`\n- `allow-pages`\n- `allow-set-locale`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-ping`"
+          "markdownDescription": "What the front end needs (DESIGN 8b.2): load the payload and pages, read and switch the locale. `report_missing` (dev only) is not included: add `i18n-next:allow-report-missing` to a dev capability.\n#### This default permission set includes:\n\n- `allow-load`\n- `allow-load-page`\n- `allow-get-locale`\n- `allow-available-locales`\n- `allow-pages`\n- `allow-set-locale`"
         }
       ]
     }

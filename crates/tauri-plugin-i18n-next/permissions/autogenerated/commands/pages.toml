@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pages"
+description = "Enables the pages command without any pre-configured scope."
+commands.allow = ["pages"]
+
+[[permission]]
+identifier = "deny-pages"
+description = "Denies the pages command without any pre-configured scope."
+commands.deny = ["pages"]

@@ -1,6 +1,12 @@
 pub mod tauri_plugin_i18n_next
 pub mod tauri_plugin_i18n_next::commands
-pub fn tauri_plugin_i18n_next::commands::ping() -> tauri_plugin_i18n_next::error::Result<alloc::string::String>
+pub fn tauri_plugin_i18n_next::commands::available_locales(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>) -> alloc::vec::Vec<tauri_plugin_i18n_next::models::Locale>
+pub fn tauri_plugin_i18n_next::commands::get_locale(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>) -> alloc::string::String
+pub fn tauri_plugin_i18n_next::commands::load(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, core::option::Option<alloc::string::String>, core::option::Option<alloc::vec::Vec<alloc::string::String>>) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
+pub fn tauri_plugin_i18n_next::commands::load_page(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, alloc::string::String) -> tauri_plugin_i18n_next::error::Result<tauri::ipc::Response>
+pub fn tauri_plugin_i18n_next::commands::pages(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>) -> alloc::vec::Vec<alloc::string::String>
+pub fn tauri_plugin_i18n_next::commands::report_missing(alloc::vec::Vec<tauri_plugin_i18n_next::models::MissingKey>)
+pub fn tauri_plugin_i18n_next::commands::set_locale(tauri::state::State<'_, tauri_plugin_i18n_next::Handle>, alloc::string::String) -> tauri_plugin_i18n_next::error::Result<u64>
 pub mod tauri_plugin_i18n_next::error
 pub enum tauri_plugin_i18n_next::error::Error
 pub tauri_plugin_i18n_next::error::Error::UnknownLocale(alloc::string::String)
@@ -19,6 +25,71 @@ impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::error::Error
 impl serde_core::ser::Serialize for tauri_plugin_i18n_next::error::Error
 pub fn tauri_plugin_i18n_next::error::Error::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 pub type tauri_plugin_i18n_next::error::Result<T> = core::result::Result<T, tauri_plugin_i18n_next::error::Error>
+pub mod tauri_plugin_i18n_next::models
+pub struct tauri_plugin_i18n_next::models::Changed
+pub tauri_plugin_i18n_next::models::Changed::locale: alloc::string::String
+pub tauri_plugin_i18n_next::models::Changed::version: u64
+impl core::clone::Clone for tauri_plugin_i18n_next::models::Changed
+pub fn tauri_plugin_i18n_next::models::Changed::clone(&self) -> tauri_plugin_i18n_next::models::Changed
+impl core::cmp::Eq for tauri_plugin_i18n_next::models::Changed
+impl core::cmp::PartialEq for tauri_plugin_i18n_next::models::Changed
+pub fn tauri_plugin_i18n_next::models::Changed::eq(&self, &tauri_plugin_i18n_next::models::Changed) -> bool
+impl core::fmt::Debug for tauri_plugin_i18n_next::models::Changed
+pub fn tauri_plugin_i18n_next::models::Changed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::models::Changed
+impl serde_core::ser::Serialize for tauri_plugin_i18n_next::models::Changed
+pub fn tauri_plugin_i18n_next::models::Changed::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+pub struct tauri_plugin_i18n_next::models::Locale
+pub tauri_plugin_i18n_next::models::Locale::code: alloc::string::String
+pub tauri_plugin_i18n_next::models::Locale::dir: core::option::Option<alloc::string::String>
+pub tauri_plugin_i18n_next::models::Locale::display_name: core::option::Option<alloc::string::String>
+pub tauri_plugin_i18n_next::models::Locale::iso: core::option::Option<alloc::string::String>
+impl core::clone::Clone for tauri_plugin_i18n_next::models::Locale
+pub fn tauri_plugin_i18n_next::models::Locale::clone(&self) -> tauri_plugin_i18n_next::models::Locale
+impl core::cmp::Eq for tauri_plugin_i18n_next::models::Locale
+impl core::cmp::PartialEq for tauri_plugin_i18n_next::models::Locale
+pub fn tauri_plugin_i18n_next::models::Locale::eq(&self, &tauri_plugin_i18n_next::models::Locale) -> bool
+impl core::convert::From<i18n_next::i18n::LocaleInfo> for tauri_plugin_i18n_next::models::Locale
+pub fn tauri_plugin_i18n_next::models::Locale::from(i18n_next::i18n::LocaleInfo) -> Self
+impl core::fmt::Debug for tauri_plugin_i18n_next::models::Locale
+pub fn tauri_plugin_i18n_next::models::Locale::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::models::Locale
+impl serde_core::ser::Serialize for tauri_plugin_i18n_next::models::Locale
+pub fn tauri_plugin_i18n_next::models::Locale::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+pub struct tauri_plugin_i18n_next::models::MissingEntry
+pub tauri_plugin_i18n_next::models::MissingEntry::count: u64
+pub tauri_plugin_i18n_next::models::MissingEntry::key: alloc::string::String
+pub tauri_plugin_i18n_next::models::MissingEntry::locale: alloc::string::String
+pub tauri_plugin_i18n_next::models::MissingEntry::page: alloc::string::String
+impl core::clone::Clone for tauri_plugin_i18n_next::models::MissingEntry
+pub fn tauri_plugin_i18n_next::models::MissingEntry::clone(&self) -> tauri_plugin_i18n_next::models::MissingEntry
+impl core::cmp::Eq for tauri_plugin_i18n_next::models::MissingEntry
+impl core::cmp::PartialEq for tauri_plugin_i18n_next::models::MissingEntry
+pub fn tauri_plugin_i18n_next::models::MissingEntry::eq(&self, &tauri_plugin_i18n_next::models::MissingEntry) -> bool
+impl core::fmt::Debug for tauri_plugin_i18n_next::models::MissingEntry
+pub fn tauri_plugin_i18n_next::models::MissingEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::models::MissingEntry
+impl serde_core::ser::Serialize for tauri_plugin_i18n_next::models::MissingEntry
+pub fn tauri_plugin_i18n_next::models::MissingEntry::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+pub struct tauri_plugin_i18n_next::models::MissingKey
+pub tauri_plugin_i18n_next::models::MissingKey::key: alloc::string::String
+pub tauri_plugin_i18n_next::models::MissingKey::locale: alloc::string::String
+pub tauri_plugin_i18n_next::models::MissingKey::page: alloc::string::String
+impl core::clone::Clone for tauri_plugin_i18n_next::models::MissingKey
+pub fn tauri_plugin_i18n_next::models::MissingKey::clone(&self) -> tauri_plugin_i18n_next::models::MissingKey
+impl core::cmp::Eq for tauri_plugin_i18n_next::models::MissingKey
+impl core::cmp::PartialEq for tauri_plugin_i18n_next::models::MissingKey
+pub fn tauri_plugin_i18n_next::models::MissingKey::eq(&self, &tauri_plugin_i18n_next::models::MissingKey) -> bool
+impl core::fmt::Debug for tauri_plugin_i18n_next::models::MissingKey
+pub fn tauri_plugin_i18n_next::models::MissingKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::models::MissingKey
+impl serde_core::ser::Serialize for tauri_plugin_i18n_next::models::MissingKey
+pub fn tauri_plugin_i18n_next::models::MissingKey::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for tauri_plugin_i18n_next::models::MissingKey
+pub fn tauri_plugin_i18n_next::models::MissingKey::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+pub mod tauri_plugin_i18n_next::protocol
+pub const tauri_plugin_i18n_next::protocol::VERSION_HEADER: &str
+pub fn tauri_plugin_i18n_next::protocol::handle<B>(&i18n_next::i18n::I18n, &[alloc::string::String], &http::request::Request<B>) -> http::response::Response<alloc::vec::Vec<u8>>
 pub enum tauri_plugin_i18n_next::Error
 pub tauri_plugin_i18n_next::Error::UnknownLocale(alloc::string::String)
 pub tauri_plugin_i18n_next::Error::UnknownPage(alloc::string::String)
@@ -35,5 +106,54 @@ pub fn tauri_plugin_i18n_next::error::Error::fmt(&self, &mut core::fmt::Formatte
 impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::error::Error
 impl serde_core::ser::Serialize for tauri_plugin_i18n_next::error::Error
 pub fn tauri_plugin_i18n_next::error::Error::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
-pub fn tauri_plugin_i18n_next::init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R>
+pub struct tauri_plugin_i18n_next::BindId(_)
+impl core::clone::Clone for tauri_plugin_i18n_next::BindId
+pub fn tauri_plugin_i18n_next::BindId::clone(&self) -> tauri_plugin_i18n_next::BindId
+impl core::cmp::Eq for tauri_plugin_i18n_next::BindId
+impl core::cmp::PartialEq for tauri_plugin_i18n_next::BindId
+pub fn tauri_plugin_i18n_next::BindId::eq(&self, &tauri_plugin_i18n_next::BindId) -> bool
+impl core::fmt::Debug for tauri_plugin_i18n_next::BindId
+pub fn tauri_plugin_i18n_next::BindId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for tauri_plugin_i18n_next::BindId
+pub fn tauri_plugin_i18n_next::BindId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for tauri_plugin_i18n_next::BindId
+impl core::marker::StructuralPartialEq for tauri_plugin_i18n_next::BindId
+pub struct tauri_plugin_i18n_next::Builder
+impl tauri_plugin_i18n_next::Builder
+pub fn tauri_plugin_i18n_next::Builder::build<R: tauri::Runtime>(self) -> tauri::plugin::TauriPlugin<R>
+pub fn tauri_plugin_i18n_next::Builder::data_dir(self, impl core::convert::Into<std::path::PathBuf>) -> Self
+pub fn tauri_plugin_i18n_next::Builder::global(self, bool) -> Self
+pub fn tauri_plugin_i18n_next::Builder::new(i18n_next::i18n::I18n) -> Self
+pub fn tauri_plugin_i18n_next::Builder::persist(self, bool) -> Self
+pub fn tauri_plugin_i18n_next::Builder::system_locale(self, bool) -> Self
+pub fn tauri_plugin_i18n_next::Builder::watch(self, bool) -> Self
+pub struct tauri_plugin_i18n_next::Handle
+impl tauri_plugin_i18n_next::Handle
+pub fn tauri_plugin_i18n_next::Handle::bind<T: tauri_plugin_i18n_next::Relabel + core::clone::Clone + 'static>(&self, &T, i18n_next::text::Text) -> tauri_plugin_i18n_next::BindId
+pub fn tauri_plugin_i18n_next::Handle::unbind(&self, tauri_plugin_i18n_next::BindId) -> bool
+impl core::ops::deref::Deref for tauri_plugin_i18n_next::Handle
+pub type tauri_plugin_i18n_next::Handle::Target = i18n_next::i18n::I18n
+pub fn tauri_plugin_i18n_next::Handle::deref(&self) -> &i18n_next::i18n::I18n
+pub const tauri_plugin_i18n_next::EVENT_CHANGED: &str
+pub const tauri_plugin_i18n_next::EVENT_MISSING: &str
+pub const tauri_plugin_i18n_next::SCHEME: &str
+pub trait tauri_plugin_i18n_next::ManagerExt<R: tauri::Runtime>
+pub fn tauri_plugin_i18n_next::ManagerExt::i18n(&self) -> &tauri_plugin_i18n_next::Handle
+impl<R: tauri::Runtime, T: tauri::Manager<R>> tauri_plugin_i18n_next::ManagerExt<R> for T
+pub fn T::i18n(&self) -> &tauri_plugin_i18n_next::Handle
+pub trait tauri_plugin_i18n_next::Relabel: core::marker::Send + core::marker::Sync
+pub fn tauri_plugin_i18n_next::Relabel::relabel(&self, &str) -> tauri::error::Result<()>
+impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::menu::CheckMenuItem<R>
+pub fn tauri::menu::CheckMenuItem<R>::relabel(&self, &str) -> tauri::error::Result<()>
+impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::menu::IconMenuItem<R>
+pub fn tauri::menu::IconMenuItem<R>::relabel(&self, &str) -> tauri::error::Result<()>
+impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::menu::MenuItem<R>
+pub fn tauri::menu::MenuItem<R>::relabel(&self, &str) -> tauri::error::Result<()>
+impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::menu::Submenu<R>
+pub fn tauri::menu::Submenu<R>::relabel(&self, &str) -> tauri::error::Result<()>
+impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::webview::webview_window::WebviewWindow<R>
+pub fn tauri::webview::webview_window::WebviewWindow<R>::relabel(&self, &str) -> tauri::error::Result<()>
+impl<R: tauri::Runtime> tauri_plugin_i18n_next::Relabel for tauri::window::Window<R>
+pub fn tauri::window::Window<R>::relabel(&self, &str) -> tauri::error::Result<()>
+pub fn tauri_plugin_i18n_next::missing(&str, &str, &str)
 pub type tauri_plugin_i18n_next::Result<T> = core::result::Result<T, tauri_plugin_i18n_next::error::Error>

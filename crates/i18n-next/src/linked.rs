@@ -627,7 +627,7 @@ fn view_answers<'c>(
                         .cloned()
                         .or_else(|| after_pass1(w, key))
                 });
-                if !current.is_some_and(|c| c.shape() == mine.shape()) {
+                if current.is_none_or(|c| c.shape() != mine.shape()) {
                     added.push((v, Box::from(key), mine, outcome));
                 }
             }

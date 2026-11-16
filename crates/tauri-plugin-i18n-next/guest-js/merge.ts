@@ -35,14 +35,18 @@ export function lookup(tree: Tree, key: string): unknown {
 
 const join = (prefix: string, k: string) => (prefix ? `${prefix}.${k}` : k)
 
-/** Leaves of a weaker container a stronger value replaced, as flat dotted keys. */
+/**
+ * What a weaker container a stronger value replaced answers, as flat dotted keys: its
+ * leaves and its inner containers (a lookup stops at a node, as in Rust).
+ */
 function leaves(node: object, prefix: string, out: Tree) {
   for (const k of Object.keys(node)) {
     if (k === '__proto__') continue
     const v = (node as Tree)[k]
+    if (v == null) continue
     const path = join(prefix, k)
-    if (typeof v === 'object' && v !== null) leaves(v, path, out)
-    else if (v != null) out[path] = v
+    out[path] = v
+    if (typeof v === 'object') leaves(v, path, out)
   }
 }
 
@@ -81,13 +85,33 @@ function mergeNode(lower: Tree, upper: Tree, prefix: string, flat: Tree, fresh: 
 export function layer(lower: Tree, upper: Tree, fresh: WeakSet<object> = new WeakSet()): Tree {
   // nothing below to hide or keep: the layer as it is (its `null`s read as missing)
   if (Object.keys(lower).length === 0) return upper
-  // a weaker own dotted key the stronger layer answers by the walk
-  const covered = Object.keys(lower).filter((k) => k.includes('.') && !hasOwn(upper, k) && lookup(upper, k) != null)
+  // a weaker own dotted key the stronger layer answers by the walk (an own `null` is no answer)
+  const covered = Object.keys(lower).filter((k) => k.includes('.') && own(upper, k) == null && lookup(upper, k) != null)
   const flat: Tree = {}
   const out = mergeNode(lower, upper, '', flat, fresh)
   for (const k of covered) delete out[k]
   for (const k of Object.keys(flat)) {
-    if (lookup(upper, k) == null && !hasOwn(out, k)) out[k] = flat[k]
+    if (lookup(upper, k) == null && own(out, k) == null) out[k] = flat[k]
+  }
+  return out
+}
+
+/**
+ * `linked` over `view` as own keys. A linked text answers its exact key only: an undotted key
+ * that replaces a container first keeps what the container answers as own dotted keys.
+ */
+function overlay(view: Tree, linked: Tree, fresh: WeakSet<object>): Tree {
+  const keys = Object.keys(linked).filter((k) => k !== '__proto__' && linked[k] != null)
+  if (keys.length === 0) return view
+  const out = writable(view, fresh)
+  for (const k of keys) {
+    const w = own(out, k)
+    if (!k.includes('.') && typeof w === 'object' && w !== null) {
+      const flat: Tree = {}
+      leaves(w, k, flat)
+      for (const p of Object.keys(flat)) if (own(out, p) == null) out[p] = flat[p]
+    }
+    out[k] = linked[k]
   }
   return out
 }
@@ -101,9 +125,7 @@ export function premerge(chunks: readonly Chunk[]): Tree {
   let view: Tree = {}
   for (const c of chunks) {
     view = layer(view, c.data, fresh)
-    const linked = c.linked ? Object.keys(c.linked).filter((k) => k !== '__proto__' && c.linked![k] != null) : []
-    if (linked.length > 0) view = writable(view, fresh)
-    for (const k of linked) view[k] = c.linked![k]
+    if (c.linked) view = overlay(view, c.linked, fresh)
   }
   return view
 }

@@ -404,6 +404,8 @@ jobs:
           cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
           trunk build --release --locked
           ls -l dist/*.wasm
+          # the footer's size (post_build hook): "<bytes> <gzip bytes>"
+          grep -E '^[0-9]+ [0-9]+$' dist/wasm-size.txt
       - name: Tauri side
         working-directory: examples/leptos-app/src-tauri
         run: |

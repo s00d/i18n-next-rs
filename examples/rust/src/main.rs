@@ -2,8 +2,11 @@
 //!
 //! `cargo run -p playground-rust` prints the tour; `-- --check` also verifies every
 //! line and exits non-zero on any problem, including any key the catalog misses (CI runs it).
+//! `-- --texts` prints what each page of `examples/nuxt-site` shows, per locale, as JSON: its
+//! check compares the generated site with it.
 
 use i18n_next::{Args, CheckItem, Error, I18n, Text, key, scope, t, tc};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 use std::process::ExitCode;
@@ -415,7 +418,55 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
             ),
         ),
     ]);
+    // M10: the axum server (bin/server.rs) on 127.0.0.1:0: a request's `Accept-Language`
+    // picks the locale of its scope, the answer is JSON of `Text`.
+    stops.push((
+        "server",
+        expect(
+            server(),
+            r#"{"locale":"ru","texts":{"language":"Язык","title":"Настройки"}}"#,
+        ),
+    ));
     Ok(stops)
+}
+
+/// One request to the server, or what went wrong.
+fn server() -> String {
+    let run = || -> std::io::Result<String> {
+        let i18n = playground_rust::catalog().map_err(std::io::Error::other)?;
+        tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()?
+            .block_on(playground_rust::with_server(i18n, |addr| async move {
+                let (status, body) =
+                    playground_rust::fetch(addr, "/settings", "ru;q=0.9, en;q=0.5").await?;
+                Ok(if status == 200 {
+                    body
+                } else {
+                    format!("HTTP {status}")
+                })
+            }))
+    };
+    run().unwrap_or_else(|e| e.to_string())
+}
+
+/// `--texts`: `{locale: {page: {key: text}}}` of the pages `examples/nuxt-site` renders.
+fn texts() -> Result<String, Error> {
+    let i18n = playground_rust::catalog()?;
+    let mut all = BTreeMap::new();
+    for locale in i18n.locales() {
+        let mut pages = BTreeMap::new();
+        for page in playground_rust::PAGES {
+            let texts: BTreeMap<&str, String> = playground_rust::page_texts(&i18n, page)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(key, text)| (key, text.locale(locale.code.clone()).to_string()))
+                .collect();
+            pages.insert(page, texts);
+        }
+        all.insert(locale.code, pages);
+    }
+    Ok(serde_json::to_string_pretty(&all).unwrap_or_default())
 }
 
 /// UI state that keeps a translation: it shows the language of the moment.
@@ -459,6 +510,18 @@ fn gaps(i18n: &I18n) -> String {
 }
 
 fn main() -> ExitCode {
+    if std::env::args().skip(1).any(|a| a == "--texts") {
+        return match texts() {
+            Ok(json) => {
+                println!("{json}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("cannot load the catalog: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let check = std::env::args().skip(1).any(|a| a == "--check");
     let misses = Arc::new(Mutex::new(Vec::new()));
     let stops = match tour(&misses) {

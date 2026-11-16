@@ -76,6 +76,19 @@ fn hour_cache_stays_exact() {
     }
 }
 
+/// Given the last second of `Date` (8.64e12 s, the start of an hour), when its hour is
+/// probed for the cache, then nothing past `Date` reaches `formatToParts` (its `RangeError`
+/// used to leave the formatter table borrowed) and the zone keeps answering after.
+#[wasm_bindgen_test]
+fn last_second_of_date() {
+    const MAX: i64 = 8_640_000_000_000;
+    let zone = Zone::named("Europe/Berlin").unwrap();
+    let table = tz::tzdb::find(DATA, "Europe/Berlin").unwrap();
+    for t in [MAX, MAX, 1_782_864_000] {
+        assert_eq!(zone.offset_at(t), table.offset_at(t), "at {t}");
+    }
+}
+
 #[wasm_bindgen_test]
 fn unknown_names_are_none() {
     for bad in ["Nowhere/Zone", "", "Europe/Berlin/X"] {

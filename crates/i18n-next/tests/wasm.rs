@@ -48,9 +48,11 @@ fn number_goldens_in_wasm() {
 /// there (the `tz` browser backend), the patterns and the renderer are the same code.
 #[wasm_bindgen_test]
 fn date_goldens_in_wasm() {
-    for golden in [date::DATE, date::RELATIVE, date::PROPS] {
-        if let Err(diff) = date::run(golden) {
-            panic!("date goldens differ:\n{diff}");
+    // the counts of tests/date_compat.rs: a run cut short (a JS exception) fails here too
+    for (golden, min) in [(date::DATE, 39_000), (date::RELATIVE, 9_800), (date::PROPS, 19_900)] {
+        match date::run(golden) {
+            Ok(n) => assert!(n > min, "only {n} lines ran"),
+            Err(diff) => panic!("date goldens differ:\n{diff}"),
         }
     }
 }

@@ -66,8 +66,12 @@ fn formatter(time_zone: Option<&str>) -> Option<Intl::DateTimeFormat> {
 }
 
 /// Wall time − UTC at `t` from `formatToParts` (era `BC` → astronomical year).
+/// `None` for an instant outside `Date` (`formatToParts` would throw a `RangeError`).
 fn intl_offset(fmt: &Intl::DateTimeFormat, t: i64) -> Option<i32> {
     let date = Date::new(&JsValue::from_f64((t * 1000) as f64));
+    if date.get_time().is_nan() {
+        return None;
+    }
     let (mut y, mut mo, mut d, mut hms, mut bc) = (0i64, 1u8, 1u8, 0i64, false);
     for part in fmt.format_to_parts(&date).iter() {
         let ty = get(&part, "type")?.as_string()?;
@@ -89,16 +93,20 @@ fn intl_offset(fmt: &Intl::DateTimeFormat, t: i64) -> Option<i32> {
     i32::try_from(days_from_civil(y, mo, d) * 86_400 + hms - t).ok()
 }
 
-fn with_formatter<T>(id: u32, name: &str, f: impl FnOnce(&Intl::DateTimeFormat) -> T) -> Option<T> {
-    FORMATS.with_borrow_mut(|list| {
-        if let Some((_, fmt)) = list.iter().find(|(i, _)| *i == id) {
-            return Some(f(fmt));
-        }
-        let fmt = formatter(Some(name))?;
-        let out = f(&fmt);
-        list.push((id, fmt));
-        Some(out)
-    })
+/// The formatter of zone `id`, built from `name` on a thread that has not seen it. A clone
+/// (one JS reference) comes out, so no JS call runs while `FORMATS` is borrowed: an
+/// exception thrown through wasm runs no destructor and would leave the borrow taken.
+fn formatter_of(id: u32, name: &str) -> Option<Intl::DateTimeFormat> {
+    if let Some(fmt) = FORMATS.with_borrow(|list| {
+        list.iter()
+            .find(|(i, _)| *i == id)
+            .map(|(_, f)| f.clone())
+    }) {
+        return Some(fmt);
+    }
+    let fmt = formatter(Some(name))?;
+    FORMATS.with_borrow_mut(|list| list.push((id, fmt.clone())));
+    Some(fmt)
 }
 
 impl JsZone {
@@ -117,17 +125,18 @@ impl JsZone {
         {
             return off;
         }
-        with_formatter(self.id, name, |fmt| {
-            let first = intl_offset(fmt, hour * 3600);
-            if first.is_some() && first == intl_offset(fmt, hour * 3600 + 3599) {
-                let off = first.unwrap_or(0);
-                OFFSETS.with_borrow_mut(|c| c[slot] = (self.id, hour, off));
-                off
-            } else {
-                intl_offset(fmt, t).unwrap_or(0)
-            }
-        })
-        .unwrap_or(0)
+        let Some(fmt) = formatter_of(self.id, name) else {
+            return 0;
+        };
+        // the last hour of `Date` ends at its last second: no instant past it is asked
+        let first = intl_offset(&fmt, hour * 3600);
+        if first.is_some() && first == intl_offset(&fmt, (hour * 3600 + 3599).min(MAX_SECONDS)) {
+            let off = first.unwrap_or(0);
+            OFFSETS.with_borrow_mut(|c| c[slot] = (self.id, hour, off));
+            off
+        } else {
+            intl_offset(&fmt, t).unwrap_or(0)
+        }
     }
 }
 

@@ -1002,6 +1002,12 @@ for (const locale of DATE_LOCALES) {
     }
   }
 }
+// the ISO week year (`Y`, `YY`): `gd` shows `{year, month: "short"}` with it, the only `modern`
+// locale that does (`ksh`, `sc` are outside the default build); both sides of a year whose
+// week 1 starts in the year before / after
+for (const v of [utcMs(2024, 12, 30), utcMs(2021, 1, 1)]) {
+  for (const year of ['numeric', '2-digit']) dateLine('gd', v, { year, month: 'short', timeZone: 'UTC' })
+}
 // i18n.json with named date formats; the instance zone is `date_zone()`
 const DATE_ZONE = 'America/New_York'
 const DATE_CONFIG = {

@@ -27,7 +27,10 @@ docs/node_modules
 docs/.nuxt
 docs/.output
 docs/.data
-docs/content/3.reference/
+docs/content/3.reference/1.javascript-api.md
+docs/content/3.reference/2.types.md
+docs/content/3.reference/3.commands.md
+docs/content/3.reference/4.permissions.md
 docs/content/9.changelog.md
 docs/dist
 

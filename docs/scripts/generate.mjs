@@ -1,7 +1,8 @@
 // Builds the reference pages from the repository sources before `nuxt dev` / `nuxt generate`.
 // Output (gitignored, rewritten on every run):
-//   content/3.reference/  JS API + types (guest-js/*.ts), Tauri commands (src/commands.rs), permissions (permissions/)
-//   content/9.changelog.md  CHANGELOG.md with frontmatter and site links
+//   content/3.reference/1-4  JS API + types (guest-js/*.ts), Tauri commands (src/commands.rs), permissions (permissions/)
+//   content/9.changelog.md   CHANGELOG.md with frontmatter and site links
+// The other pages of content/3.reference/ (.navigation.yml, Rust API, features, i18n.json) are hand-written and tracked.
 // A source that does not exist yet (or is still empty) gives a short empty-state page, never a failure.
 // Edit the sources, never the generated pages.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -18,9 +19,16 @@ const repo = 'https://github.com/s00d/i18n-next-rs/blob/main/'
 
 const exists = (rel) => existsSync(root + rel)
 const read = (rel) => readFileSync(root + rel, 'utf8')
+// `(DESIGN 6.1)`, `(8b.16)`: pointers into the design notes of the repository, not for the site.
+const ref = String.raw`(?:DESIGN\s+)?(?:8b\.\d+|\d+\.\d+[a-z]?)(?:\s+step\s+\d+)?`
+const noDesignRefs = (text) =>
+  text
+    .replace(new RegExp(String.raw`[ \t]*\(${ref}(?:,\s*${ref})*\)`, 'g'), '')
+    .replace(new RegExp(String.raw`,\s*DESIGN\s+[\d.a-z]+(?=\))`, 'g'), '')
+
 const page = (title, description, source, body) =>
   `---\ntitle: ${JSON.stringify(title)}\ndescription: ${JSON.stringify(description)}\ngenerated: true\n---\n\n` +
-  `<!-- Generated from ${source} by docs/scripts/generate.mjs. Edit the source, not this file. -->\n\n${body.trim()}\n`
+  `<!-- Generated from ${source} by docs/scripts/generate.mjs. Edit the source, not this file. -->\n\n${noDesignRefs(body).trim()}\n`
 // Inline code inside a table cell: one line, `|` escaped for GFM.
 const cell = (text) => (text ? '`' + text.replace(/\s+/g, ' ').replace(/\|/g, '\\|') + '`' : '')
 const oneLine = (text) => (text || '').replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|').trim()
@@ -144,7 +152,10 @@ function addExport(api, name, { st, sf, d }) {
       }
       api.objects.push({ name, label: `\`${name}\``, doc: '', members })
       documented.set(node, { api, anchor: anchor(members[0]?.name ?? name), callable: true })
-    } else warn(`${sf.fileName}: exported const ${name} is not a function or an object of functions, not documented`)
+    } else if (d.initializer && (ts.isStringLiteral(d.initializer) || ts.isNumericLiteral(d.initializer))) {
+      api.constants.push({ name, value: d.initializer.getText(sf), doc: docBlock(jsdoc(st)) })
+      documented.set(node, { api, anchor: anchor(name), callable: false, constant: true })
+    } else warn(`${sf.fileName}: exported const ${name} is not a function, an object of functions or a literal, not documented`)
   } else if (ts.isClassDeclaration(st)) {
     const members = []
     for (const m of st.members) {
@@ -192,7 +203,7 @@ function collect(api, file, files = new Set()) {
 }
 
 const apis = entryPoints.filter((e) => exists(e.file)).map(({ file, specifier }) => {
-  const api = { file, specifier, functions: [], events: [], objects: [], types: [], reexports: [] }
+  const api = { file, specifier, functions: [], events: [], objects: [], types: [], constants: [], reexports: [] }
   collect(api, file)
   return api
 })
@@ -206,12 +217,13 @@ const summary = (list) =>
   '| Function | Description |\n|----------|-------------|\n' +
   list.map((e) => `| [${cell(e.name + '()')}](#${anchor(e.name)}) | ${oneLine(e.doc.split('\n\n')[0])} |`).join('\n')
 const reexportLine = (api) => {
-  const items = api.reexports.map((r) => `[${cell(r.name + (r.callable ? '()' : ''))}](${r.callable ? '' : '/reference/types'}#${r.anchor})`)
+  const href = (r) => (r.callable ? `#${r.anchor}` : r.constant ? '#constants' : `/reference/types#${r.anchor}`)
+  const items = api.reexports.map((r) => `[${cell(r.name + (r.callable ? '()' : ''))}](${href(r)})`)
   return items.length ? [`Also exported here, documented once above: ${items.join(', ')}.`, ''] : []
 }
 
 function jsApiPage() {
-  const sections = apis.filter((api) => callables(api).length || api.reexports.length).flatMap((api) => [
+  const sections = apis.filter((api) => callables(api).length || api.constants.length || api.reexports.length).flatMap((api) => [
     `## \`${api.specifier}\``,
     '',
     `From ${link(api.file)}.`,
@@ -221,6 +233,10 @@ function jsApiPage() {
     entries(api.functions),
     ...(api.events.length ? ['**Event listeners**', '', entries(api.events)] : []),
     ...api.objects.flatMap((o) => [`**${o.label}**`, '', ...(o.doc ? [o.doc, ''] : []), entries(o.members)]),
+    ...(api.constants.length
+      ? ['### Constants', '', '| Constant | Value | Description |', '|----------|-------|-------------|',
+          ...api.constants.map((c) => `| ${cell(c.name)} | ${cell(c.value)} | ${oneLine(c.doc)} |`), '']
+      : []),
   ])
   const body = sections.length
     ? ['Everything `tauri-plugin-i18n-next-api` exports, generated from the guest-js sources.','Option and result types are on the [types page](/reference/types).', '', ...sections].join('\n')
@@ -242,7 +258,11 @@ function typesPage() {
         const desc = oneLine([d, trailing].filter(Boolean).join(' '))
         if (ts.isIndexSignatureDeclaration(m)) return `| ${cell('[' + m.parameters[0].getText(sf) + ']')} | ${cell(m.type.getText(sf))} | ${desc} |`
         const opt = m.questionToken ? '?' : ''
-        return `| ${cell(m.name.getText(sf) + opt)} | ${cell(m.type?.getText(sf) ?? 'unknown')} | ${desc} |`
+        // `setPage(page: string): Promise<void>` reads as a function type, not as its return type.
+        const type = ts.isMethodSignature(m)
+          ? `(${m.parameters.map((p) => p.getText(sf)).join(', ')}) => ${m.type?.getText(sf) ?? 'void'}`
+          : (m.type?.getText(sf) ?? 'unknown')
+        return `| ${cell(m.name.getText(sf) + opt)} | ${cell(type)} | ${desc} |`
       })
       const title = name + (st.typeParameters ? `<${st.typeParameters.map((t) => t.getText(sf)).join(', ')}>` : '')
       return `${head(title)}${ext ? `Extends ${cell(ext.replace(/^extends\s+/, ''))}.\n\n` : ''}| Property | Type | Description |\n|----------|------|-------------|\n${rows.join('\n')}\n`
@@ -391,7 +411,11 @@ function rustDoc(lines) {
     }
     if (!skip) out.push(line)
   }
-  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  // `[`webview_zone`]`: an intra-doc link to a private item has no page here.
+  return noDesignRefs(out.join('\n'))
+    .replace(/\[(`[^`]+`)\](?![(\[])/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 // `Result<T>`, `crate::Result<T>`, `Result<T, E>` (any E) -> `T`; anything else as is.
@@ -467,7 +491,7 @@ function commandsPage() {
   const noPermission = commands.filter((c) => !permissionIds.has(`allow-${c.name.replace(/_/g, '-')}`)).map((c) => c.name)
   if (permissionIds.size && noPermission.length) console.warn(`generate.mjs: commands without an allow-* permission: ${noPermission.join(', ')}`)
 
-  const rows = commands.map((c) => `| [${cell(c.name)}](#${c.name}) | ${oneLine(c.doc.split('\n')[0])} |`).join('\n')
+  const rows = commands.map((c) => `| [${cell(c.name)}](#${c.name}) | ${oneLine(c.doc.split('\n\n')[0].match(/^[\s\S]*?\.(?=\s|$)/)?.[0] ?? c.doc.split('\n\n')[0])} |`).join('\n')
   const details = commands
     .map((c) => {
       const permission = `allow-${c.name.replace(/_/g, '-')}`
@@ -523,10 +547,12 @@ function changelogPage() {
 
 // ---------------------------------------------------------------- write
 
-rmSync(refDir, { recursive: true, force: true })
+// Only generated pages are replaced: the hand-written ones beside them stay.
 mkdirSync(refDir, { recursive: true })
+for (const f of readdirSync(refDir)) {
+  if (f.endsWith('.md') && /^generated: true$/m.test(readFileSync(refDir + f, 'utf8'))) rmSync(refDir + f)
+}
 const out = {
-  [`${refDir}.navigation.yml`]: 'title: API reference\nicon: i-lucide-file-code\n',
   [`${refDir}1.javascript-api.md`]: jsApiPage(),
   [`${refDir}2.types.md`]: typesPage(),
   [`${refDir}3.commands.md`]: commandsPage(),

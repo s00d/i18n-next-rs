@@ -2,7 +2,7 @@
 # tests under nextest with the `mutants` profile (.config/nextest.toml: short hard timeout,
 # fail-fast) and the `mutants` cargo profile (dev without debug info, faster links).
 # A timeout counts as a caught mutant: such a mutant makes the code spin.
-# Run locally only, per crate (DESIGN 7.5):
+# The full run is local, per crate (DESIGN 7.5); CI (`mutants` job) runs the lines a PR changes:
 #
 #   export TMPDIR="$PWD/target/mutants-tmp" && mkdir -p "$TMPDIR"
 #   cargo mutants -p i18n-next
@@ -18,5 +18,16 @@
 test_tool = "nextest"
 additional_cargo_test_args = ["--profile", "mutants"]
 profile = "mutants"
+# Copy the tree without what .gitignore lists (node_modules, fuzz corpora and targets, docs
+# builds): the build needs none of it, and a fuzz run writing its corpus breaks the copy.
+gitignore = true
+
+# Kind 1: whole modules built only for wasm32-unknown-unknown (`cfg` on their `mod` line);
+# a native build drops them, so every mutant would "survive". Covered by the wasm-bindgen
+# tests (tests/wasm_*.rs, DESIGN 7.6).
+exclude_globs = [
+    "crates/i18n-next/src/tauri_guest.rs", # tauri-guest on wasm32-unknown-unknown only
+    "crates/i18n-next/src/tz/browser.rs",  # tz on wasm32-unknown-unknown only (Intl)
+]
 
 exclude_re = []

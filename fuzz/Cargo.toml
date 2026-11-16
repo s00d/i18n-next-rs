@@ -1,11 +1,12 @@
 [package]
 name = "i18n-next-fuzz"
-description = "cargo-fuzz targets of i18n-next (DESIGN 8b.11): local only, like cargo mutants"
+description = "cargo-fuzz targets of i18n-next (DESIGN 8b.11)"
 version = "0.0.0"
 edition = "2024"
 publish = false
 
-# Run locally (nightly, cargo-fuzz), never in CI. Seeds: the fixtures, read in place (libFuzzer
+# Long runs locally (cargo-fuzz on the pinned nightly-2026-08-07); CI runs 30 s of each target
+# (the `fuzz` job). Seeds: the fixtures, read in place (libFuzzer
 # takes extra corpus directories after the first, writable one):
 #
 #   cargo +nightly fuzz run load_json fuzz/corpus/load_json fixtures/compat fixtures/json-test-suite -- -max_total_time=60
@@ -13,6 +14,7 @@ publish = false
 #   cargo +nightly fuzz run linked    fuzz/corpus/linked    fixtures/compat/linked -- -max_total_time=60
 #   cargo +nightly fuzz run page_names "$PWD"/fuzz/corpus/page_names "$PWD"/fixtures/compat/locales -- -max_total_time=60
 #   (absolute paths: the target runs in an empty directory of its own and checks it stays empty)
+#   cargo +nightly fuzz run intl_options fuzz/corpus/intl_options -- -max_total_time=60
 #   cargo +nightly fuzz run tzif      fuzz/corpus/tzif      fixtures/tzif -- -max_total_time=60
 #   cargo +nightly fuzz run payload_apply fuzz/corpus/payload_apply crates/tauri-plugin-i18n-next/tests/__golden__ -- -max_total_time=60
 #

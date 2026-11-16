@@ -1,6 +1,7 @@
 // The generated site shows what the Rust tour does (DESIGN 8b.19): every `data-k` text of
 // `.output/public/<locale>/<page>/index.html` equals `playground-rust --texts` for that
-// locale, page and key, and every key of the tour is on the page.
+// locale, page and key, every key of the tour is on the page, and every `data-k` of the page
+// is a key of the tour.
 // Usage: node scripts/check-texts.mjs [texts.json]   (without a file it runs cargo)
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -37,6 +38,13 @@ for (const [locale, pages] of Object.entries(want)) {
       } else if (shown.get(key) !== text) {
         problems++
         console.error(`${locale}/${page}: ${key}: site ${JSON.stringify(shown.get(key))}, Rust ${JSON.stringify(text)}`)
+      }
+    }
+    // every `data-k` attribute, also on an element whose text the match above cannot read
+    for (const key of new Set([...html.matchAll(/data-k="([^"]+)"/g)].map((m) => decode(m[1])))) {
+      if (!Object.hasOwn(texts, key)) {
+        problems++
+        console.error(`${locale}/${page}: data-k ${key} is on the page but not in --texts`)
       }
     }
   }

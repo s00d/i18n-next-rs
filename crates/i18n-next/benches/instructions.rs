@@ -42,7 +42,7 @@ fn version() -> &'static str {
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 #[bench::root_hit(setup = catalog)]
-fn t(i18n: I18n) -> String {
+fn t(i18n: I18n) -> i18n_next::Translation<'static> {
     black_box(i18n.t(black_box("nav.home")))
 }
 

@@ -18,7 +18,7 @@ export default defineNuxtConfig({
     // Bundle every icon so the static site never asks the Iconify API at runtime.
     clientBundle: {
       scan: true,
-      icons: ['simple-icons:rust', 'simple-icons:toml', 'simple-icons:typescript', 'simple-icons:json', 'simple-icons:npm', 'lucide:terminal',
+      icons: ['simple-icons:rust', 'simple-icons:toml', 'simple-icons:typescript', 'simple-icons:json', 'simple-icons:npm', 'simple-icons:vuedotjs', 'lucide:terminal',
         // .navigation.yml icons are not found by the scanner.
         'lucide:rocket', 'lucide:monitor-smartphone', 'lucide:file-code', 'lucide:book-open'],
       sizeLimitKb: 512,
@@ -34,7 +34,7 @@ export default defineNuxtConfig({
       markdown: {
         toc: { depth: 3, searchDepth: 2 },
         highlight: {
-          langs: ['rust', 'toml', 'bash', 'shell', 'ts', 'js', 'json', 'jsonc', 'yaml', 'diff', 'vue'],
+          langs: ['rust', 'toml', 'bash', 'shell', 'ts', 'js', 'json', 'jsonc', 'yaml', 'diff', 'vue', 'tsx'],
         },
       },
     },

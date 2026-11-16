@@ -22,6 +22,7 @@ export default defineAppConfig({
         toml: 'i-simple-icons-toml',
         'Cargo.toml': 'i-simple-icons-rust',
         ts: 'i-simple-icons-typescript',
+        vue: 'i-simple-icons-vuedotjs',
         jsonc: 'i-simple-icons-json',
         json: 'i-simple-icons-json',
         bash: 'i-lucide-terminal',

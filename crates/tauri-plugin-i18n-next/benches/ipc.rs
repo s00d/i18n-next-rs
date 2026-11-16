@@ -58,7 +58,7 @@ impl Relabel for Sink {
 }
 
 fn ipc(c: &mut Criterion) {
-    let mut load = c.benchmark_group("ipc/load");
+    let mut load = c.benchmark_group("commands/load");
     let apps: Vec<(usize, App)> = [1_000, 10_000]
         .into_iter()
         .map(|keys| (keys, App::new(catalog(keys))))
@@ -77,7 +77,7 @@ fn ipc(c: &mut Criterion) {
         });
     }
     let app = App::new(catalog(1_000));
-    c.bench_function("ipc/load_page/page_50", |b| {
+    c.bench_function("commands/load_page/page_50", |b| {
         b.iter(|| {
             black_box(
                 app.call_raw("load_page", json!({ "page": "settings" }))
@@ -86,23 +86,23 @@ fn ipc(c: &mut Criterion) {
         })
     });
     let mut flip = false;
-    c.bench_function("ipc/set_locale/switch", |b| {
+    c.bench_function("commands/set_locale/switch", |b| {
         b.iter(|| {
             flip = !flip;
             let locale = if flip { "de" } else { "en" };
             black_box(app.call("set_locale", json!({ "locale": locale })).unwrap())
         })
     });
-    c.bench_function("ipc/get_locale/mock_ipc", |b| {
+    c.bench_function("commands/get_locale/mock_ipc", |b| {
         b.iter(|| black_box(app.call("get_locale", json!({})).unwrap()))
     });
-    c.bench_function("ipc/available_locales/two", |b| {
+    c.bench_function("commands/available_locales/two", |b| {
         b.iter(|| black_box(app.call("available_locales", json!({})).unwrap()))
     });
-    c.bench_function("ipc/pages/one", |b| {
+    c.bench_function("commands/pages/one", |b| {
         b.iter(|| black_box(app.call("pages", json!({})).unwrap()))
     });
-    c.bench_function("ipc/meta/chain_page", |b| {
+    c.bench_function("commands/meta/chain_page", |b| {
         b.iter(|| black_box(app.call_raw("meta", json!({ "page": "settings" })).unwrap()))
     });
     // The dev report records nothing in release builds (benches run in release): these two
@@ -110,7 +110,7 @@ fn ipc(c: &mut Criterion) {
     // release build, the IPC round trip and a no-op. The dev path is covered by
     // tests/dev_report.rs and the unit test of src/missing.rs (one write per batch).
     let keys = json!({ "keys": [{ "locale": "en", "page": "index", "key": "nope" }] });
-    c.bench_function("ipc/report_missing/release_noop", |b| {
+    c.bench_function("commands/report_missing/release_noop", |b| {
         b.iter(|| black_box(app.call("report_missing", keys.clone()).unwrap()))
     });
     c.bench_function("plugin/missing/release_noop", |b| {

@@ -7,9 +7,11 @@
 //! A `pub fn` line counts when it is a free function (its parent path is a `pub mod`) or a
 //! method of an inherent impl or of a trait the crate declares. Methods under an
 //! `impl Trait for Type` header (`Clone::clone`, `Display::fmt`, `Serialize::serialize`)
-//! implement someone else's API and do not count. A free function is keyed by its name
-//! (`version`), a method by its owner and name (`I18n::t`, `View::t`): two methods of the
-//! same name on different types are two entries, each needs its own bench.
+//! implement someone else's API and do not count. A free function at the crate root is keyed
+//! by its name (`version`), one in a module by the module and name (`payload::apply`,
+//! `tauri_guest::set_locale`), a method by its owner and name (`I18n::t`, `View::t`): two
+//! functions of the same name in different modules or types are two entries, each needs its
+//! own bench.
 //!
 //! Bench ids follow `group/function/case`, in one of two forms:
 //! - `c.bench_function("group/NAME/case", ..)`: three segments, the middle one names the
@@ -23,9 +25,13 @@
 //!   snake case: `i18n/t/root_hit` covers `I18n::t`, `view/t/page_hit` covers `View::t`,
 //!   `builder/files/keys_1000x3` covers `Builder::files`, `locale_info/..` would cover
 //!   `LocaleInfo::..`;
-//! - a **free function** `name` is covered by `group/name/case` with any group that is not
-//!   an owner's snake name (`crate/version/static` covers `version`, `i18n/version/..`
-//!   does not: that is `I18n::version`).
+//! - a **free function of a module** `module::name` is covered only by an id whose group is
+//!   the module (its last path segment): `payload/apply/..` covers `payload::apply`,
+//!   `tauri_guest/set_locale/..` covers `tauri_guest::set_locale` (and `global/set_locale/..`
+//!   does not);
+//! - a **free function at the crate root** `name` is covered by `group/name/case` with any
+//!   group that is neither an owner's snake name nor a module (`crate/version/static` covers
+//!   `version`, `i18n/version/..` does not: that is `I18n::version`).
 //!
 //! Only the function segment names the function, so a group or case that happens to equal
 //! a function name does not cover it. Any other id shape fails the check, so the naming
@@ -220,7 +226,11 @@ fn public_fns(api: &str) -> BTreeSet<String> {
         .filter_map(|(path, trait_impl)| {
             let n = path.len();
             if modules.contains(&path[..n - 1]) {
-                Some(path[n - 1].clone())
+                // the crate root: the name alone; a module: its last segment and the name
+                Some(match n {
+                    2 => path[1].clone(),
+                    _ => format!("{}::{}", path[n - 2], path[n - 1]),
+                })
             } else if !trait_impl && n >= 2 {
                 Some(format!("{}::{}", path[n - 2], path[n - 1]))
             } else {
@@ -244,7 +254,9 @@ fn snake(ty: &str) -> String {
     out
 }
 
-/// Bench group → owner type, for every type with a public method in `fns`.
+/// Bench group → what its functions are keyed under: an owner type (`i18n` → `I18n`) for
+/// every type with a public method in `fns`, a module (`payload` → `payload`) for every
+/// module with a public free function.
 fn owners(fns: &BTreeSet<String>) -> BTreeMap<String, String> {
     fns.iter()
         .filter_map(|f| f.split_once("::"))
@@ -252,8 +264,8 @@ fn owners(fns: &BTreeSet<String>) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// The function every quoted bench id / group id names: `Type::name` when its group is an
-/// owner's snake name, else the free function `name`.
+/// The function every quoted bench id / group id names: `Type::name` / `module::name` when
+/// its group is an owner's snake name or a module, else the crate root's `name`.
 fn benched_fns(sources: &[String], owners: &BTreeMap<String, String>) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for src in sources {
@@ -451,12 +463,12 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "Source::read",
                 "after_impls",
                 "apply",
-                "cc",
                 "init",
-                "load",
-                "raw",
-                "sys",
-                "type",
+                "sub::cc",
+                "sub::load",
+                "sub::raw",
+                "sub::sys",
+                "sub::type",
                 "version"
             ])
         );
@@ -467,6 +479,19 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                          pub fn c::LocaleInfo::version(&self) -> u64\n\
                          pub fn c::LocaleInfo::get(&self)\n\
                          pub struct c::View\nimpl c::View\npub fn c::View::get(&self)\n";
+
+    #[test]
+    fn module_functions_are_covered_only_by_their_modules_group() {
+        let api = "pub mod c\npub mod c::guest\npub fn c::set_locale(&str)\n\
+                   pub async fn c::guest::set_locale(&str)\n";
+        let bench = r#"c.bench_function("global/set_locale/a", |b| ());"#;
+        assert_eq!(
+            covered(api, bench),
+            Ok(vec!["guest::set_locale".to_owned()])
+        );
+        let bench = r#"c.bench_function("guest/set_locale/a", |b| ());"#;
+        assert_eq!(covered(api, bench), Ok(vec!["set_locale".to_owned()]));
+    }
 
     #[test]
     fn methods_are_covered_only_by_their_owners_group() {
@@ -674,13 +699,13 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "encode_page",
                 "meta",
             ]
-            .map(str::to_owned),
+            .map(|f| format!("payload::{f}")),
         );
         let native = want.into_iter().collect::<BTreeSet<_>>();
         assert_eq!(api("i18n-next"), native);
         // wasm32 with `tauri-guest`: the module on top, without the native-only builder
-        // methods (no file system there); `tauri_guest::set_locale` is keyed `set_locale`,
-        // which the native list has already
+        // methods (no file system there); `tauri_guest::set_locale` is its own entry, not
+        // the global `set_locale`
         let wasm = api("i18n-next-wasm");
         let added: BTreeSet<String> = wasm.difference(&native).cloned().collect();
         let gone: BTreeSet<String> = native.difference(&wasm).cloned().collect();
@@ -692,9 +717,10 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "load",
                 "preload",
                 "refresh",
+                "set_locale",
                 "set_page"
             ]
-            .map(str::to_owned)
+            .map(|f| format!("tauri_guest::{f}"))
             .into_iter()
             .collect()
         );
@@ -707,18 +733,17 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
         let mut plugin: Vec<String> = [
             "available_locales",
             "get_locale",
-            "handle",
             "load",
             "load_page",
             "meta",
-            "missing",
             "pages",
             "report_missing",
             "set_locale",
         ]
         .iter()
-        .map(|s| (*s).to_owned())
+        .map(|s| format!("commands::{s}"))
         .collect();
+        plugin.extend(["missing".to_owned(), "protocol::handle".to_owned()]);
         plugin.extend(methods(
             "Builder",
             &[

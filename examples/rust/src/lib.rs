@@ -70,7 +70,12 @@ pub fn page_texts(i18n: &I18n, page: &str) -> Option<Vec<(&'static str, Text)>> 
 /// The server: `GET /{page}` answers `{"locale", "texts": {key: text}}` in the locale
 /// `Accept-Language` asks for (else the default), with `Content-Language`.
 pub fn app(i18n: I18n) -> Router {
-    Router::new()
+    app_with(i18n, Router::new())
+}
+
+/// [`app`] with the routes of `extra` under the same `Accept-Language` middleware.
+pub fn app_with(i18n: I18n, extra: Router<I18n>) -> Router {
+    extra
         .route("/{page}", get(page))
         .route_layer(middleware::from_fn_with_state(i18n.clone(), negotiate))
         .with_state(i18n)
@@ -119,15 +124,22 @@ async fn page(
     .into_response()
 }
 
-/// A plain HTTP/1.1 `GET` (one request, `Connection: close`): the status and the body.
+/// A reply of [`fetch`].
+#[derive(Debug)]
+pub struct Reply {
+    /// The status code.
+    pub status: u16,
+    /// The `Content-Language` header, if any.
+    pub content_language: Option<String>,
+    /// The body.
+    pub body: String,
+}
+
+/// A plain HTTP/1.1 `GET` (one request, `Connection: close`).
 ///
 /// # Errors
 /// The connection or a reply that is not HTTP.
-pub async fn fetch(
-    addr: SocketAddr,
-    path: &str,
-    accept_language: &str,
-) -> std::io::Result<(u16, String)> {
+pub async fn fetch(addr: SocketAddr, path: &str, accept_language: &str) -> std::io::Result<Reply> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut stream = tokio::net::TcpStream::connect(addr).await?;
     let request = format!(
@@ -142,15 +154,25 @@ pub async fn fetch(
         .nth(1)
         .and_then(|s| s.parse().ok())
         .ok_or_else(bad)?;
-    let (_, body) = reply.split_once("\r\n\r\n").ok_or_else(bad)?;
-    Ok((status, body.to_owned()))
+    let (head, body) = reply.split_once("\r\n\r\n").ok_or_else(bad)?;
+    let content_language = head.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("content-language")
+            .then(|| value.trim().to_owned())
+    });
+    Ok(Reply {
+        status,
+        content_language,
+        body: body.to_owned(),
+    })
 }
 
-/// `app(i18n)` on `127.0.0.1:0`, `f(address)` against it, then a graceful shutdown.
+/// `app` (e.g. [`app`]`(i18n)`) on `127.0.0.1:0`, `f(address)` against it, then a graceful
+/// shutdown.
 ///
 /// # Errors
 /// What binding or `f` returns.
-pub async fn with_server<F, Fut, T>(i18n: I18n, f: F) -> std::io::Result<T>
+pub async fn with_server<F, Fut, T>(app: Router, f: F) -> std::io::Result<T>
 where
     F: FnOnce(SocketAddr) -> Fut,
     Fut: Future<Output = std::io::Result<T>>,
@@ -159,7 +181,7 @@ where
     let addr = listener.local_addr()?;
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {
-        axum::serve(listener, app(i18n))
+        axum::serve(listener, app)
             .with_graceful_shutdown(async {
                 let _ = stopped.await;
             })

@@ -1,4 +1,11 @@
 pub mod i18n_next
+pub mod i18n_next::payload
+pub fn i18n_next::payload::apply(&i18n_next::I18n, &[u8]) -> core::result::Result<u64, i18n_next::Error>
+pub fn i18n_next::payload::bundle(&i18n_next::I18n, &str, core::option::Option<&str>, core::option::Option<u64>) -> (u64, core::option::Option<alloc::vec::Vec<u8>>)
+pub fn i18n_next::payload::chunk(&i18n_next::I18n, &str, core::option::Option<&str>) -> (u64, alloc::sync::Arc<str>)
+pub fn i18n_next::payload::encode(&i18n_next::I18n, core::option::Option<&str>, core::option::Option<&str>, bool) -> (u64, alloc::vec::Vec<u8>)
+pub fn i18n_next::payload::encode_page(&i18n_next::I18n, &str) -> (u64, alloc::vec::Vec<u8>)
+pub fn i18n_next::payload::meta(&i18n_next::I18n, core::option::Option<&str>, core::option::Option<&str>) -> alloc::vec::Vec<u8>
 pub macro i18n_next::key!
 pub macro i18n_next::t!
 pub macro i18n_next::tc!
@@ -303,6 +310,8 @@ pub fn i18n_next::I18n::add_messages(&self, &str, core::option::Option<&str>, &s
 pub fn i18n_next::I18n::builder() -> i18n_next::Builder
 pub fn i18n_next::I18n::get(&self, &str) -> core::option::Option<alloc::sync::Arc<str>>
 pub fn i18n_next::I18n::has(&self, &str) -> bool
+pub fn i18n_next::I18n::has_locale(&self, &str) -> bool
+pub fn i18n_next::I18n::has_page(&self, &str) -> bool
 pub fn i18n_next::I18n::locale(&self) -> alloc::sync::Arc<str>
 pub fn i18n_next::I18n::locales(&self) -> alloc::vec::Vec<i18n_next::LocaleInfo>
 pub fn i18n_next::I18n::page(&self, &str) -> i18n_next::View

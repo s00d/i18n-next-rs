@@ -248,7 +248,7 @@ impl I18n {
     fn fill_view(&self, locale: &str, page: Option<&str>) {
         let inner = &*self.inner;
         let limit = inner.ctl.limit;
-        let change = inner.write(|s| {
+        let _ = inner.write(|s| {
             let page = s.meta.page(page);
             let mut view: Vec<Arc<crate::lazy::LazyChunk>> = Vec::new();
             for data in s.layers(Some(locale)) {
@@ -286,9 +286,6 @@ impl I18n {
                 s.version + 1,
             )))
         });
-        if let Ok(Some(change)) = change {
-            self.inner.listeners.send(&change);
-        }
     }
 
     /// Fetches the `remote` files the chain of `locale` lacks for `page` (see

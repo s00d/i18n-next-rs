@@ -91,6 +91,15 @@ fn hot_path_allocations() {
     });
     dhat::assert_eq!(n, 0);
 
+    // case: has_locale() / has_page(), the plugin's name checks → 0 blocks.
+    let n = blocks(|| {
+        std::hint::black_box(i18n.has_locale("de"));
+        std::hint::black_box(i18n.has_locale("xx"));
+        std::hint::black_box(i18n.has_page("settings"));
+        std::hint::black_box(i18n.has_page("nope"));
+    });
+    dhat::assert_eq!(n, 0);
+
     // case: has() / try_t() miss → 0 blocks.
     let n = blocks(|| {
         std::hint::black_box(i18n.has("nav.home"));

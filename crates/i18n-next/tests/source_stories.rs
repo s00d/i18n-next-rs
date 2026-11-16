@@ -334,7 +334,7 @@ fn extend_order_app_wins() {
 /// Given lazy pages with `evict_pages(1)` and a pinned `tray`, when pages are read in
 /// turn, then at most one unpinned page stays loaded, an evicted page answers the same
 /// when read again (one more load), the pinned page and the root are never evicted, and
-/// eviction sends no `Change` (the version still moves, to free the old snapshot).
+/// eviction sends no `Change` and keeps the version (the protocol's URLs stay valid).
 #[test]
 fn evict_and_pin() {
     let mut files: Vec<(String, String)> = vec![("en.json".into(), r#"{"root": "R"}"#.into())];
@@ -354,9 +354,9 @@ fn evict_and_pin() {
     assert_eq!(i18n.page("a").t("t"), "a");
     assert_eq!((loads(&i18n), i18n.version()), (2, 0));
 
-    // step 2: b → a leaves the next snapshot (version 1), no Change
+    // step 2: b → a leaves the next snapshot, no Change, the same version
     assert_eq!(i18n.page("b").t("t"), "b");
-    assert_eq!((loads(&i18n), i18n.version()), (3, 1));
+    assert_eq!((loads(&i18n), i18n.version()), (3, 0));
     assert!(seen.lock().unwrap().is_empty());
 
     // step 3: tray and b still loaded (no load), the root read once
@@ -366,7 +366,7 @@ fn evict_and_pin() {
 
     // step 4: a again → same answer, read again, b evicted
     assert_eq!(i18n.page("a").t("t"), "a");
-    assert_eq!((loads(&i18n), i18n.version()), (5, 2));
+    assert_eq!((loads(&i18n), i18n.version()), (5, 0));
     assert_eq!(i18n.page("b").t("t"), "b");
     assert_eq!(loads(&i18n), 6);
 

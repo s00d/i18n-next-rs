@@ -1,6 +1,8 @@
 //! criterion benches of the front-end payload (feature `payload`, DESIGN 6.1, 7.7; ids per
 //! `tests/support/inventory.rs`): `encode` of the root chain of 1k / 10k keys with and
-//! without meta, `encode_page` of a typical page, one `chunk`, and `apply` of the 1k payload.
+//! without meta, `encode_page` of a typical page, one `chunk` (a cached `Arc`), the
+//! protocol's `bundle` (served and with a stale tag, which builds no body), `meta`, and
+//! `apply` of the 1k payload (one pass).
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use i18n_next::{I18n, payload};
@@ -55,6 +57,23 @@ fn encode(c: &mut Criterion) {
     });
     c.bench_function("payload/chunk/root_1000", |b| {
         b.iter(|| black_box(payload::chunk(&i18n, black_box("de"), None)))
+    });
+    let (tag, _) = payload::bundle(&i18n, "de", Some("settings"), None);
+    c.bench_function("payload/bundle/page_1000x2", |b| {
+        b.iter(|| black_box(payload::bundle(&i18n, "de", Some("settings"), Some(tag))))
+    });
+    c.bench_function("payload/bundle/stale_tag", |b| {
+        b.iter(|| {
+            black_box(payload::bundle(
+                &i18n,
+                "de",
+                Some("settings"),
+                Some(tag ^ 1),
+            ))
+        })
+    });
+    c.bench_function("payload/meta/chain_page", |b| {
+        b.iter(|| black_box(payload::meta(&i18n, None, Some("settings"))))
     });
     let (_, bytes) = payload::encode(&i18n, None, Some("settings"), true);
     let guest = I18n::builder().build().unwrap();

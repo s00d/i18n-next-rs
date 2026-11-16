@@ -7,34 +7,42 @@
 //! ```json
 //! {"version":3,"locale":"de",
 //!  "defaultLocale":"en","fallbackLocale":"en","locales":[{"code":"de","iso":"de-DE"}],
-//!  "numberFormats":{},"datetimeFormats":{},
-//!  "chunks":[{"locale":"de","page":"index","data":{"nav":{"home":"Start"}}}]}
+//!  "chains":{"de":["de","en"],"en":["en"]},"numberFormats":{},"datetimeFormats":{},
+//!  "chunks":[{"locale":"de","page":"index","data":{"nav":{"home":"Start"}},
+//!             "linked":{"title":"Start · Acme"}}]}
 //! ```
 //!
-//! - `version`: the snapshot the chunks come from ([`I18n::version`]);
+//! - `version`: the catalog version the chunks come from ([`I18n::version`]);
 //! - `locale`: the locale the chunks are for (the active one unless asked otherwise);
 //! - `defaultLocale` … `datetimeFormats`: only with `meta` (the first `load`), what
-//!   `createI18n` needs (8b.1); `fallbackLocale` is `null` when none is set;
+//!   `createI18n` needs (8b.1); `fallbackLocale` is `null` when none is set; `chains` is
+//!   the fallback chain of every listed locale, strongest first, as the catalog reads it:
+//!   the front end premerges a view's chunks in that order (weakest first), since the JS
+//!   core reads one locale and one fallback only;
 //! - `chunks`: the layers of the locale's fallback chain, strongest first, each the
 //!   nested tree JS `addRouteTranslations(locale, page, data)` takes; the root is page
-//!   `index`. A pair without data is left out.
+//!   `index`. A pair without data is left out. `linked` (when there is any) holds what
+//!   linked messages of weaker layers resolve to in this chunk's view, by flat dotted key:
+//!   JS merges it into `data` (own root keys win over the dotted walk), a guest keeps it
+//!   apart so `has` does not see it, as on the server.
 //!
 //! Chunk trees are written from the loaded catalog (merged files, `extend`, `messages`,
-//! resolved linked messages), keys sorted: the same catalog gives the same bytes.
+//! resolved linked messages), keys sorted: the same catalog gives the same bytes. Each
+//! chunk is written once and cached with its content tag ([`chunk`]), which the protocol
+//! puts in its URLs: a change that leaves a chunk as it was keeps its URL.
 
-use crate::catalog::Tree;
+use crate::catalog::{Entry, Msg, Tree, content_tag, path_budget};
 use crate::error::Error;
 use crate::i18n::{I18n, LocaleData, Snapshot};
-use crate::json::{Event, Reader, write_str};
+use crate::json::{Event, Reader, number_to_js_string, write_str};
 use crate::lazy::Layer;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// The payload of the `locale` fallback chain (the active locale when `None`): its roots
-/// and, with `page`, its page chunks; with `meta`, the locale list, `defaultLocale` and the
-/// named formats too. Returns the snapshot version and the JSON bytes. What the plugin's
-/// `load` (`meta: true`) and the protocol's bundle (`meta: false`) send. Names are not
-/// checked here: the plugin accepts only known ones (8b.2); an unknown locale reads the
-/// global fallback, as everywhere.
+/// and, with `page`, its page chunks; with `meta`, the locale list, the chains,
+/// `defaultLocale` and the named formats too. Returns the catalog version and the JSON
+/// bytes: what the plugin's `load` sends. Names are not checked here: the plugin accepts
+/// only known ones (8b.2); an unknown locale reads the global fallback, as everywhere.
 ///
 /// ```
 /// use i18n_next::{I18n, payload};
@@ -63,7 +71,7 @@ pub fn encode(i18n: &I18n, locale: Option<&str>, page: Option<&str>, meta: bool)
             write_meta(&mut out, s);
         }
         write_chunks(&mut out, s, code, page, true);
-        (s.version, out.into_bytes())
+        (s.public, out.into_bytes())
     })
 }
 
@@ -89,43 +97,138 @@ pub fn encode_page(i18n: &I18n, page: &str) -> (u64, Vec<u8>) {
     i18n.inner.read(|s| {
         let mut out = head(s, &s.locale);
         write_chunks(&mut out, s, &s.locale, Some(page), false);
-        (s.version, out.into_bytes())
+        (s.public, out.into_bytes())
     })
 }
 
-/// One `(locale, page)` chunk as its nested JSON object (`{}` when it has no data), with
-/// the snapshot version: the protocol's `/v{version}/{locale}/{page}.json`. `None`,
-/// `""` and `"index"` are the root; an alias reads its target.
+/// What a pair without data sends.
+const EMPTY: &str = "{\"data\":{}}";
+
+/// One `(locale, page)` chunk as the front end gets it, `{"data":{…}}` (`{}` when the pair
+/// has no data) plus `"linked"` when it holds any (module docs), with its content tag:
+/// the protocol's `/{tag}/{locale}/{page}.json`. The JSON is written once per loaded
+/// chunk and shared: a call clones an `Arc`. `None`, `""` and `"index"` are the root; an
+/// alias reads its target.
 ///
 /// ```
 /// use i18n_next::{I18n, payload};
 ///
 /// let i18n = I18n::builder()
-///     .messages("en", None, r#"{"list": ["a", {"b": true}], "n": 1.50, "x": null}"#)
+///     .messages("en", None, r#"{"list": ["a", {"b": true}], "n": 1.50, "x": null, "inf": 1e400}"#)
 ///     .build()?;
-/// let (_, bytes) = payload::chunk(&i18n, "en", None);
-/// assert_eq!(bytes, br#"{"list":["a",{"b":true}],"n":1.5,"x":null}"#);
-/// assert_eq!(payload::chunk(&i18n, "de", Some("x")).1, b"{}");
+/// let (tag, json) = payload::chunk(&i18n, "en", None);
+/// assert_eq!(&*json, r#"{"data":{"inf":null,"list":["a",{"b":true}],"n":1.5,"x":null}}"#);
+/// assert_eq!(payload::chunk(&i18n, "en", Some("index")).0, tag);
+/// assert_eq!(&*payload::chunk(&i18n, "de", Some("x")).1, r#"{"data":{}}"#);
 /// # Ok::<(), i18n_next::Error>(())
 /// ```
 #[must_use]
-pub fn chunk(i18n: &I18n, locale: &str, page: Option<&str>) -> (u64, Vec<u8>) {
+pub fn chunk(i18n: &I18n, locale: &str, page: Option<&str>) -> (u64, Arc<str>) {
     i18n.inner.read(|s| {
-        let mut out = String::new();
         let page = s.meta.page(page);
         match s.data.get(locale).and_then(|d| tree(d, page)) {
-            Some(t) => t.write_json(&mut out),
-            None => out.push_str("{}"),
+            Some(t) => {
+                let (json, tag) = t.payload();
+                (*tag, json.clone())
+            }
+            None => (content_tag(EMPTY.as_bytes()), Arc::from(EMPTY)),
         }
-        (s.version, out.into_bytes())
+    })
+}
+
+/// The protocol's bundle of the `locale` chain (roots and, with `page`, page chunks:
+/// `{"locale":…,"chunks":[…]}`, the chunks as [`encode`] writes them) and its tag, a hash
+/// of the tags of its chunks: the same chunks give the same tag. The body is built only
+/// when `want` is `None` or the current tag, so a stale URL costs no serialization.
+///
+/// ```
+/// use i18n_next::{I18n, payload};
+///
+/// let i18n = I18n::builder()
+///     .messages("en", None, r#"{"a": "A"}"#)
+///     .messages("de", None, r#"{"a": "A-de"}"#)
+///     .build()?;
+/// let (tag, body) = payload::bundle(&i18n, "en", None, None);
+/// assert_eq!(body.unwrap(), br#"{"locale":"en","chunks":[{"locale":"en","page":"index","data":{"a":"A"}}]}"#);
+/// i18n.set_locale("de")?; // another version, the same chunks: the same tag
+/// assert_eq!(payload::bundle(&i18n, "en", None, Some(tag)), (tag, Some(body_of(&i18n))));
+/// assert_eq!(payload::bundle(&i18n, "en", None, Some(tag ^ 1)), (tag, None));
+/// # fn body_of(i: &I18n) -> Vec<u8> { payload::bundle(i, "en", None, None).1.unwrap() }
+/// # Ok::<(), i18n_next::Error>(())
+/// ```
+#[must_use]
+pub fn bundle(
+    i18n: &I18n,
+    locale: &str,
+    page: Option<&str>,
+    want: Option<u64>,
+) -> (u64, Option<Vec<u8>>) {
+    i18n.inner.read(|s| {
+        let tag = bundle_tag(s, locale, page);
+        if want.is_some_and(|w| w != tag) {
+            return (tag, None);
+        }
+        let mut out = String::with_capacity(256);
+        out.push_str("{\"locale\":");
+        write_str(&mut out, locale);
+        write_chunks(&mut out, s, locale, page, true);
+        (tag, Some(out.into_bytes()))
+    })
+}
+
+/// What the front end needs to start and to build protocol URLs (the plugin's `meta`
+/// command): `version`, `locale` (the active one when `None`), the meta fields of
+/// [`encode`] (locales, chains, `defaultLocale`, formats), `tags` (the content tag of
+/// every chunk of the locale's chain with data, roots and `page`, by `"<locale>/<page>"`)
+/// and `bundle` (the tag of [`bundle`] for that locale and page).
+///
+/// ```
+/// use i18n_next::{I18n, payload};
+///
+/// let i18n = I18n::builder()
+///     .config_json(r#"{"fallbackLocale": "en", "locales": [{"code": "de-at", "fallbackLocale": "de"}]}"#)
+///     .messages("de", None, r#"{"a": "A-de"}"#)
+///     .messages("en", None, r#"{"a": "A"}"#)
+///     .locale("de-at")
+///     .build()?;
+/// let meta = String::from_utf8(payload::meta(&i18n, None, None)).unwrap();
+/// assert!(meta.contains(r#""chains":{"de-at":["de-at","de","en"],"de":["de","en"],"en":["en"]}"#));
+/// let (tag, _) = payload::chunk(&i18n, "de", None);
+/// assert!(meta.contains(&format!(r#""de/index":"{tag:016x}""#)));
+/// # Ok::<(), i18n_next::Error>(())
+/// ```
+#[must_use]
+pub fn meta(i18n: &I18n, locale: Option<&str>, page: Option<&str>) -> Vec<u8> {
+    i18n.inner.read(|s| {
+        let code = locale.unwrap_or(&s.locale);
+        let mut out = head(s, code);
+        write_meta(&mut out, s);
+        out.push_str(",\"tags\":{");
+        let mut first = true;
+        for_chunks(s, code, page, true, |c, name, t| {
+            if !first {
+                out.push(',');
+            }
+            first = false;
+            out.push('"');
+            push_name(&mut out, c);
+            out.push('/');
+            push_name(&mut out, name);
+            out.push_str("\":");
+            push_tag(&mut out, t.payload().1);
+        });
+        out.push_str("},\"bundle\":");
+        push_tag(&mut out, bundle_tag(s, code, page));
+        out.push('}');
+        out.into_bytes()
     })
 }
 
 /// Applies a payload to `i18n` (a Rust guest, DESIGN 2.1): every chunk replaces its
-/// `(locale, page)` pair, and the payload's locale becomes the active one unless it is
-/// disabled; one new snapshot, subscribers notified. Returns the payload's `version` (0
-/// when it has none). Meta fields are not applied here: a guest builds its instance from
-/// them.
+/// `(locale, page)` pair (`linked` texts included), and the payload's locale becomes the
+/// active one unless it is disabled; one new snapshot, subscribers notified. Returns the
+/// payload's `version` (0 when it has none). Meta fields are not applied here: a guest
+/// builds its instance from them. One pass over the bytes.
 ///
 /// ```
 /// use i18n_next::{I18n, payload};
@@ -144,9 +247,9 @@ pub fn chunk(i18n: &I18n, locale: &str, page: Option<&str>) -> (u64, Vec<u8>) {
 ///
 /// # Errors
 /// [`Error::Json`] / [`Error::NotObject`] (path `payload`, or `payload:<locale>/<page>`
-/// for a chunk) for broken JSON, [`Error::Config`] for a field of the wrong type,
-/// [`Error::UnknownLocale`] / [`Error::UnknownPage`] for an empty or `__proto__` name.
-/// Nothing changes then.
+/// for a chunk whose names came before its `data`) for broken JSON, [`Error::Config`] for
+/// a field of the wrong type, [`Error::UnknownLocale`] / [`Error::UnknownPage`] for an
+/// empty or `__proto__` name. Nothing changes then.
 pub fn apply(i18n: &I18n, bytes: &[u8]) -> Result<u64, Error> {
     let shape = |reason: &'static str| Error::Config {
         path: "payload".to_owned(),
@@ -154,7 +257,7 @@ pub fn apply(i18n: &I18n, bytes: &[u8]) -> Result<u64, Error> {
     };
     let mut r = Payload {
         r: Reader::new(bytes),
-        bytes,
+        budget: path_budget(bytes.len()),
     };
     if !matches!(r.next()?, Event::ObjectStart) {
         return Err(Error::NotObject {
@@ -190,7 +293,7 @@ pub fn apply(i18n: &I18n, bytes: &[u8]) -> Result<u64, Error> {
         }
     }
     // trailing bytes are an error too
-    r.r.next().map_err(|e| r.json(e))?;
+    r.r.next().map_err(json_error)?;
     if let Some(l) = &locale {
         crate::i18n::chunk_names(l, None)?;
     }
@@ -198,40 +301,57 @@ pub fn apply(i18n: &I18n, bytes: &[u8]) -> Result<u64, Error> {
     Ok(version)
 }
 
-/// Named formats of `i18n.json` and then of the builder's calls, merged by name: the
-/// `numberFormats` / `datetimeFormats` objects of the payload.
-pub(crate) fn formats_json(
-    b: &crate::i18n::Builder,
-    config: &crate::loader::Config,
-) -> Result<(Box<str>, Box<str>), Error> {
-    let merged = |from_config: Option<&str>, calls: &[String], name: &str| {
-        let mut acc = Tree::default();
-        let texts = from_config
-            .map(|t| ("i18n.json", t))
-            .into_iter()
-            .chain(calls.iter().map(|t| (name, t.as_str())));
-        for (path, text) in texts {
-            acc.merge_replacing(Tree::parse(text.as_bytes(), path)?, 2);
+/// Named formats of `i18n.json` and then of the builder's calls, kept as given and merged
+/// by name on first use: the `numberFormats` / `datetimeFormats` objects of the payload.
+/// Lazy, so an app that never encodes a payload links none of the merge code.
+#[derive(Debug, Default)]
+pub(crate) struct Formats {
+    numbers: Vec<Box<str>>,
+    dates: Vec<Box<str>>,
+    json: OnceLock<(Box<str>, Box<str>)>,
+}
+
+impl Formats {
+    pub(crate) fn new(b: &crate::i18n::Builder, config: &crate::loader::Config) -> Formats {
+        #[cfg(feature = "format")]
+        let (numbers, dates) = (&b.formats[..], &b.datetime_formats[..]);
+        #[cfg(not(feature = "format"))]
+        let (numbers, dates): (&[String], &[String]) = {
+            let _ = b;
+            (&[], &[])
+        };
+        let texts = |first: Option<&str>, rest: &[String]| -> Vec<Box<str>> {
+            first
+                .into_iter()
+                .chain(rest.iter().map(String::as_str))
+                .map(Box::from)
+                .collect()
+        };
+        Formats {
+            numbers: texts(config.number_formats.as_deref(), numbers),
+            dates: texts(config.datetime_formats.as_deref(), dates),
+            json: OnceLock::new(),
         }
-        let mut out = String::new();
-        acc.write_json(&mut out);
-        Ok::<Box<str>, Error>(out.into())
-    };
-    #[cfg(feature = "format")]
-    let (numbers, dates) = (&b.formats[..], &b.datetime_formats[..]);
-    #[cfg(not(feature = "format"))]
-    let (numbers, dates): (&[String], &[String]) = {
-        let _ = b;
-        (&[], &[])
-    };
-    Ok((
-        merged(config.number_formats.as_deref(), numbers, "formats")?,
-        merged(
-            config.datetime_formats.as_deref(),
-            dates,
-            "datetime_formats",
-        )?,
-    ))
+    }
+
+    /// The merged objects. The texts were checked at `build` (`format`) or come from a
+    /// parsed `i18n.json`; one that does not parse is left out.
+    fn json(&self) -> &(Box<str>, Box<str>) {
+        self.json.get_or_init(|| {
+            let merged = |texts: &[Box<str>]| {
+                let mut acc = Tree::default();
+                for text in texts {
+                    if let Ok(t) = Tree::parse(text.as_bytes(), "formats") {
+                        acc.merge_replacing(t, 2);
+                    }
+                }
+                let mut out = String::new();
+                acc.write_json(&mut out);
+                out.into_boxed_str()
+            };
+            (merged(&self.numbers), merged(&self.dates))
+        })
+    }
 }
 
 /// The loaded root (`None`) or page tree of one locale.
@@ -243,10 +363,27 @@ fn tree<'a>(d: &'a LocaleData, page: Option<&str>) -> Option<&'a Tree> {
 fn head(s: &Snapshot, code: &str) -> String {
     let mut out = String::with_capacity(256);
     out.push_str("{\"version\":");
-    crate::json::push_u64(&mut out, s.version);
+    crate::json::push_u64(&mut out, s.public);
     out.push_str(",\"locale\":");
     write_str(&mut out, code);
     out
+}
+
+/// `"<16 hex digits>"`.
+fn push_tag(out: &mut String, tag: u64) {
+    out.push('"');
+    for i in (0..16).rev() {
+        let d = ((tag >> (i * 4)) & 0xf) as u32;
+        out.push(char::from_digit(d, 16).unwrap_or('0'));
+    }
+    out.push('"');
+}
+
+/// A locale or page name inside a JSON string: escaped as [`write_str`] escapes it.
+fn push_name(out: &mut String, name: &str) {
+    let mut quoted = String::new();
+    write_str(&mut quoted, name);
+    out.push_str(quoted.get(1..quoted.len() - 1).unwrap_or(""));
 }
 
 fn write_meta(out: &mut String, s: &Snapshot) {
@@ -258,8 +395,9 @@ fn write_meta(out: &mut String, s: &Snapshot) {
         Some(f) => write_str(out, f),
         None => out.push_str("null"),
     }
+    let infos = s.locale_infos();
     out.push_str(",\"locales\":[");
-    for (i, l) in s.locale_infos().iter().enumerate() {
+    for (i, l) in infos.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
@@ -279,57 +417,103 @@ fn write_meta(out: &mut String, s: &Snapshot) {
         }
         out.push('}');
     }
-    out.push_str("],\"numberFormats\":");
-    out.push_str(&meta.formats_json.0);
+    out.push_str("],\"chains\":{");
+    for (i, l) in infos.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        write_str(out, &l.code);
+        out.push_str(":[");
+        for (j, c) in meta.chain_codes(&l.code).into_iter().enumerate() {
+            if j > 0 {
+                out.push(',');
+            }
+            write_str(out, c);
+        }
+        out.push(']');
+    }
+    let (numbers, dates) = meta.formats.json();
+    out.push_str("},\"numberFormats\":");
+    out.push_str(numbers);
     out.push_str(",\"datetimeFormats\":");
-    out.push_str(&meta.formats_json.1);
+    out.push_str(dates);
 }
 
-/// `,"chunks":[…]}`: per locale of the chain, its root (with `roots`) and its `page`.
-fn write_chunks(out: &mut String, s: &Snapshot, code: &str, page: Option<&str>, roots: bool) {
-    out.push_str(",\"chunks\":[");
+/// `f(locale, page name, tree)` per locale of the chain of `code` and pair with data: its
+/// root (with `roots`) and its `page`.
+fn for_chunks<'s>(
+    s: &'s Snapshot,
+    code: &'s str,
+    page: Option<&'s str>,
+    roots: bool,
+    mut f: impl FnMut(&'s str, &'s str, &'s Tree),
+) {
     let resolved = s.meta.page(page);
     // `index` (or `""`) is the root: once, also when the roots are not asked for
     let page = page
         .map(|p| (resolved, if resolved.is_some() { p } else { "index" }))
         .filter(|(at, _)| at.is_some() || !roots);
-    let mut first = true;
     for c in s.meta.chain_codes(code) {
         let Some(d) = s.data.get(c) else { continue };
         let pairs = [roots.then_some((None, "index")), page];
         for (at, name) in pairs.into_iter().flatten() {
-            let Some(t) = tree(d, at) else { continue };
-            if !first {
-                out.push(',');
+            if let Some(t) = tree(d, at) {
+                f(c, name, t);
             }
-            first = false;
-            out.push_str("{\"locale\":");
-            write_str(out, c);
-            out.push_str(",\"page\":");
-            write_str(out, name);
-            out.push_str(",\"data\":");
-            t.write_json(out);
-            out.push('}');
         }
     }
+}
+
+/// The bundle's tag: a hash of the names and tags of its chunks.
+fn bundle_tag(s: &Snapshot, code: &str, page: Option<&str>) -> u64 {
+    let mut parts = Vec::with_capacity(64);
+    for_chunks(s, code, page, true, |c, name, t| {
+        parts.extend_from_slice(c.as_bytes());
+        parts.push(0);
+        parts.extend_from_slice(name.as_bytes());
+        parts.push(0);
+        parts.extend_from_slice(&t.payload().1.to_le_bytes());
+    });
+    content_tag(&parts)
+}
+
+/// `,"chunks":[…]}`: per locale of the chain, its root (with `roots`) and its `page`.
+fn write_chunks(out: &mut String, s: &Snapshot, code: &str, page: Option<&str>, roots: bool) {
+    out.push_str(",\"chunks\":[");
+    let mut first = true;
+    for_chunks(s, code, page, roots, |c, name, t| {
+        if !first {
+            out.push(',');
+        }
+        first = false;
+        out.push_str("{\"locale\":");
+        write_str(out, c);
+        out.push_str(",\"page\":");
+        write_str(out, name);
+        out.push(',');
+        // the cached `{"data":…}` without its `{`
+        let json = &t.payload().0;
+        out.push_str(json.get(1..).unwrap_or("}"));
+    });
     out.push_str("]}");
+}
+
+fn json_error(e: crate::json::JsonError) -> Error {
+    Error::Json {
+        path: "payload".to_owned(),
+        offset: e.offset,
+        kind: e.kind.as_str(),
+    }
 }
 
 /// A payload being read.
 struct Payload<'a> {
     r: Reader<'a>,
-    bytes: &'a [u8],
+    /// Stored path bytes left for the whole payload (`Tree::parse`'s bound).
+    budget: usize,
 }
 
 impl<'a> Payload<'a> {
-    fn json(&self, e: crate::json::JsonError) -> Error {
-        Error::Json {
-            path: "payload".to_owned(),
-            offset: e.offset,
-            kind: e.kind.as_str(),
-        }
-    }
-
     fn next(&mut self) -> Result<Event<'a>, Error> {
         match self.r.next() {
             Ok(Some(e)) => Ok(e),
@@ -338,13 +522,13 @@ impl<'a> Payload<'a> {
                 path: "payload".to_owned(),
                 reason: "unexpected end",
             }),
-            Err(e) => Err(self.json(e)),
+            Err(e) => Err(json_error(e)),
         }
     }
 
-    fn skip_value(&mut self) -> Result<(), Error> {
-        let first = self.next()?;
-        let mut depth = usize::from(matches!(first, Event::ObjectStart | Event::ArrayStart));
+    /// Skips the rest of a container whose start was read.
+    fn skip_rest(&mut self) -> Result<(), Error> {
+        let mut depth = 1usize;
         while depth > 0 {
             match self.next()? {
                 Event::ObjectStart | Event::ArrayStart => depth += 1,
@@ -355,13 +539,21 @@ impl<'a> Payload<'a> {
         Ok(())
     }
 
-    /// One `{"locale", "page", "data"}` after its `{`.
+    fn skip_value(&mut self) -> Result<(), Error> {
+        match self.next()? {
+            Event::ObjectStart | Event::ArrayStart => self.skip_rest(),
+            _ => Ok(()),
+        }
+    }
+
+    /// One `{"locale", "page", "data", "linked"}` after its `{`; `data` is read into its
+    /// tree in the same pass.
     fn chunk(&mut self) -> Result<(Arc<str>, Option<String>, Tree), Error> {
         let shape = |reason: &'static str| Error::Config {
             path: "payload".to_owned(),
             reason,
         };
-        let (mut locale, mut page, mut data) = (None, None, None);
+        let (mut locale, mut page, mut data, mut linked) = (None, None, None, Vec::new());
         while let Event::Key(key) = self.next()? {
             match &*key {
                 "locale" => match self.next()? {
@@ -373,21 +565,70 @@ impl<'a> Payload<'a> {
                     _ => return Err(shape("chunks[].page must be a string")),
                 },
                 "data" => {
-                    let start = self.r.offset();
-                    self.skip_value()?;
-                    data = self.bytes.get(start..self.r.offset());
+                    let path = match &locale {
+                        Some(l) => crate::i18n::messages_path(l, page.as_deref())
+                            .replacen("messages", "payload", 1),
+                        None => "payload".to_owned(),
+                    };
+                    match self.next()? {
+                        Event::ObjectStart => {
+                            data = Some(Tree::read_object(&mut self.r, &path, &mut self.budget)?);
+                        }
+                        Event::ArrayStart => {
+                            self.skip_rest()?;
+                            return Err(Error::NotObject { path });
+                        }
+                        _ => return Err(Error::NotObject { path }),
+                    }
+                }
+                "linked" => {
+                    if !matches!(self.next()?, Event::ObjectStart) {
+                        return Err(shape("chunks[].linked must be an object"));
+                    }
+                    self.linked(&mut linked)?;
                 }
                 _ => self.skip_value()?,
             }
         }
-        let (Some(locale), Some(data)) = (locale, data) else {
+        let (Some(locale), Some(mut data)) = (locale, data) else {
             return Err(shape("chunks[] needs locale and data"));
         };
         let page = page.filter(|p| !p.is_empty() && p != "index");
         crate::i18n::chunk_names(&locale, page.as_deref())?;
-        let path = crate::i18n::messages_path(&locale, page.as_deref());
-        let path = path.replacen("messages", "payload", 1);
-        let tree = Tree::parse(data, &path)?;
-        Ok((Arc::from(locale), page, tree))
+        if !linked.is_empty() {
+            data.add_linked(linked);
+        }
+        Ok((Arc::from(locale), page, data))
+    }
+
+    /// The flat `{"key": text}` of a chunk's linked texts, after its `{`: a string is a
+    /// message, a number or boolean a value, a container a subtree; `null` is nothing.
+    fn linked(&mut self, out: &mut Vec<(Arc<str>, Entry)>) -> Result<(), Error> {
+        while let Event::Key(key) = self.next()? {
+            let entry = match self.next()? {
+                Event::Str(s) => Some(Entry::Msg(Msg::new(&s))),
+                Event::Num(n) => Some(Entry::Value(number_to_js_string(n).into())),
+                Event::Bool(b) => Some(Entry::Value(Arc::from(if b { "true" } else { "false" }))),
+                Event::ObjectStart | Event::ArrayStart => {
+                    self.skip_rest()?;
+                    Some(Entry::Node)
+                }
+                _ => None,
+            };
+            let Some(entry) = entry else { continue };
+            // the same bound as a document's paths
+            self.budget = self.budget.checked_sub(key.len()).ok_or(Error::Config {
+                path: "payload".to_owned(),
+                reason: "linked keys too long for the payload size",
+            })?;
+            if key.len() > 4096 {
+                return Err(Error::Config {
+                    path: "payload".to_owned(),
+                    reason: "linked key longer than 4096 bytes",
+                });
+            }
+            out.push((Arc::from(&*key), entry));
+        }
+        Ok(())
     }
 }

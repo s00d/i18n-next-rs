@@ -102,10 +102,10 @@ pub(crate) struct Meta {
     pub(crate) check: check::Facts,
     /// `linked_messages(true)`: `build` and `reload` resolve links with it.
     linked: Option<ResolveLinked>,
-    /// `numberFormats` and `datetimeFormats` as one JSON object each (`i18n.json`, then the
-    /// builder's calls, a name given again wins): what the payload sends the front end.
+    /// `numberFormats` and `datetimeFormats` (`i18n.json`, then the builder's calls, a name
+    /// given again wins), merged on first use: what the payload sends the front end.
     #[cfg(feature = "payload")]
-    pub(crate) formats_json: (Box<str>, Box<str>),
+    pub(crate) formats: crate::payload::Formats,
 }
 
 impl Meta {
@@ -164,7 +164,10 @@ impl Meta {
 pub(crate) type DataMap = FastMap<Arc<str>, Arc<LocaleData>>;
 
 pub(crate) struct Snapshot {
+    /// The cache key of the thread caches: + 1 per snapshot, an eviction too.
     pub(crate) version: u64,
+    /// [`I18n::version`]: + 1 per change of what lookups answer (not an eviction).
+    pub(crate) public: u64,
     pub(crate) locale: Arc<str>,
     /// Shared between snapshots that differ only in the active locale.
     pub(crate) data: Arc<DataMap>,
@@ -313,6 +316,7 @@ impl Snapshot {
             .collect();
         Snapshot {
             version,
+            public: version,
             own: data.get(&*locale).cloned(),
             plural: meta.plural(&locale),
             #[cfg(feature = "format")]
@@ -571,11 +575,21 @@ impl Inner {
             Err(poisoned) => poisoned.into_inner(),
         };
         let current = self.load();
-        Ok(f(&current)?.map(|next| {
-            let locale = next.locale.clone();
-            let version = self.publish(next);
-            Change { locale, version }
-        }))
+        let Some(mut next) = f(&current)? else {
+            return Ok(None);
+        };
+        next.version = current.version + 1;
+        next.public = current.public + 1;
+        let change = Change {
+            locale: next.locale.clone(),
+            version: next.public,
+        };
+        self.publish(next);
+        // queued under the writer lock: the queue is in version order
+        self.listeners.push(change.clone());
+        drop(_writer);
+        self.listeners.drain();
+        Ok(Some(change))
     }
 
     fn publish(&self, next: Snapshot) -> u64 {
@@ -602,12 +616,14 @@ impl Inner {
         };
         let current = self.load();
         if let Some(data) = crate::evict::plan(&current.data, limit, &self.ctl) {
-            let next = Snapshot::new(
+            let mut next = Snapshot::new(
                 current.meta.clone(),
                 data,
                 current.locale.clone(),
                 current.version + 1,
             );
+            // the same answers: the public version stays, only the cache key moves
+            next.public = current.public;
             self.publish(next);
         }
     }
@@ -669,7 +685,7 @@ impl fmt::Debug for I18n {
         let snap = self.inner.load();
         f.debug_struct("I18n")
             .field("locale", &snap.locale)
-            .field("version", &snap.version)
+            .field("version", &snap.public)
             .field("loads", &self.inner.ctl.loads.load(Ordering::Relaxed))
             .finish_non_exhaustive()
     }
@@ -927,7 +943,7 @@ impl I18n {
     /// [`Error::DisabledLocale`] for a locale `i18n.json` disables, [`Error::UnknownLocale`]
     /// for one no file, config or builder call names. Nothing changes then.
     pub fn set_locale(&self, code: &str) -> Result<(), Error> {
-        let change = self.inner.write(|s| {
+        self.inner.write(|s| {
             if s.meta.disabled(code) {
                 return Err(Error::DisabledLocale(code.to_owned()));
             }
@@ -940,6 +956,7 @@ impl I18n {
             // Same data, same chains: only the active pointer moves (no rebuild).
             Ok(Some(Snapshot {
                 version: s.version + 1,
+                public: s.public + 1,
                 locale: locale.clone(),
                 data: s.data.clone(),
                 chains: s.chains.clone(),
@@ -955,9 +972,6 @@ impl I18n {
                 meta: s.meta.clone(),
             }))
         })?;
-        if let Some(change) = change {
-            self.inner.listeners.send(&change);
-        }
         Ok(())
     }
 
@@ -990,6 +1004,47 @@ impl I18n {
         })
     }
 
+    /// Whether `code` is one of [`I18n::locales`] (known, not disabled), without building
+    /// the list: what a name from the front end is checked against (8b.2).
+    ///
+    /// ```
+    /// let i18n = i18n_next::I18n::builder()
+    ///     .config_json(r#"{"locales": [{"code": "en"}, {"code": "es", "disabled": true}]}"#)
+    ///     .messages("de", None, "{}")
+    ///     .build()?;
+    /// assert!(i18n.has_locale("en") && i18n.has_locale("de"));
+    /// assert!(!i18n.has_locale("es") && !i18n.has_locale("fr"));
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn has_locale(&self, code: &str) -> bool {
+        self.inner.read(|s| {
+            let meta = &s.meta;
+            match meta.configured.iter().find(|l| l.code == code) {
+                Some(l) => !l.disabled,
+                None => s.data.contains_key(code) || meta.declared.iter().any(|d| &**d == code),
+            }
+        })
+    }
+
+    /// Whether `name` is one of [`I18n::pages`], without building the list.
+    ///
+    /// ```
+    /// let i18n = i18n_next::I18n::builder()
+    ///     .messages("en", Some("settings"), "{}")
+    ///     .page_alias("prefs", "settings")
+    ///     .build()?;
+    /// assert!(i18n.has_page("settings") && i18n.has_page("prefs"));
+    /// assert!(!i18n.has_page("index") && !i18n.has_page("about"));
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn has_page(&self, name: &str) -> bool {
+        self.inner.read(|s| {
+            s.meta.aliases.contains_key(name) || s.data.values().any(|d| d.pages.contains_key(name))
+        })
+    }
+
     /// Deep-merges a JSON object into the `(locale, page)` chunk (`None`, `""` or `"index"`
     /// = the root; an alias writes to its target). Incoming values win, objects merge.
     /// Readers see it in a new snapshot (version + 1); a new locale becomes known.
@@ -1004,7 +1059,7 @@ impl I18n {
     pub fn add_messages(&self, locale: &str, page: Option<&str>, json: &str) -> Result<(), Error> {
         chunk_names(locale, page)?;
         let tree = Tree::parse(json.as_bytes(), &messages_path(locale, page))?;
-        let change = self.inner.write(|s| {
+        self.inner.write(|s| {
             let mut data = DataMap::clone(&s.data);
             let mut slot = data
                 .get(locale)
@@ -1019,9 +1074,6 @@ impl I18n {
                 s.version + 1,
             )))
         })?;
-        if let Some(change) = change {
-            self.inner.listeners.send(&change);
-        }
         Ok(())
     }
 
@@ -1048,7 +1100,7 @@ impl I18n {
         let timer = crate::trace::Timer::start();
         let inner = &*self.inner;
         let mut broken = Vec::new();
-        let change = inner.write(|s| {
+        inner.write(|s| {
             let mut data = source::load(&inner.sources, &s.meta, &inner.ctl)?;
             // linked messages again, over what was read again (M3, linked.rs)
             if let Some(resolve) = s.meta.linked {
@@ -1066,17 +1118,15 @@ impl I18n {
         timer.done("reload", "", 0);
         // after the writer is released: a handler may write to the catalog
         report_broken(inner.missing.as_ref(), &broken);
-        if let Some(change) = change {
-            self.inner.listeners.send(&change);
-        }
         Ok(())
     }
 
-    /// The snapshot version: 0 after `build`, + 1 per new snapshot (every change, and a
-    /// page eviction, which changes no answer). Only grows.
+    /// The catalog version: 0 after `build`, + 1 per change of what lookups answer (the
+    /// [`Change::version`] listeners get). A page eviction changes no answer and keeps it.
+    /// Only grows.
     #[must_use]
     pub fn version(&self) -> u64 {
-        self.inner.version.load(Ordering::Acquire)
+        self.inner.read(|s| s.public)
     }
 }
 
@@ -1089,7 +1139,7 @@ impl I18n {
         chunks: Vec<(Arc<str>, Option<String>, Tree)>,
         locale: Option<&str>,
     ) -> Result<(), Error> {
-        let change = self.inner.write(|s| {
+        self.inner.write(|s| {
             let mut data = DataMap::clone(&s.data);
             for (code, page, tree) in chunks {
                 let mut slot = data
@@ -1114,9 +1164,6 @@ impl I18n {
                 s.version + 1,
             )))
         })?;
-        if let Some(change) = change {
-            self.inner.listeners.send(&change);
-        }
         Ok(())
     }
 }
@@ -1807,7 +1854,7 @@ impl Builder {
         crate::format::options::check_numbering(&numbering, |code| meta.number(code))?;
         #[cfg(feature = "payload")]
         {
-            meta.formats_json = crate::payload::formats_json(&self, &config)?;
+            meta.formats = crate::payload::Formats::new(&self, &config);
         }
         meta.configured = config.locales;
         let locale: Arc<str> = Arc::from(

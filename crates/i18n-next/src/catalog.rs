@@ -423,6 +423,11 @@ const MAX_PATH: usize = 4096;
 const PATH_RATIO: usize = 64;
 const PATH_SLACK: usize = 1 << 20;
 
+/// The stored path bytes allowed for a document of `len` bytes.
+pub(crate) fn path_budget(len: usize) -> usize {
+    len.saturating_mul(PATH_RATIO).saturating_add(PATH_SLACK)
+}
+
 /// One `(locale, page)` chunk by dotted path. `walk` holds what the dotted walk reaches
 /// (keys without dots, array indices); `own` holds root keys with a dot, which only an
 /// exact own-key read reaches (their subtrees never are).
@@ -430,10 +435,10 @@ const PATH_SLACK: usize = 1 << 20;
 pub(crate) struct Tree {
     walk: FastMap<Arc<str>, Node>,
     own: FastMap<Arc<str>, Node>,
-    /// The payload JSON of this tree, written once on first use (8b.4): a loaded chunk
-    /// never changes, and every `&mut self` method clears it.
+    /// The payload JSON of this tree and its content tag, written once on first use
+    /// (8b.4): a loaded chunk never changes, and every `&mut self` method clears it.
     #[cfg(feature = "payload")]
-    json: std::sync::OnceLock<Arc<str>>,
+    json: std::sync::OnceLock<(Arc<str>, u64)>,
 }
 
 /// A loaded chunk.
@@ -569,12 +574,29 @@ impl Tree {
                 });
             }
         }
+        let mut budget = path_budget(bytes.len());
+        let tree = Tree::read_object(&mut r, path, &mut budget)?;
+        // the reader reports trailing bytes as an error
+        r.next().map_err(json_err)?;
+        Ok(tree)
+    }
+
+    /// Reads one object from `r`, right after its `{`, up to and with its `}`: a whole
+    /// document ([`Tree::parse`]) or a value inside one (a payload chunk's `data`, read in
+    /// the same pass as the payload). Stored path bytes come out of `budget`.
+    pub(crate) fn read_object(
+        r: &mut Reader<'_>,
+        path: &str,
+        budget: &mut usize,
+    ) -> Result<Tree, Error> {
+        let error = |offset: usize, kind: &'static str| Error::Json {
+            path: path.to_owned(),
+            offset,
+            kind,
+        };
+        let json_err = |e: crate::json::JsonError| error(e.offset, e.kind.as_str());
         let mut tree = Tree::default();
         let mut buf = String::new();
-        let mut budget = bytes
-            .len()
-            .saturating_mul(PATH_RATIO)
-            .saturating_add(PATH_SLACK);
         let mut stack = vec![Frame {
             len: 0,
             array: false,
@@ -600,6 +622,9 @@ impl Tree {
                             buf.get(..f.len).and_then(|p| tree.walk.get_mut(p))
                     {
                         *kids = false;
+                    }
+                    if stack.is_empty() {
+                        return Ok(tree);
                     }
                     continue;
                 }
@@ -651,7 +676,7 @@ impl Tree {
                     if buf.len() > MAX_PATH {
                         return Err(error(r.offset(), "key path longer than 4096 bytes"));
                     }
-                    budget = match budget.checked_sub(buf.len()) {
+                    *budget = match budget.checked_sub(buf.len()) {
                         Some(left) => left,
                         None => {
                             return Err(error(
@@ -686,7 +711,8 @@ impl Tree {
                 });
             }
         }
-        Ok(tree)
+        // the reader ends a document only after its root closed
+        Err(error(r.offset(), "unexpected end"))
     }
 
     /// Deep merge, `incoming` wins: objects merge, everything else (arrays, scalars,
@@ -855,18 +881,70 @@ impl Tree {
 
 #[cfg(feature = "payload")]
 impl Tree {
-    /// Appends the chunk as one nested JSON object, the shape the file had: what JS
-    /// `addRouteTranslations` takes. Keys are sorted (byte order) and arrays by index, so
-    /// the bytes depend only on the content (an `ETag` is stable). Unreachable parts are
-    /// left out: `__proto__`, keys with a dot below the root, linked texts stored for a
-    /// view ([`Node::Linked`]; ponytail: the front end reads a weaker layer's own text
-    /// there, resolved in its own locale: send them when a cross-locale link shows up).
-    pub(crate) fn write_json(&self, out: &mut String) {
-        out.push_str(self.json.get_or_init(|| {
-            let mut json = String::new();
+    /// The chunk as the front end gets it, written once on first use (8b.4: a loaded chunk
+    /// never changes, every `&mut self` method clears it), with its content tag (the
+    /// protocol's URL and `ETag`): `{"data":{…}}`, plus `"linked":{"key":text,…}` when
+    /// the chunk holds answers `linked.rs` stored for its view ([`Node::Linked`]).
+    ///
+    /// `data` is the nested tree JS `addRouteTranslations` takes, keys sorted (byte order)
+    /// and arrays by index, so the bytes depend only on the content. Unreachable parts are
+    /// left out: `__proto__`, keys with a dot below the root. `linked` holds flat dotted
+    /// keys: JS merges them into `data` as own root keys (which `getByPath` reads before
+    /// the dotted walk); a Rust guest stores them as [`Node::Linked`] again, so `has` does
+    /// not see them, as on the server.
+    pub(crate) fn payload(&self) -> &(Arc<str>, u64) {
+        self.json.get_or_init(|| {
+            let mut json = String::from("{\"data\":");
             self.write_json_uncached(&mut json);
-            Arc::from(json)
-        }));
+            self.write_linked(&mut json);
+            json.push('}');
+            let tag = content_tag(json.as_bytes());
+            (Arc::from(json), tag)
+        })
+    }
+
+    /// The nested tree alone (`data` of [`Tree::payload`], no linked texts).
+    pub(crate) fn write_json(&self, out: &mut String) {
+        self.write_json_uncached(out);
+    }
+
+    /// `,"linked":{…}` for the linked texts of the walk, sorted; nothing without any.
+    fn write_linked(&self, out: &mut String) {
+        let mut linked: Vec<(&str, &Entry)> = self
+            .walk
+            .iter()
+            .filter_map(|(k, n)| match n {
+                Node::Linked(e) => Some((&**k, e)),
+                _ => None,
+            })
+            .collect();
+        if linked.is_empty() {
+            return;
+        }
+        linked.sort_unstable_by(|a, b| a.0.cmp(b.0));
+        out.push_str(",\"linked\":{");
+        for (i, (key, e)) in linked.into_iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            crate::json::write_str(out, key);
+            out.push(':');
+            match e {
+                Entry::Msg(_) => crate::json::write_str(out, e.text().map_or("", |t| t)),
+                Entry::Value(v) => push_value(out, v),
+                // a subtree: JS reads an object there, as a lookup reads a node
+                Entry::Node => out.push_str("{}"),
+            }
+        }
+        out.push('}');
+    }
+
+    /// Stores what a payload's `linked` object holds for this chunk's view.
+    pub(crate) fn add_linked(&mut self, linked: Vec<(Arc<str>, Entry)>) {
+        self.changed();
+        for (k, e) in linked {
+            self.walk.insert(k, Node::Linked(e));
+        }
     }
 
     fn write_json_uncached(&self, out: &mut String) {
@@ -931,6 +1009,28 @@ impl Tree {
     }
 }
 
+/// A number or boolean as JS prints it is valid JSON as it is, except the non-finite
+/// numbers (`1e400` reads as `Infinity`): `null` there, as `JSON.stringify` writes them.
+#[cfg(feature = "payload")]
+fn push_value(out: &mut String, v: &str) {
+    if v.ends_with("Infinity") || v == "NaN" {
+        out.push_str("null");
+    } else {
+        out.push_str(v);
+    }
+}
+
+/// The content tag of a chunk's payload JSON (the protocol's URL and `ETag`): the
+/// catalog's own fixed-seed hasher over the bytes, so the same content gives the same tag
+/// in every run.
+#[cfg(feature = "payload")]
+pub(crate) fn content_tag(bytes: &[u8]) -> u64 {
+    use std::hash::Hasher;
+    let mut h = crate::hash::FastHasher::default();
+    h.write(bytes);
+    h.finish()
+}
+
 /// Writes `node` stored at walk path `path` (`None`: an own root key, no children).
 #[cfg(feature = "payload")]
 fn write_node<'t>(
@@ -947,8 +1047,7 @@ fn write_node<'t>(
             };
             return crate::json::write_str(out, raw);
         }
-        // a number or boolean as JS prints it: valid JSON as it is
-        Node::Leaf(Entry::Value(v)) => return out.push_str(v),
+        Node::Leaf(Entry::Value(v)) => return push_value(out, v),
         Node::Null | Node::Leaf(Entry::Node) | Node::Linked(_) => return out.push_str("null"),
         Node::Obj { .. } => ('{', '}', false),
         Node::Arr { .. } => ('[', ']', true),

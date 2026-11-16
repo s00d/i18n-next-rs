@@ -576,6 +576,8 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "ensure_async",
                 "get",
                 "has",
+                "has_locale",
+                "has_page",
                 "language_name",
                 "locale",
                 "locales",
@@ -655,6 +657,10 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
             ],
         ));
         want.extend(methods("Timestamp", &["is_valid", "millis"]));
+        // `payload` (the snapshot is taken with `--features payload`)
+        want.extend(
+            ["apply", "bundle", "chunk", "encode", "encode_page", "meta"].map(str::to_owned),
+        );
         assert_eq!(api("i18n-next"), want.into_iter().collect::<BTreeSet<_>>());
         let mut plugin: Vec<String> = [
             "available_locales",
@@ -662,6 +668,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
             "handle",
             "load",
             "load_page",
+            "meta",
             "missing",
             "pages",
             "report_missing",
@@ -677,14 +684,15 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "data_dir",
                 "global",
                 "new",
+                "origins",
                 "persist",
                 "system_locale",
                 "watch",
             ],
         ));
-        plugin.extend(methods("Handle", &["bind", "unbind"]));
+        plugin.extend(methods("Handle", &["bind", "origins", "unbind"]));
         plugin.extend(methods("ManagerExt", &["i18n"]));
-        plugin.extend(methods("Relabel", &["relabel"]));
+        plugin.extend(methods("Relabel", &["relabel", "window"]));
         assert_eq!(
             api("tauri-plugin-i18n-next"),
             plugin.into_iter().collect::<BTreeSet<_>>()

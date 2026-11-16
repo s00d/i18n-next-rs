@@ -163,3 +163,7 @@ required-features = ["format"]
 [[test]]
 name = "json_differential"
 required-features = ["format"]
+
+[[test]]
+name = "payload"
+required-features = ["payload"]

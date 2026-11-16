@@ -1,7 +1,8 @@
 //! Bytes as a payload into `payload::apply` (DESIGN 8b.11): `Ok` or `Err`, never a panic;
 //! a failed apply changes nothing. After a successful one the guest answers lookups, and
 //! encoding it again and applying that to a fresh guest gives the same answers (the payload
-//! round-trips through its own writer).
+//! round-trips through its own writer), except for numbers JSON cannot hold (`1e400`
+//! reads as `Infinity`), which the writer sends as `null`, as `JSON.stringify` does.
 #![no_main]
 
 use i18n_next::{I18n, payload};
@@ -21,10 +22,17 @@ fuzz_target!(|data: &[u8]| {
     let copy = I18n::builder().fallback("en").build().unwrap();
     payload::apply(&copy, &again).expect("an encoded payload applies");
     assert_eq!(guest.locale(), copy.locale());
+    let finite = |s: &str| !(s.ends_with("Infinity") || s == "NaN");
     for key in KEYS {
-        assert_eq!(guest.t(key), copy.t(key), "{key:?}");
+        let t = guest.t(key);
+        if finite(&t) {
+            assert_eq!(t, copy.t(key), "{key:?}");
+        }
         if let Some(p) = pages.first() {
-            assert_eq!(guest.page(p).t(key), copy.page(p).t(key), "{p}/{key:?}");
+            let t = guest.page(p).t(key);
+            if finite(&t) {
+                assert_eq!(t, copy.page(p).t(key), "{p}/{key:?}");
+            }
         }
     }
 });

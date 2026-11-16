@@ -258,9 +258,10 @@ fn eviction_under_concurrent_readers_is_invisible() {
     for h in handles {
         h.join().unwrap();
     }
-    // step: loads happened again after evictions, versions only for evictions
+    // step: loads happened again after evictions; an eviction changes no answer, so the
+    // public version stays
     assert!(loads(&i18n) > PAGES as u64);
-    assert!(i18n.version() > 0);
+    assert_eq!(i18n.version(), 0);
 }
 
 /// Given two locales that fall back to each other with lazy pages linking across and links
@@ -299,4 +300,51 @@ fn lazy_links_in_a_fallback_cycle_never_deadlock() {
             t.join().unwrap();
         }
     }
+}
+
+/// Given a listener that is still busy with version 1 on one thread (held by a gate),
+/// when another thread switches the locale again, then that write returns at once and the
+/// listener sees version 2 only after version 1, never `[(fr, 2), (de, 1)]`. A write
+/// from inside a listener does not deadlock: it is delivered after the current change.
+#[test]
+fn listeners_see_versions_in_order_across_threads() {
+    use std::sync::Mutex;
+    use std::sync::mpsc::channel;
+    let i18n = I18n::builder()
+        .messages("de", None, "{}")
+        .messages("fr", None, "{}")
+        .messages("it", None, "{}")
+        .build()
+        .unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let (entered_tx, entered) = channel::<()>();
+    let (gate, gate_rx) = channel::<()>();
+    let gate_rx = Mutex::new(gate_rx);
+    let log = seen.clone();
+    let inner = i18n.clone();
+    let _sub = i18n.subscribe(move |c| {
+        if c.version == 1 {
+            entered_tx.send(()).unwrap();
+            gate_rx.lock().unwrap().recv().unwrap();
+            // a write from inside a listener: queued behind this change
+            inner.set_locale("it").unwrap();
+        }
+        log.lock().unwrap().push((c.locale.to_string(), c.version));
+    });
+    // step 1: thread A switches to de; its listener waits at the gate
+    let a = {
+        let i18n = i18n.clone();
+        thread::spawn(move || i18n.set_locale("de").unwrap())
+    };
+    entered.recv().unwrap();
+    // step 2: fr from here returns without running the listener
+    i18n.set_locale("fr").unwrap();
+    assert!(seen.lock().unwrap().is_empty());
+    // step 3: the gate opens; A delivers 1, then 2, then the listener's own 3
+    gate.send(()).unwrap();
+    a.join().unwrap();
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [("de".into(), 1), ("fr".into(), 2), ("it".into(), 3)]
+    );
 }

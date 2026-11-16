@@ -2,11 +2,16 @@
 //!
 //! A change is any write that can change what a lookup answers: `set_locale` to another
 //! locale, `add_messages`, `reload`, and `add_file` when it completes a pair. A lazy load
-//! and an eviction answer exactly what was there before, so they send nothing (eviction
-//! still bumps the version: thread caches must drop the old snapshot to free it).
+//! and an eviction answer exactly what was there before, so they send nothing and keep
+//! [`I18n::version`] (an eviction still publishes a snapshot under a new internal cache
+//! key: thread caches must drop the old snapshot to free it).
+//!
+//! Changes are delivered in version order (`Listeners::drain`): each is queued under the
+//! writer lock, and one thread at a time delivers the queue.
 
 use crate::i18n::{I18n, Inner};
 use crate::lazy::lock;
+use std::collections::VecDeque;
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,12 +40,36 @@ pub struct Change {
 #[derive(Default)]
 pub(crate) struct Listeners {
     list: Mutex<(u64, Vec<(u64, Listener)>)>,
+    /// Changes not delivered yet, in version order, and whether a thread is delivering.
+    queue: Mutex<(VecDeque<Change>, bool)>,
 }
 
 impl Listeners {
+    /// Queues `change`. Called under the writer lock, so the queue is in version order.
+    pub(crate) fn push(&self, change: Change) {
+        lock(&self.queue).0.push_back(change);
+    }
+
+    /// Delivers the queued changes in order, unless another thread (or this one, from
+    /// inside a listener) is delivering already: that one delivers them after its current
+    /// change. So every listener sees versions in increasing order, never two at once.
+    pub(crate) fn drain(&self) {
+        let mut q = lock(&self.queue);
+        if q.1 {
+            return;
+        }
+        q.1 = true;
+        while let Some(change) = q.0.pop_front() {
+            drop(q);
+            self.send(&change);
+            q = lock(&self.queue);
+        }
+        q.1 = false;
+    }
+
     /// Calls every listener with `change`, over a copy of the list (a listener may
     /// subscribe or unsubscribe); a panicking listener does not stop the others.
-    pub(crate) fn send(&self, change: &Change) {
+    fn send(&self, change: &Change) {
         let listeners: Vec<Listener> = {
             let list = lock(&self.list);
             if list.1.is_empty() {
@@ -94,10 +123,12 @@ impl I18n {
     /// locale, `add_messages`, `reload`, and `add_file` when it completes a pair. A lazy
     /// load and a page eviction answer the same as before and call nothing.
     ///
-    /// Listeners run on the writing thread after the new snapshot is in, in subscription
-    /// order, over a copy of the list; a listener that panics is skipped, the others
-    /// still run. Two writes from two threads may notify out of order: compare
-    /// [`Change::version`].
+    /// Listeners run after the new snapshot is in, in subscription order, over a copy of
+    /// the list; a listener that panics is skipped, the others still run. Changes are
+    /// delivered one at a time in version order: on the writing thread, unless another
+    /// thread is delivering already (then that thread delivers this change after its own,
+    /// and the write returns without waiting). A write from inside a listener is delivered
+    /// after the current change, once every listener has seen it.
     ///
     /// Once its [`Subscription`] is dropped a listener is not called again, also not by a
     /// notification already running on the same thread (another listener dropped it).

@@ -101,6 +101,19 @@ fn i18n_lookup(c: &mut Criterion) {
     c.bench_function("i18n/has/miss", |b| {
         b.iter(|| i18n.has(black_box("only_en")))
     });
+    // the plugin's name checks (8b.2): no list is built, no allocation
+    c.bench_function("i18n/has_locale/known", |b| {
+        b.iter(|| i18n.has_locale(black_box("de-at")))
+    });
+    c.bench_function("i18n/has_locale/unknown", |b| {
+        b.iter(|| i18n.has_locale(black_box("xx")))
+    });
+    c.bench_function("i18n/has_page/known", |b| {
+        b.iter(|| i18n.has_page(black_box("settings")))
+    });
+    c.bench_function("i18n/has_page/unknown", |b| {
+        b.iter(|| i18n.has_page(black_box("nope")))
+    });
 
     let a1 = Args::new().str("a", "Ann");
     let a5 = Args::new()

@@ -130,6 +130,8 @@ describe('connect', () => {
       datetimeFormats: { en: { day: { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' } } },
     })
     const link = await connect(i18n, { document: null, reportMissing: false })
+    // the first meta tells Rust the WebView's languages and zone
+    expect(fake.args[0]).toEqual({ languages: [...navigator.languages], timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
     expect(i18n.tn(1.5, 'money')).toBe('$1.50')
     expect(i18n.td(Date.UTC(2026, 10, 16), 'day')).toBe('11/16/2026')
     link.close()

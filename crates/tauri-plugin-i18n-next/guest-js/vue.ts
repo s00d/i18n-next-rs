@@ -79,7 +79,9 @@ export async function createTauriI18n(options: TauriI18nOptions = {}): Promise<T
   // the route already shown (the first navigation done before this call) is loaded first
   const shown = router?.currentRoute.value
   let page = shown?.matched?.length ? pageOf(shown) : 'index'
-  const start = { languages: [...(languages ?? [])] }
+  // the zone of Rust dates: the app's own, else the WebView's (DESIGN 5.4)
+  const zone = vue.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  const start = { languages: [...(languages ?? [])], ...(zone ? { timeZone: zone } : {}) }
   let m: Meta
   try {
     m = await meta(page === 'index' ? start : { ...start, page })
@@ -96,6 +98,8 @@ export async function createTauriI18n(options: TauriI18nOptions = {}): Promise<T
     defaultLocale: m.defaultLocale,
     numberFormats: { ...m.numberFormats, ...vue.numberFormats },
     datetimeFormats: { ...m.datetimeFormats, ...vue.datetimeFormats },
+    // dates in the zone Rust shows them in
+    timeZone: m.timeZone ?? vue.timeZone,
   })
   const i18n = plugin.global
   const link = await connect(i18n as unknown as I18nInstance, {

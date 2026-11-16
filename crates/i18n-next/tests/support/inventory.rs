@@ -586,6 +586,7 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
                 "pages",
                 "reload",
                 "set_locale",
+                "set_system_time_zone",
                 "subscribe",
                 "t",
                 "t_with",

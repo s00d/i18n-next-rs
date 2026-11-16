@@ -1,7 +1,8 @@
 //! The contract between the plugin and guest-js (DESIGN 6.2): a fixture of what the plugin
 //! really serves (`meta`, protocol chunks, the raw `load` fallback) for a catalog with a
 //! regional chain, pages, linked messages, `null`s, own dotted keys and leaf/object
-//! conflicts, plus what Rust `t` answers in every view. guest-js
+//! conflicts, plus what Rust `t` answers in every view and what `td` / `td_as` give for
+//! one instant in every locale (the catalog's zone, `Asia/Tokyo`, is not the host's). guest-js
 //! (`tests/guest-js/contract.test.ts`) replays it through `connect` with a real
 //! `@i18n-micro/runtime` instance and must answer the same.
 //! `UPDATE_GOLDEN=1` rewrites `tests/guest-js/fixtures/contract.json`.
@@ -22,8 +23,12 @@ fn catalog() -> I18n {
                 {"code": "en", "iso": "en-US"}, {"code": "de", "iso": "de-DE"},
                 {"code": "de-at", "iso": "de-AT", "fallbackLocale": "de"},
                 {"code": "ar", "iso": "ar-EG", "dir": "rtl"}],
-                "numberFormats": {"en": {"money": {"style": "currency", "currency": "USD"}}}}"#,
+                "numberFormats": {"en": {"money": {"style": "currency", "currency": "USD"}}},
+                "datetimeFormats": {"en": {"stamp": {"year": "numeric", "month": "2-digit",
+                    "day": "2-digit", "hour": "2-digit", "minute": "2-digit"}}}}"#,
         )
+        // not the host's zone: guest-js must format in the zone meta sends
+        .time_zone("Asia/Tokyo")
         .messages(
             "en",
             None,
@@ -139,7 +144,16 @@ fn guest_contract_fixture_is_up_to_date() {
             answers.insert(id, a);
         }
     }
-    let fixture = json!({ "keys": KEYS, "metas": metas, "loads": loads, "chunks": chunks, "answers": answers });
+    // 2024-01-05 19:00 UTC: already the 6th in Tokyo
+    let at = 1_704_481_200_000i64;
+    let dates: BTreeMap<&str, (String, String)> = LOCALES
+        .iter()
+        .map(|l| {
+            let v = i18n.with_locale(l);
+            (*l, (v.td(at), v.td_as(at, "stamp")))
+        })
+        .collect();
+    let fixture = json!({ "keys": KEYS, "metas": metas, "loads": loads, "chunks": chunks, "answers": answers, "at": at, "dates": dates });
     let text = serde_json::to_string_pretty(&fixture).unwrap() + "\n";
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/guest-js/fixtures/contract.json");

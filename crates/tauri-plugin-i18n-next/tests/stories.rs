@@ -423,6 +423,39 @@ fn first_load_picks_the_system_locale() {
     );
 }
 
+/// Given a catalog without a time zone, when the first `meta` brings the WebView's zone,
+/// then dates show in it on both sides: Rust `td` uses it and `meta` sends it as
+/// `timeZone` for the front end's formatter; a later zone, an unknown one or one under a
+/// catalog with its own zone changes nothing.
+#[test]
+fn the_webview_time_zone_is_the_system_zone() {
+    let at = 1_704_481_200_000i64; // 2024-01-05 19:00 UTC: already the 6th in Tokyo
+    // step 1: before any zone is known, meta sends none
+    let app = App::new(catalog());
+    assert_eq!(app.ok("meta", json!({}))["timeZone"], Value::Null);
+    // step 2: an unknown zone is ignored; the WebView's is taken
+    app.ok("meta", json!({ "timeZone": "Mars/Olympus" }));
+    let meta = app.ok(
+        "meta",
+        json!({ "languages": ["en"], "timeZone": "Asia/Tokyo" }),
+    );
+    assert_eq!(meta["timeZone"], "Asia/Tokyo");
+    assert_eq!(app.handle().td(at), "1/6/2024");
+    // step 3: once: a later window with another zone changes nothing
+    let again = app.ok("load", json!({ "timeZone": "America/New_York" }));
+    assert_eq!(
+        (&again["timeZone"], app.handle().td(at)),
+        (&json!("Asia/Tokyo"), "1/6/2024".to_owned())
+    );
+    // step 4: a catalog with its own zone keeps it and sends it
+    let utc = App::new(I18n::builder().time_zone("UTC").build().unwrap());
+    let meta = utc.ok("meta", json!({ "timeZone": "Asia/Tokyo" }));
+    assert_eq!(
+        (&meta["timeZone"], utc.handle().td(at)),
+        (&json!("UTC"), "1/5/2024".to_owned())
+    );
+}
+
 /// Given persist on, when the user switches to `de` and the app restarts on the same config
 /// dir, then it starts in `de`, before and over the system locale; a saved locale that is
 /// no longer available is ignored. A system pick is not saved.

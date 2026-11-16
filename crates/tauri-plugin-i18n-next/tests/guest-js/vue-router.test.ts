@@ -113,7 +113,7 @@ describe('createTauriI18n with vue-router', () => {
       en: { index: { title: 'Home' }, p1: { title: 'One' }, p2: { title: 'Two' }, p3: { title: 'Three' } },
       ar: { index: { title: 'الرئيسية' }, p1: { title: 'واحد' } },
     }
-    fake = new FakePlugin(catalogSource(pages, { en: ['en'], ar: ['ar', 'en'] }, ['index', 'p1', 'p2', 'p3']), 'en')
+    fake = new FakePlugin(catalogSource(pages, { en: ['en'], ar: ['ar', 'en'] }, ['index', 'p1', 'p2', 'p3'], { timeZone: 'Asia/Tokyo' }), 'en')
     fake.install()
     const router = createRouter({
       history: createMemoryHistory(),
@@ -130,6 +130,8 @@ describe('createTauriI18n with vue-router', () => {
     await nextTick()
     const h1 = () => el.querySelector('h1')!.textContent
     expect([h1(), i18n.link.page, fake.ipc.filter((c) => c.endsWith('|meta')).length]).toEqual(['One', 'p1', 1])
+    // dates in the zone Rust sends: 2024-01-05 19:00 UTC is the 6th in Tokyo
+    expect(i18n.global.td(1_704_481_200_000)).toBe('1/6/2024')
     // step 2: a guard after ours cancels the navigation to p2: p1 stays shown with its texts and its view
     const seen: string[] = []
     const stop = router.beforeResolve(async (to) => {

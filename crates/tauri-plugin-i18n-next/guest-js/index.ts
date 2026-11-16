@@ -33,6 +33,12 @@ export interface Meta {
   chains: Record<string, string[]>
   numberFormats: Record<string, Record<string, Intl.NumberFormatOptions>>
   datetimeFormats: Record<string, Record<string, Intl.DateTimeFormatOptions>>
+  /**
+   * The IANA zone Rust shows dates in, when it is known by name (the catalog's
+   * `time_zone`, or the WebView's zone sent with the first `meta`); `null`: the system's.
+   * `connect` and `createTauriI18n` format dates in it too.
+   */
+  timeZone: string | null
   /** The content tag of each chunk of the chain, by `"<locale>/<page>"`: `/{tag}/{locale}/{page}.json`. */
   tags: Record<string, string>
   /** The tag of the protocol bundle: `/{bundle}/bundle?locale=…&page=…`. */
@@ -51,10 +57,11 @@ const parse = <T>(raw: ArrayBuffer): T => JSON.parse(new TextDecoder().decode(ra
 /**
  * Asks the plugin for the meta of `locale` (the active one by default) and `page`. The
  * command answers raw JSON bytes (no serde round trip): they are parsed here. `languages`
- * (`navigator.languages`) lets the first call pick the start locale (8b.3).
+ * (`navigator.languages`) lets the first call pick the start locale (8b.3); `timeZone`
+ * (the WebView's IANA zone) becomes the zone of Rust dates unless the catalog has one.
  */
 export async function meta(
-  options: { locale?: string; page?: string; languages?: readonly string[] } = {},
+  options: { locale?: string; page?: string; languages?: readonly string[]; timeZone?: string } = {},
 ): Promise<Meta> {
   return parse<Meta>(await invoke<ArrayBuffer>(cmd('meta'), options))
 }
@@ -139,6 +146,9 @@ interface Load {
   locale: string
   chunks: Array<Chunk & { locale: string; page: string }>
 }
+
+/** The zone of a formatter (`FormatService` keeps it in a field it has no setter for). */
+type Zoned = { timeZone?: string }
 
 const kindOf = (e: unknown) => (typeof e === 'object' && e !== null ? (e as { kind?: unknown }).kind : undefined)
 
@@ -286,13 +296,15 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
   function applyMeta(m: Meta) {
     current = m
     if (m.version > version) version = m.version
-    const f = JSON.stringify([m.numberFormats, m.datetimeFormats, m.locales])
+    const f = JSON.stringify([m.numberFormats, m.datetimeFormats, m.locales, m.timeZone])
     if (f === formats) return
     formats = f
     const fmt = i18n.formatter
     if (fmt) {
       fmt.setNumberFormats({ ...fmt.getNumberFormats(), ...m.numberFormats })
       fmt.setDateTimeFormats({ ...fmt.getDateTimeFormats(), ...m.datetimeFormats })
+      // dates in the zone Rust shows them in; `null`: the system's, as the instance has it
+      if (m.timeZone) (fmt as Zoned).timeZone = m.timeZone
     }
     const iso: Record<string, string> = {}
     for (const l of m.locales) if (l.iso) iso[l.code] = l.iso
@@ -300,7 +312,7 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
   }
 
   /** Reads the meta of the active locale and `pg`, loads what changed, then shows it. */
-  async function show(pg: string, route: boolean, extra: { languages?: string[] } = {}, attempt = 0): Promise<void> {
+  async function show(pg: string, route: boolean, extra: { languages?: string[]; timeZone?: string } = {}, attempt = 0): Promise<void> {
     let m: Meta
     const ready = primed
     primed = undefined
@@ -408,7 +420,10 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
   }
 
   const languages = (globalThis as { navigator?: { languages?: readonly string[] } }).navigator?.languages
-  await enqueue(() => show(options.page ?? 'index', true, { languages: [...(languages ?? [])] }))
+  // the start locale from the WebView's languages, the zone of Rust dates from the
+  // instance's zone, else the WebView's (DESIGN 5.4)
+  const timeZone = (i18n.formatter as Zoned | undefined)?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  await enqueue(() => show(options.page ?? 'index', true, { languages: [...(languages ?? [])], ...(timeZone ? { timeZone } : {}) }))
 
   const unlisten = await listen<{ locale: string; version: number }>(EVENT_CHANGED, (e) => {
     const v = e.payload.version

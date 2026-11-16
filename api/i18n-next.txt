@@ -329,6 +329,7 @@ impl i18n_next::I18n
 pub fn i18n_next::I18n::check(&self) -> i18n_next::CheckReport
 impl i18n_next::I18n
 pub fn i18n_next::I18n::language_name(&self, &str) -> core::option::Option<&'static str>
+pub fn i18n_next::I18n::set_system_time_zone(&self, &str) -> bool
 pub fn i18n_next::I18n::td(&self, impl core::convert::Into<i18n_next::Timestamp>) -> alloc::string::String
 pub fn i18n_next::I18n::td_as(&self, impl core::convert::Into<i18n_next::Timestamp>, &str) -> alloc::string::String
 pub fn i18n_next::I18n::tdr(&self, impl core::convert::Into<i18n_next::Timestamp>) -> alloc::string::String

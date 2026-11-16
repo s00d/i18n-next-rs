@@ -58,6 +58,7 @@ export function benchSource(keys: number, shape: 'namespaced' | 'spread', pages:
             chains,
             numberFormats: {},
             datetimeFormats: {},
+            timeZone: null,
             tags: Object.fromEntries(keysOf(l, page).map((k) => [k, tags.get(k)!])),
             bundle: '0'.repeat(16),
           },

@@ -34,6 +34,8 @@ export class FakePlugin {
   /** Events emitted by Rust and not yet delivered to the window. */
   pending: Array<{ locale: string; version: number }> = []
   ipc: string[] = []
+  /** The arguments of each call, in order. */
+  args: Array<Record<string, unknown>> = []
   fetches: string[] = []
   missing: Array<{ locale: string; page: string; key: string }> = []
   /** `false`: `report_missing` is not registered (a release build). */
@@ -53,6 +55,7 @@ export class FakePlugin {
       (cmd, args) => {
         const a = (args ?? {}) as Record<string, unknown>
         this.ipc.push(cmd)
+        this.args.push(a)
         switch (cmd) {
           case 'plugin:i18n-next|meta': {
             const m = this.source.meta(this.locale, a.page as string | undefined)
@@ -139,7 +142,7 @@ export function catalogSource(
   cat: Catalog,
   chains: Record<string, string[]>,
   pages: string[],
-  extra: Partial<Pick<Meta, 'locales' | 'numberFormats' | 'datetimeFormats'>> = {},
+  extra: Partial<Pick<Meta, 'locales' | 'numberFormats' | 'datetimeFormats' | 'timeZone'>> = {},
 ): Source {
   const body = (l: string, p: string) => JSON.stringify({ data: cat[l]?.[p] ?? {} })
   const has = (l: string, p: string) => Object.keys(cat[l]?.[p] ?? {}).length > 0
@@ -151,7 +154,7 @@ export function catalogSource(
       if (page && page !== 'index' && !pages.includes(page)) return undefined
       const tags = Object.fromEntries(keys(l, page).map((k) => [k, tagOf(body(...split(k)))]))
       const locales = Object.keys(chains).map((code) => ({ code, ...(code === 'ar' ? { dir: 'rtl' as const } : {}) }))
-      return { version: 0, locale: l, defaultLocale: 'en', fallbackLocale: 'en', locales, chains, numberFormats: {}, datetimeFormats: {}, tags, bundle: '0'.repeat(16), ...extra }
+      return { version: 0, locale: l, defaultLocale: 'en', fallbackLocale: 'en', locales, chains, numberFormats: {}, datetimeFormats: {}, timeZone: null, tags, bundle: '0'.repeat(16), ...extra }
     },
     chunk(path) {
       const [tag, l, file] = path.split('/') as [string, string, string]

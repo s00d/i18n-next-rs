@@ -361,6 +361,7 @@
       "title": "Settings"
     }
   },
+  "at": 1704481200000,
   "chunks": {
     "30a34d86d11be651/de-at/settings.json": {
       "data": {
@@ -500,6 +501,24 @@
       }
     }
   },
+  "dates": {
+    "ar": [
+      "٦‏/١‏/٢٠٢٤",
+      "٦‏/١‏/٢٠٢٤"
+    ],
+    "de": [
+      "6.1.2024",
+      "6.1.2024"
+    ],
+    "de-at": [
+      "6.1.2024",
+      "6.1.2024"
+    ],
+    "en": [
+      "1/6/2024",
+      "01/06/2024, 04:00 AM"
+    ]
+  },
   "keys": [
     "brand",
     "hi",
@@ -613,7 +632,17 @@
           "page": "about"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "ar",
@@ -644,6 +673,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "ar|index": {
@@ -713,7 +743,17 @@
           "page": "index"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "ar",
@@ -744,6 +784,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "ar|settings": {
@@ -839,7 +880,17 @@
           "page": "settings"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "ar",
@@ -870,6 +921,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de-at|about": {
@@ -984,7 +1036,17 @@
           "page": "about"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de-at",
@@ -1015,6 +1077,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de-at|index": {
@@ -1106,7 +1169,17 @@
           "page": "index"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de-at",
@@ -1137,6 +1210,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de-at|settings": {
@@ -1266,7 +1340,17 @@
           "page": "settings"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de-at",
@@ -1297,6 +1381,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de|about": {
@@ -1389,7 +1474,17 @@
           "page": "about"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de",
@@ -1420,6 +1515,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de|index": {
@@ -1497,7 +1593,17 @@
           "page": "index"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de",
@@ -1528,6 +1634,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de|settings": {
@@ -1632,7 +1739,17 @@
           "page": "settings"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de",
@@ -1663,6 +1780,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "en|about": {
@@ -1726,7 +1844,17 @@
           "page": "about"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "en",
@@ -1757,6 +1885,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "en|index": {
@@ -1813,7 +1942,17 @@
           "page": "index"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "en",
@@ -1844,6 +1983,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "en|settings": {
@@ -1915,7 +2055,17 @@
           "page": "settings"
         }
       ],
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "en",
@@ -1946,6 +2096,7 @@
           }
         }
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     }
   },
@@ -1970,7 +2121,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "ar",
@@ -2007,6 +2168,7 @@
         "en/about": "37f979052f548c31",
         "en/index": "a2f0c03fad943c36"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "ar|index": {
@@ -2029,7 +2191,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "ar",
@@ -2064,6 +2236,7 @@
         "ar/index": "d6c0a0be23e3b9a1",
         "en/index": "a2f0c03fad943c36"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "ar|settings": {
@@ -2086,7 +2259,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "ar",
@@ -2123,6 +2306,7 @@
         "en/index": "a2f0c03fad943c36",
         "en/settings": "e5f8495241e7152c"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de-at|about": {
@@ -2145,7 +2329,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de-at",
@@ -2184,6 +2378,7 @@
         "en/about": "37f979052f548c31",
         "en/index": "a2f0c03fad943c36"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de-at|index": {
@@ -2206,7 +2401,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de-at",
@@ -2242,6 +2447,7 @@
         "de/index": "853a02907c279d34",
         "en/index": "a2f0c03fad943c36"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de-at|settings": {
@@ -2264,7 +2470,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de-at",
@@ -2303,6 +2519,7 @@
         "en/index": "a2f0c03fad943c36",
         "en/settings": "e5f8495241e7152c"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de|about": {
@@ -2325,7 +2542,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de",
@@ -2362,6 +2589,7 @@
         "en/about": "37f979052f548c31",
         "en/index": "a2f0c03fad943c36"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de|index": {
@@ -2384,7 +2612,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de",
@@ -2419,6 +2657,7 @@
         "de/index": "853a02907c279d34",
         "en/index": "a2f0c03fad943c36"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "de|settings": {
@@ -2441,7 +2680,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "de",
@@ -2478,6 +2727,7 @@
         "en/index": "a2f0c03fad943c36",
         "en/settings": "e5f8495241e7152c"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "en|about": {
@@ -2500,7 +2750,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "en",
@@ -2535,6 +2795,7 @@
         "en/about": "37f979052f548c31",
         "en/index": "a2f0c03fad943c36"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "en|index": {
@@ -2557,7 +2818,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "en",
@@ -2591,6 +2862,7 @@
       "tags": {
         "en/index": "a2f0c03fad943c36"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     },
     "en|settings": {
@@ -2613,7 +2885,17 @@
           "en"
         ]
       },
-      "datetimeFormats": {},
+      "datetimeFormats": {
+        "en": {
+          "stamp": {
+            "day": "2-digit",
+            "hour": "2-digit",
+            "minute": "2-digit",
+            "month": "2-digit",
+            "year": "numeric"
+          }
+        }
+      },
       "defaultLocale": "en",
       "fallbackLocale": "en",
       "locale": "en",
@@ -2648,6 +2930,7 @@
         "en/index": "a2f0c03fad943c36",
         "en/settings": "e5f8495241e7152c"
       },
+      "timeZone": "Asia/Tokyo",
       "version": 0
     }
   }

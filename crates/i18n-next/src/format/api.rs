@@ -188,6 +188,29 @@ impl I18n {
         self.date_string(None, t.into(), None)
     }
 
+    /// Takes the IANA zone `iana` as the system zone dates show in, as a front end knows it
+    /// (the Tauri plugin passes the WebView's `Intl.DateTimeFormat().resolvedOptions()
+    /// .timeZone` with its first `meta`, DESIGN 5.4). It is taken only when the builder set no
+    /// [`time_zone`](crate::Builder::time_zone), the system zone was not looked up yet (a
+    /// date already shown keeps its zone) and the zone is known; `true` when taken. A taken
+    /// zone is sent to the front end with the payload meta as `timeZone`. Feature `format`.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    ///
+    /// let i18n = I18n::builder().build()?;
+    /// assert!(!i18n.set_system_time_zone("Mars/Olympus"));
+    /// assert!(i18n.set_system_time_zone("Asia/Tokyo"));
+    /// assert_eq!(i18n.td(1_704_481_200_000i64), "1/6/2024"); // 2024-01-05 19:00 UTC
+    /// assert!(!i18n.set_system_time_zone("UTC")); // once
+    /// assert!(!I18n::builder().time_zone("UTC").build()?.set_system_time_zone("Asia/Tokyo"));
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    #[must_use]
+    pub fn set_system_time_zone(&self, iana: &str) -> bool {
+        self.inner.read(|s| s.meta.set_system_zone(iana))
+    }
+
     /// Formats `t` with the named date format `name` of the active locale (JS `td(value,
     /// name)`, [`Builder::datetime_formats`](crate::Builder::datetime_formats) or
     /// `datetimeFormats` of `i18n.json`), looked up by the locale code, then shorter

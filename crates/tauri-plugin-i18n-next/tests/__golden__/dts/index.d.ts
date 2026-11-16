@@ -20,6 +20,12 @@ export interface Meta {
     chains: Record<string, string[]>;
     numberFormats: Record<string, Record<string, Intl.NumberFormatOptions>>;
     datetimeFormats: Record<string, Record<string, Intl.DateTimeFormatOptions>>;
+    /**
+     * The IANA zone Rust shows dates in, when it is known by name (the catalog's
+     * `time_zone`, or the WebView's zone sent with the first `meta`); `null`: the system's.
+     * `connect` and `createTauriI18n` format dates in it too.
+     */
+    timeZone: string | null;
     /** The content tag of each chunk of the chain, by `"<locale>/<page>"`: `/{tag}/{locale}/{page}.json`. */
     tags: Record<string, string>;
     /** The tag of the protocol bundle: `/{bundle}/bundle?locale=…&page=…`. */
@@ -32,12 +38,14 @@ export declare const EVENT_MISSING = "i18n-next://missing";
 /**
  * Asks the plugin for the meta of `locale` (the active one by default) and `page`. The
  * command answers raw JSON bytes (no serde round trip): they are parsed here. `languages`
- * (`navigator.languages`) lets the first call pick the start locale (8b.3).
+ * (`navigator.languages`) lets the first call pick the start locale (8b.3); `timeZone`
+ * (the WebView's IANA zone) becomes the zone of Rust dates unless the catalog has one.
  */
 export declare function meta(options?: {
     locale?: string;
     page?: string;
     languages?: readonly string[];
+    timeZone?: string;
 }): Promise<Meta>;
 /**
  * What `connect` needs of an `@i18n-micro` instance: `createI18n` of `@i18n-micro/runtime`,

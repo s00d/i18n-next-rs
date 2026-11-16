@@ -30,16 +30,20 @@ pub(crate) fn known_page(i18n: &I18n, page: &str) -> Result<()> {
 /// Start: the active chain's roots and, with `page`, its page chunks, plus `locales`,
 /// `defaultLocale` and the named formats (the payload of `i18n_next::payload`), as raw
 /// bytes. `languages` (`navigator.languages`) picks the start locale on the first call
-/// when no saved one applies (8b.3). The fallback path when the protocol is unavailable.
+/// when no saved one applies (8b.3); `timeZone` (the WebView's zone) is the system zone
+/// of dates unless the catalog has one ([`webview_zone`]). The fallback path when the
+/// protocol is unavailable.
 #[tauri::command]
 pub fn load(
     state: State<'_, Handle>,
     page: Option<String>,
     languages: Option<Vec<String>>,
+    time_zone: Option<String>,
 ) -> Result<Response> {
     if let Some(p) = &page {
         known_page(&state, p)?;
     }
+    webview_zone(&state, time_zone.as_deref());
     state.first_load(languages.as_deref());
     let (_, bytes) = payload::encode(&state, None, page.as_deref(), true);
     Ok(Response::new(bytes))
@@ -52,13 +56,16 @@ pub fn load(
 /// active one when not given, roots and `page`, by `"<locale>/<page>"`) and `bundle` (the
 /// tag of its protocol bundle). As raw bytes, like `load`. `languages`
 /// (`navigator.languages`) picks the start locale like the first `load` does (8b.3), so a
-/// front end that reads data over the protocol never needs `load`.
+/// front end that reads data over the protocol never needs `load`; `timeZone` likewise
+/// gives the WebView's zone ([`webview_zone`]), and the answer's `timeZone` is the zone
+/// dates show in when it is known by name.
 #[tauri::command]
 pub fn meta(
     state: State<'_, Handle>,
     locale: Option<String>,
     page: Option<String>,
     languages: Option<Vec<String>>,
+    time_zone: Option<String>,
 ) -> Result<Response> {
     if let Some(l) = &locale {
         known_locale(&state, l)?;
@@ -66,6 +73,7 @@ pub fn meta(
     if let Some(p) = &page {
         known_page(&state, p)?;
     }
+    webview_zone(&state, time_zone.as_deref());
     if languages.is_some() {
         state.first_load(languages.as_deref());
     }
@@ -74,6 +82,17 @@ pub fn meta(
         locale.as_deref(),
         page.as_deref(),
     )))
+}
+
+/// The WebView's IANA zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) as the
+/// system zone of dates (DESIGN 5.4): taken once, only when the catalog has no
+/// `time_zone` and no date was shown in the system zone yet; an unknown or overlong name
+/// is ignored.
+fn webview_zone(state: &Handle, zone: Option<&str>) {
+    // ponytail: 64 bytes; the longest IANA name is 32
+    if let Some(z) = zone.filter(|z| z.len() <= 64) {
+        let _ = state.set_system_time_zone(z);
+    }
 }
 
 /// Navigation: the page chunks of the active chain, as raw bytes.

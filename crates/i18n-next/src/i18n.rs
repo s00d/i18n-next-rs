@@ -87,8 +87,14 @@ pub(crate) struct Meta {
     /// [`Builder::time_zone`]; else the system's, found on first use.
     #[cfg(feature = "format")]
     zone: Option<crate::format::Zone>,
+    /// The IANA name of [`Builder::time_zone`].
+    #[cfg(feature = "format")]
+    zone_name: Option<Box<str>>,
     #[cfg(feature = "format")]
     system_zone: std::sync::OnceLock<crate::format::Zone>,
+    /// The IANA name of a system zone given by [`I18n::set_system_time_zone`].
+    #[cfg(feature = "format")]
+    system_zone_name: std::sync::OnceLock<Box<str>>,
     /// Number data of view locales outside the snapshot's table, resolved once each
     /// ([`Meta::cold_number`]); filled in order, first come first kept.
     // ponytail: 8 codes; past them a code resolves on every call (~90 ns), grow if apps
@@ -259,6 +265,32 @@ impl Meta {
             at = at.get(..at.rfind('-').unwrap_or(0)).unwrap_or("");
         }
         None
+    }
+
+    /// The IANA name of the zone dates show in, when it is known by name: the builder's, or
+    /// the one [`I18n::set_system_time_zone`] gave. What the payload sends the front end.
+    #[cfg(all(feature = "format", feature = "payload"))]
+    pub(crate) fn zone_name(&self) -> Option<&str> {
+        self.zone_name
+            .as_deref()
+            .or_else(|| self.system_zone_name.get().map(|n| &**n))
+    }
+
+    /// Takes `iana` as the system zone: only without a builder zone and before the system's
+    /// was looked up (dates already shown keep their zone).
+    #[cfg(feature = "format")]
+    pub(crate) fn set_system_zone(&self, iana: &str) -> bool {
+        if self.zone.is_some() || iana.is_empty() {
+            return false;
+        }
+        let Some(zone) = crate::format::date::zone_named(iana) else {
+            return false;
+        };
+        if self.system_zone.set(zone).is_err() {
+            return false;
+        }
+        let _ = self.system_zone_name.set(Box::from(iana));
+        true
     }
 
     /// The zone dates show in: [`Builder::time_zone`], else the system's.
@@ -1408,6 +1440,7 @@ fn setup_dates(
         let zone = crate::format::date::zone_named(name)
             .ok_or_else(|| Error::UnknownTimeZone(name.clone()))?;
         meta.zone = Some(zone);
+        meta.zone_name = Some(Box::from(name.as_str()));
     }
     Ok(())
 }

@@ -122,6 +122,18 @@ fn dates(c: &mut Criterion) {
     c.bench_function("i18n/td/default", |b| {
         b.iter(|| black_box(&i18n).td(black_box(AT)))
     });
+    // the builder's zone wins: refused without a lookup
+    c.bench_function("i18n/set_system_time_zone/builder_zone", |b| {
+        b.iter(|| black_box(&i18n).set_system_time_zone(black_box("Asia/Tokyo")))
+    });
+    // taken: the zone is looked up and stored, once per catalog
+    c.bench_function("i18n/set_system_time_zone/taken", |b| {
+        b.iter_batched(
+            || I18n::builder().build().unwrap(),
+            |fresh| fresh.set_system_time_zone(black_box("Asia/Tokyo")),
+            criterion::BatchSize::SmallInput,
+        )
+    });
     c.bench_function("i18n/td_as/style_full", |b| {
         b.iter(|| black_box(&i18n).td_as(black_box(AT), black_box("full")))
     });

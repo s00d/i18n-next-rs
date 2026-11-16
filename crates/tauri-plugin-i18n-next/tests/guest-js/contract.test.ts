@@ -15,6 +15,9 @@ interface Fixture {
   loads: Record<string, unknown>
   chunks: Record<string, unknown>
   answers: Record<string, Record<string, string | null>>
+  /** An instant, and Rust `td` / `td_as(…, "stamp")` of it per locale, in the catalog's zone. */
+  at: number
+  dates: Record<string, [string, string]>
 }
 
 const fx = fixture as unknown as Fixture
@@ -55,6 +58,8 @@ describe('guest-js reads what Rust t reads, over a real plugin payload', () => {
           const got = Object.fromEntries(fx.keys.map((k) => [k, read(i18n, k)]))
           expect({ view: `${l}|${p}`, ...got }).toEqual({ view: `${l}|${p}`, ...fx.answers[`${l}|${p}`] })
         }
+        // dates in the zone meta sends (Asia/Tokyo), not the host's
+        expect([l, i18n.td(fx.at), i18n.td(fx.at, 'stamp')]).toEqual([l, ...fx.dates[l]!])
       }
       link.close()
     })

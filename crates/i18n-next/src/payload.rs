@@ -8,14 +8,16 @@
 //! {"version":3,"locale":"de",
 //!  "defaultLocale":"en","fallbackLocale":"en","locales":[{"code":"de","iso":"de-DE"}],
 //!  "chains":{"de":["de","en"],"en":["en"]},"numberFormats":{},"datetimeFormats":{},
+//!  "timeZone":null,
 //!  "chunks":[{"locale":"de","page":"index","data":{"nav":{"home":"Start"}},
 //!             "linked":{"title":"Start · Acme"}}]}
 //! ```
 //!
 //! - `version`: the catalog version the chunks come from ([`I18n::version`]);
 //! - `locale`: the locale the chunks are for (the active one unless asked otherwise);
-//! - `defaultLocale` … `datetimeFormats`: only with `meta` (the first `load`), what
-//!   `createI18n` needs (8b.1); `fallbackLocale` is `null` when none is set; `chains` is
+//! - `defaultLocale` … `timeZone`: only with `meta` (the first `load`), what
+//!   `createI18n` needs (8b.1); `timeZone` is the IANA zone dates show in when it is
+//!   known by name (`Builder::time_zone`, `I18n::set_system_time_zone`), else `null`; `fallbackLocale` is `null` when none is set; `chains` is
 //!   the fallback chain of every listed locale, strongest first, as the catalog reads it:
 //!   the front end premerges a view's chunks in that order (weakest first), since the JS
 //!   core reads one locale and one fallback only;
@@ -437,6 +439,16 @@ fn write_meta(out: &mut String, s: &Snapshot) {
     out.push_str(numbers);
     out.push_str(",\"datetimeFormats\":");
     out.push_str(dates);
+    // the zone dates show in, when known by name: the front end formats in it too
+    out.push_str(",\"timeZone\":");
+    #[cfg(feature = "format")]
+    let zone = meta.zone_name();
+    #[cfg(not(feature = "format"))]
+    let zone: Option<&str> = None;
+    match zone {
+        Some(z) => write_str(out, z),
+        None => out.push_str("null"),
+    }
 }
 
 /// `f(locale, page name, tree)` per locale of the chain of `code` and pair with data: its

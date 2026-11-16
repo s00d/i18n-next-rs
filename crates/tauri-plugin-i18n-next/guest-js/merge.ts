@@ -129,3 +129,46 @@ export function premerge(chunks: readonly Chunk[]): Tree {
   }
   return view
 }
+
+/** A chunk of a page view's chain, weakest first; `page`: a page chunk, else a root. */
+export type ViewChunk = Chunk & { page: boolean }
+
+const answers = (c: Chunk, key: string) => (c.linked !== undefined && own(c.linked, key) != null) || lookup(c.data, key) != null
+
+/** Every path of `node` (containers too), parents first; `__proto__` skipped. */
+function walk(node: object, prefix: string, f: (path: string) => void) {
+  for (const k of Object.keys(node)) {
+    if (k === '__proto__') continue
+    const path = join(prefix, k)
+    f(path)
+    const v = (node as Tree)[k]
+    if (typeof v === 'object' && v !== null) walk(v, path, f)
+  }
+}
+
+/**
+ * The view of a page from the chunks of its chain: the page chunks as one flat layer, by
+ * dotted key. Rust reads each layer as a flat map (a container stops the lookup), page before
+ * root per locale; the JS core reads the page view, then the root view when the page view has
+ * nothing (a node counts: it stops there too). So a page key a stronger root answers is left
+ * out, and a container is `{}`. The root is never copied: a page view holds only its own keys.
+ */
+export function pageView(chunks: readonly ViewChunk[]): Tree {
+  const flat: Tree = {}
+  const stronger: Chunk[] = []
+  for (let i = chunks.length - 1; i >= 0; i--) {
+    const c = chunks[i]!
+    if (!c.page) {
+      stronger.push(c)
+      continue
+    }
+    const add = (key: string, v: unknown) => {
+      if (v == null || hasOwn(flat, key) || stronger.some((s) => answers(s, key))) return
+      flat[key] = typeof v === 'object' ? {} : v
+    }
+    // a linked text answers its exact key, before the data of its chunk
+    if (c.linked) for (const k of Object.keys(c.linked)) if (k !== '__proto__') add(k, c.linked[k])
+    walk(c.data, '', (key) => add(key, lookup(c.data, key)))
+  }
+  return flat
+}

@@ -9,7 +9,7 @@
  */
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { type Chunk, type Tree, premerge } from './merge.js'
+import { type Chunk, type Tree, pageView, premerge } from './merge.js'
 
 /** One locale of `meta().locales` (`Locale` of `@i18n-micro/types`). */
 export interface Locale {
@@ -249,9 +249,10 @@ export async function connect(i18n: I18nInstance, options: ConnectOptions = {}):
     const tags = keys.map((k) => m.tags[k]!)
     views.set(id, { tags, version: m.version })
     if (old && old.tags.join() === tags.join()) return
-    const view = premerge(keys.map((k) => got.get(k)!))
-    if (pg === 'index') i18n.addTranslations(m.locale, view, false)
-    else i18n.addRouteTranslations(m.locale, pg, view, false)
+    const chain = keys.map((k) => ({ ...got.get(k)!, page: !k.endsWith('/index') }))
+    if (pg === 'index') i18n.addTranslations(m.locale, premerge(chain), false)
+    // a page view holds only what the page changes: the instance reads the root view after it
+    else i18n.addRouteTranslations(m.locale, pg, pageView(chain), false)
   }
 
   /** Drops the least recently used page views past `maxPages` (8b.16) and chunks no view reads. */

@@ -1545,7 +1545,10 @@ fn t_ref_reads_in_place() {
     // step 1: hit, fallback, page, miss → the same texts as `t`
     assert_eq!(i18n.t_ref("hi", str::to_owned), "Hallo");
     assert_eq!(i18n.t_ref("bye", str::to_owned), "Bye");
-    assert_eq!(i18n.page("settings").t_ref("title", str::to_owned), "Einstellungen");
+    assert_eq!(
+        i18n.page("settings").t_ref("title", str::to_owned),
+        "Einstellungen"
+    );
     assert_eq!(i18n.t_ref("nope", str::to_owned), "nope");
     assert_eq!(i18n.t_ref("", str::len), 0);
     assert_eq!(*misses.lock().unwrap(), ["de:nope"]);

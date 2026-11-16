@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  GUNGRAUN_HOME: ${{ github.workspace }}/target/gungraun
 
 jobs:
   # All criterion benches, the compare crate and the guest-js bench on one runner, then the
@@ -30,6 +31,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # the `instructions` bench of i18n-next runs under gungraun (valgrind), as in ci.yml `perf`
+      - name: Install valgrind
+        run: sudo apt-get install -y valgrind
+      - name: gungraun version
+        run: |
+          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name == "gungraun") | .version' | head -n1)
+          echo "GUNGRAUN_VERSION=$v" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: gungraun-runner@${{ env.GUNGRAUN_VERSION }}
       - run: cargo bench -p i18n-next --all-features --locked
       - run: cargo bench -p tauri-plugin-i18n-next --locked
       - run: cargo bench -p compare --locked

@@ -239,7 +239,9 @@ pub(crate) fn zone_named(name: &str) -> Option<Zone> {
     Zone::named(name)
 }
 
-/// The ISO week year (`Y`): the year of the Thursday of the date's week.
+/// The ISO week year (`Y`): the year of the Thursday of the date's week. Out of line: only
+/// `gd`'s patterns read it, and inlined LLVM hoists its arithmetic into every render.
+#[inline(never)]
 fn week_year(c: &Civil) -> i64 {
     let days = days_from_civil(c.year, c.month, c.day);
     let monday_based = (i64::from(c.weekday) + 6) % 7;
@@ -401,6 +403,8 @@ fn pick(o: &DateOptions, loc: &Loc) -> Picked {
 struct Cx {
     names: &'static [u16],
     digits: [&'static str; 10],
+    /// The digits are `0`–`9` (`digits` holds them too).
+    latin: bool,
     loc: &'static Loc,
 }
 
@@ -424,6 +428,7 @@ pub(crate) fn write(
             .get(usize::from(loc.dnames))
             .map_or(&[][..], |r| &r[..]),
         digits: super::number::digit_table(loc),
+        latin: data::s(loc.digits).is_empty(),
         loc,
     };
     let picked = pick(o, loc);
@@ -446,7 +451,9 @@ fn render(
             i += 1;
             continue;
         }
-        out.write_str(p.get(from..i).unwrap_or(""))?;
+        if from < i {
+            out.write_str(p.get(from..i).unwrap_or(""))?;
+        }
         let letter = b.get(i + 1).copied().unwrap_or(0);
         let width = b.get(i + 2).map_or(1, |w| w.wrapping_sub(b'0'));
         i += 3;
@@ -457,11 +464,55 @@ fn render(
             _ => field(letter, width, p, c, cx, out)?,
         }
     }
-    out.write_str(p.get(from..).unwrap_or(""))
+    match p.get(from..) {
+        Some(rest) if !rest.is_empty() => out.write_str(rest),
+        _ => Ok(()),
+    }
 }
+
+/// `00`, `01`, … `99`: two Latin digits per write.
+static PAIRS: &str = match std::str::from_utf8(&PAIR_BYTES) {
+    Ok(s) => s,
+    Err(_) => "",
+};
+const PAIR_BYTES: [u8; 200] = {
+    let mut a = [0u8; 200];
+    let mut i = 0;
+    while i < 100 {
+        a[2 * i] = b'0' + (i / 10) as u8;
+        a[2 * i + 1] = b'0' + (i % 10) as u8;
+        i += 1;
+    }
+    a
+};
 
 /// Digits of `v`, at least `width` of them, in the locale's digits.
 fn number(v: u64, width: u8, cx: &Cx, out: &mut dyn fmt::Write) -> fmt::Result {
+    if cx.latin && v < 10_000 && width <= 4 {
+        // every calendar field but a long year: at most two writes of `PAIRS`
+        let v = v as usize;
+        let len = match v {
+            0..10 => 1,
+            10..100 => 2,
+            100..1000 => 3,
+            _ => 4,
+        }
+        .max(usize::from(width));
+        let pair = |n: usize| PAIRS.get(2 * n..2 * n + 2).unwrap_or("00");
+        let (hi, lo) = (pair(v / 100), pair(v % 100));
+        if len > 2 {
+            out.write_str(if len == 3 {
+                hi.get(1..).unwrap_or("")
+            } else {
+                hi
+            })?;
+        }
+        return out.write_str(if len == 1 {
+            lo.get(1..).unwrap_or("")
+        } else {
+            lo
+        });
+    }
     let mut buf = [0u8; 20];
     let mut n = v;
     let mut len = 0;

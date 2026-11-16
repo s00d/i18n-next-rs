@@ -463,6 +463,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
+      # the prebuilt cargo-fuzz is a musl binary and defaults to its own target
       - name: 30 s per target
         run: |
           for t in $(cargo +"$FUZZ_NIGHTLY" fuzz list); do
@@ -477,7 +478,7 @@ jobs:
               *) seeds="" ;;
             esac
             mkdir -p "fuzz/corpus/$t"
-            cargo +"$FUZZ_NIGHTLY" fuzz run "$t" "$PWD/fuzz/corpus/$t" $seeds -- -max_total_time=30
+            cargo +"$FUZZ_NIGHTLY" fuzz run --target x86_64-unknown-linux-gnu "$t" "$PWD/fuzz/corpus/$t" $seeds -- -max_total_time=30
           done
       - if: failure()
         uses: actions/upload-artifact@v4

@@ -49,4 +49,14 @@ tauri::Builder::default()
 Permissions: add `"i18n-next:default"` to your capability (and
 `"i18n-next:allow-report-missing"` for the dev report).
 
+Front end:
+
+```ts
+import { createTauriI18n } from 'tauri-plugin-i18n-next-api/vue'
+app.use(await createTauriI18n({ router }))   // or connect(i18n) for React, Preact, Solid
+```
+
+Guide (protocol, IPC, `bind`, persist, CSP, origins) and the JS API:
+<https://s00d.github.io/i18n-next-rs/guides/tauri>.
+
 License: MIT.

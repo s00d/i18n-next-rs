@@ -4,11 +4,11 @@ i18n for Rust on the same locale files as [nuxt-i18n-micro](https://github.com/s
 global and per-page translations, plurals and `Intl`-compatible formats, native and wasm,
 with no runtime dependencies.
 
-**Status: early.** The catalog (root and page chunks, fallback chains, `i18n.json`),
-plurals (CLDR rules as in `Intl.PluralRules`), `Text`, `t!`, global access and number formats
-(`tn`, CLDR 48 as in `Intl.NumberFormat`), dates and relative time (`td`, `tdr`, as `Intl` shows
-them, own time zones) work; the Tauri plugin comes stage by stage.
-Do not depend on it yet.
+**Status: pre-release (0.1).** Root and page chunks, fallback chains, `i18n.json`, plurals
+(CLDR rules as in `Intl.PluralRules`), linked messages, `Text` (the Rust `<i18n-t>`), `t!` and
+`scope`, numbers, dates and relative time as `Intl` shows them (own CLDR 48 data and time
+zones), lazy and remote loading, and a Rust guest for the
+[Tauri plugin](https://crates.io/crates/tauri-plugin-i18n-next). Not published yet.
 
 ```rust
 use i18n_next::{I18n, t, tc};
@@ -35,6 +35,11 @@ assert_eq!(hi.to_string(), "Hi, Ann!");
 ```
 
 Or `install` it once and write `t!("hi", name = "Ann")` anywhere; `scope()` sets the locale
-of a request or a task.
+of a request or a task. Default features: `std`, `format`, `tz`, `global`; `default-features =
+false` is the micro build. `I18N_NEXT_LOCALES=en,de,ru` at build time keeps only the CLDR
+data you ship.
+
+Guides, platforms (desktop, Android, iOS, browser, Tauri guest) and the feature list:
+<https://s00d.github.io/i18n-next-rs/>.
 
 License: MIT.

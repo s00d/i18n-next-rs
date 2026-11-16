@@ -6,14 +6,19 @@
 //! from `tests/guest_contract.rs`, `random.json` from `tests/guest_random.rs`), and the
 //! guest must answer what Rust answered there, over the protocol and over raw invoke.
 //!
-//! Every test connects and disconnects: one guest per WebView, and the tests share one.
-//! Events are delivered by the test; a queued call (`set_page` of the shown page, which
-//! costs no call when nothing changed) waits for them. No timers.
+//! Every test connects and disconnects: one guest per WebView, and the tests share one. A
+//! test that failed before its cleanup leaves the guest connected and its fake installed:
+//! the next `Fake::new` disconnects and takes that fake down first. Events are delivered by
+//! the test; a queued call (`set_page` of the shown page, which costs no call when nothing
+//! changed) waits for them. Work run beside the test (`spawn`) is driven by draining
+//! microtasks a bounded number of times (`settle`): a stalled queue fails, never hangs. No
+//! timers.
 #![cfg(all(target_arch = "wasm32", target_os = "unknown", feature = "tauri-guest"))]
 
 use i18n_next::{Error, I18n, payload, tauri_guest};
 use js_sys::{Array, Function, JSON, Object, Promise, Reflect};
 use std::cell::RefCell;
+use std::future::Future;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -59,6 +64,8 @@ struct Fake(JsValue);
 
 impl Fake {
     fn new(source: &JsValue, locale: &str) -> Fake {
+        // a test that failed before its cleanup left the guest connected
+        tauri_guest::disconnect();
         let fake = Fake(new("Fake", &[source.clone(), JsValue::from_str(locale)]));
         call(&fake.0, "install", &[]);
         fake
@@ -88,6 +95,28 @@ impl Fake {
 
     fn deliver(&self, index: u32) {
         call(&self.0, "deliver", &[JsValue::from(index)]);
+    }
+
+    fn listeners(&self) -> usize {
+        call(&self.0, "listenerCount", &[]).as_f64().unwrap() as usize
+    }
+
+    fn callbacks(&self) -> u32 {
+        get(&get(&self.0, "callbacks"), "size").as_f64().unwrap() as u32
+    }
+
+    /// Protocol reads of `path` (`"<locale>/<page>.json"`) wait until [`Fake::release`].
+    fn hold(&self, path: &'static str) {
+        let hold = Closure::<dyn Fn(String) -> bool>::new(move |p: String| p.ends_with(path));
+        self.set("hold", hold.into_js_value());
+    }
+
+    fn held(&self) -> u32 {
+        Array::from(&get(&self.0, "held")).length()
+    }
+
+    fn release(&self) {
+        call(&self.0, "release", &[]);
     }
 
     /// Runs `f` once, right after the next `meta` answer is built.
@@ -191,6 +220,36 @@ async fn microtasks() {
             .await
             .unwrap();
     }
+}
+
+/// Runs `f` beside the test; its output lands in the returned cell.
+fn spawn<T: 'static>(f: impl Future<Output = T> + 'static) -> Rc<RefCell<Option<T>>> {
+    let out = Rc::new(RefCell::new(None));
+    let cell = out.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        let v = f.await;
+        *cell.borrow_mut() = Some(v);
+    });
+    out
+}
+
+/// Drains microtasks until `done`, at most 500 rounds: what is stuck fails the test.
+async fn until(what: &str, done: impl Fn() -> bool) {
+    for _ in 0..500 {
+        if done() {
+            return;
+        }
+        JsFuture::from(Promise::resolve(&JsValue::NULL))
+            .await
+            .unwrap();
+    }
+    panic!("stalled: {what}");
+}
+
+/// The output of a [`spawn`]ed task, once it is done.
+async fn settle<T>(what: &str, cell: &Rc<RefCell<Option<T>>>) -> T {
+    until(what, || cell.borrow().is_some()).await;
+    cell.borrow_mut().take().unwrap()
 }
 
 /// What a guest view reads, as the fixtures record it: `null` for a miss or a subtree.
@@ -608,4 +667,245 @@ async fn installed_guest_serves_t_macros() {
         ),
         ("Anwendung".to_owned(), "Eins".to_owned())
     );
+}
+
+/// Given a connected guest and a second `connect` whose page chunk is on its way, when this
+/// window switches to `de` and the event comes before the chunk, then the `connect` that
+/// read the older catalog does not take the instance back to `en` (F1).
+#[wasm_bindgen_test]
+async fn a_second_connect_waits_its_turn_and_never_shows_an_older_catalog() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    let i18n = tauri_guest::connect("index").await.unwrap();
+    fake.hold("en/p1.json");
+    let second = spawn(tauri_guest::connect("p1"));
+    until("the p1 read starts", || fake.held() == 1).await;
+    let switch = spawn(tauri_guest::set_locale("de"));
+    microtasks().await;
+    fake.deliver(0);
+    microtasks().await;
+    fake.release();
+    settle("connect(p1)", &second).await.unwrap();
+    settle("set_locale(de)", &switch).await.unwrap();
+    assert_eq!(
+        (
+            &*i18n.locale(),
+            get(&fake.0, "locale").as_string().unwrap(),
+            i18n.t("title"),
+            i18n.page("p1").t("h")
+        ),
+        ("de", "de".to_owned(), "Anwendung".into(), "Eins".into())
+    );
+}
+
+/// Given two `connect`s started in the same tick, then both get the one instance, the plugin
+/// holds one listener, both follow a switch in another window, and `disconnect` leaves no
+/// listener and no JS callback behind (F2, F3).
+#[wasm_bindgen_test]
+async fn concurrent_connects_share_one_link_and_one_listener() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    let a = spawn(tauri_guest::connect("index"));
+    let b = spawn(tauri_guest::connect("p1"));
+    let a = settle("connect a", &a).await.unwrap();
+    let b = settle("connect b", &b).await.unwrap();
+    a.add_messages("en", None, r#"{"only": "here"}"#).unwrap();
+    assert_eq!(b.t("only"), "here"); // one instance
+    assert_eq!((fake.listeners(), fake.callbacks()), (1, 1));
+    fake.switch("de");
+    fake.deliver(0);
+    tauri_guest::set_page("p1").await.unwrap();
+    assert_eq!((&*b.locale(), b.page("p1").t("h")), ("de", "Eins".into()));
+    tauri_guest::disconnect();
+    microtasks().await;
+    assert_eq!(
+        (fake.listeners(), fake.callbacks(), fake.count("|unlisten")),
+        (0, 0, 1)
+    );
+}
+
+/// Given an event already on its way when the guest disconnects, then its handler runs
+/// without throwing and changes nothing; the JS callback goes through the event plugin's
+/// `unregisterListener`, or `unregisterCallback` without it, and the plugin unlistens (F3).
+#[wasm_bindgen_test]
+async fn disconnect_unregisters_the_handler_and_survives_an_event_in_flight() {
+    let server = server();
+    for internals in [true, false] {
+        let fake = Fake::new(&rust_source(&server), "en");
+        if !internals {
+            Reflect::delete_property(
+                &js_sys::global().unchecked_into::<Object>(),
+                &"__TAURI_EVENT_PLUGIN_INTERNALS__".into(),
+            )
+            .unwrap();
+        }
+        let i18n = tauri_guest::connect("index").await.unwrap();
+        let handler: Function = call(&fake.0, "handlerOf", &[]).dyn_into().unwrap();
+        tauri_guest::disconnect();
+        assert_eq!(fake.callbacks(), 0, "internals={internals}");
+        fake.switch("de");
+        let event = Object::new();
+        let payload = Object::new();
+        put(&payload, "version", &JsValue::from(99));
+        put(&event, "payload", &payload);
+        handler
+            .call1(&JsValue::NULL, &event)
+            .expect("an event in flight after disconnect");
+        microtasks().await;
+        assert_eq!(
+            (fake.listeners(), fake.count("|unlisten"), &*i18n.locale()),
+            (0, 1, "en"),
+            "internals={internals}"
+        );
+    }
+}
+
+/// Given a `meta` answer that is neither bytes nor JSON text (a number), then the call fails
+/// and the queue goes on: the next call reads again (F4).
+#[wasm_bindgen_test]
+async fn a_raw_answer_of_the_wrong_kind_fails_the_call_and_frees_the_queue() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    let i18n = tauri_guest::connect("index").await.unwrap();
+    fake.set("metaAnswer", -1);
+    let r = spawn(tauri_guest::refresh());
+    assert!(settle("refresh", &r).await.is_err());
+    fake.switch("de");
+    let r = spawn(tauri_guest::refresh());
+    settle("refresh after", &r).await.unwrap();
+    assert_eq!(&*i18n.locale(), "de");
+}
+
+/// Given `fetch` rejecting with something else than a `TypeError` (an `Error`, an aborted
+/// `DOMException`), then the call fails and the protocol stays: no raw invoke `load` (M3a).
+#[wasm_bindgen_test]
+async fn only_a_type_error_moves_reads_to_raw_invoke() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    let i18n = tauri_guest::connect("index").await.unwrap();
+    for kind in ["Error", "DOMException"] {
+        fake.set("reject", kind);
+        assert!(tauri_guest::set_page("p1").await.is_err(), "{kind}");
+        assert_eq!(fake.count("|load"), 0, "{kind}");
+    }
+    fake.set("reject", JsValue::UNDEFINED);
+    let fetches = fake.fetches();
+    tauri_guest::set_page("p1").await.unwrap();
+    assert_eq!(
+        (
+            i18n.page("p1").t("h"),
+            fake.fetches() - fetches,
+            fake.count("|load")
+        ),
+        ("One".into(), 1, 0)
+    );
+}
+
+/// Given raw invoke, when `load` answers a body of an older version than the `meta` it
+/// follows, then it is not applied: `meta` is read again and so is `load` (M11).
+#[wasm_bindgen_test]
+async fn a_raw_load_of_an_older_version_is_read_again() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    fake.set("protocol", false);
+    let i18n = tauri_guest::connect("index").await.unwrap();
+    server
+        .borrow()
+        .add_messages("en", Some("p1"), r#"{"h": "One!"}"#)
+        .unwrap();
+    fake.bump();
+    fake.set("staleLoads", 1);
+    let (metas, loads) = (fake.count("|meta"), fake.count("|load"));
+    tauri_guest::set_page("p1").await.unwrap();
+    assert_eq!(
+        (
+            i18n.page("p1").t("h"),
+            fake.count("|meta") - metas,
+            fake.count("|load") - loads
+        ),
+        ("One!".into(), 2, 2)
+    );
+}
+
+/// Given a page on its way, then a key read meanwhile is no miss; once it is in, a miss is
+/// reported (M5c).
+#[wasm_bindgen_test]
+async fn misses_while_chunks_load_are_not_reported() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    let i18n = tauri_guest::connect("index").await.unwrap();
+    fake.hold("en/p1.json");
+    let shown = spawn(tauri_guest::set_page("p1"));
+    until("the p1 read starts", || fake.held() == 1).await;
+    let _ = i18n.page("p1").t("h");
+    microtasks().await;
+    fake.release();
+    settle("set_page(p1)", &shown).await.unwrap();
+    let _ = i18n.t("nope");
+    microtasks().await;
+    let missing = JSON::stringify(&get(&fake.0, "missing")).unwrap();
+    assert_eq!(
+        String::from(missing),
+        r#"[{"locale":"en","page":"index","key":"nope"}]"#
+    );
+}
+
+/// Given a call waiting behind one in flight, when its future is dropped before its turn,
+/// then the queue skips it: the next call runs (M15).
+#[wasm_bindgen_test]
+async fn a_dropped_waiting_call_does_not_stall_the_queue() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    let i18n = tauri_guest::connect("index").await.unwrap();
+    fake.hold("en/p1.json");
+    let first = spawn(tauri_guest::set_page("p1"));
+    until("the p1 read starts", || fake.held() == 1).await;
+    {
+        // takes its ticket on the first poll, then goes away before its turn
+        let mut waiting = Box::pin(tauri_guest::set_page("p2"));
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        assert!(waiting.as_mut().poll(&mut cx).is_pending());
+    }
+    fake.release();
+    settle("set_page(p1)", &first).await.unwrap();
+    let next = spawn(tauri_guest::set_page("p2"));
+    settle("set_page(p2) after a dropped one", &next)
+        .await
+        .unwrap();
+    assert_eq!(i18n.page("p2").t("h"), "Two");
+}
+
+/// Given an instance of an earlier connection, when the guest connects again, then misses
+/// of the old instance are not reported through the new connection.
+#[wasm_bindgen_test]
+async fn an_old_instance_reports_nothing_after_a_reconnect() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    let old = tauri_guest::connect("index").await.unwrap();
+    tauri_guest::disconnect();
+    let new = tauri_guest::connect("index").await.unwrap();
+    let _ = old.t("old-miss");
+    microtasks().await;
+    assert_eq!(fake.count("|report_missing"), 0);
+    let _ = new.t("new-miss");
+    microtasks().await;
+    assert_eq!(fake.count("|report_missing"), 1);
+}
+
+/// Given a guest that disconnects and connects again to the same catalog, then the chunks it
+/// had are not read again: the cache by content tag outlives the connection.
+#[wasm_bindgen_test]
+async fn a_reconnect_reads_only_chunks_it_did_not_have() {
+    let server = server();
+    let fake = Fake::new(&rust_source(&server), "en");
+    tauri_guest::connect("p1").await.unwrap();
+    let fetches = fake.fetches();
+    tauri_guest::disconnect();
+    let i18n = tauri_guest::connect("p1").await.unwrap();
+    assert_eq!(
+        (i18n.t("title"), i18n.page("p1").t("h"), fake.fetches()),
+        ("App".into(), "One".into(), fetches)
+    );
+    tauri_guest::set_page("p2").await.unwrap();
+    assert_eq!(fake.fetches(), fetches + 1);
 }

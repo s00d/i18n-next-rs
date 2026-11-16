@@ -23,12 +23,29 @@ class Fake {
     this.status = undefined
     // runs once after the next `meta` answer is built (to change the catalog under a read)
     this.afterMeta = undefined
+    // false: no `__TAURI_EVENT_PLUGIN_INTERNALS__` (an older Tauri): `unregisterCallback` alone
+    this.eventInternals = true
+    // a predicate on protocol paths: a matching fetch waits until `release()`
+    this.hold = undefined
+    this.held = []
+    // 'Error' / 'DOMException': every protocol fetch rejects with it (not a missing scheme)
+    this.reject = undefined
+    // answered once by the next `meta` instead of the catalog's
+    this.metaAnswer = undefined
+    // the next `load`s answer a body one version older (a load that lost a race)
+    this.staleLoads = 0
+    // `changed` listeners by event: `{ id, handler }`, as the event plugin keeps them
     this.listeners = new Map()
+    // `transformCallback` registry, as `__TAURI_INTERNALS__` keeps it
     this.callbacks = new Map()
     this.ids = 0
+    this.eventIds = 0
   }
 
   install() {
+    // a test that failed before its cleanup left its fake installed: take it down first
+    globalThis.__i18nNextFake?.uninstall()
+    globalThis.__i18nNextFake = this
     this.realFetch ??= globalThis.fetch
     globalThis.__TAURI_INTERNALS__ = {
       transformCallback: (cb) => {
@@ -36,43 +53,86 @@ class Fake {
         this.callbacks.set(id, cb)
         return id
       },
+      unregisterCallback: (id) => this.callbacks.delete(id),
       convertFileSrc: (path, proto) => `${proto}://localhost/${encodeURIComponent(path)}`,
       invoke: async (cmd, args) => this.handle(cmd, args ?? {}),
+    }
+    // the event plugin's init script: drops the JS handler of a listener (tauri's `_unlisten`)
+    if (this.eventInternals) {
+      globalThis.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener: (event, eventId) => {
+          const l = (this.listeners.get(event) ?? []).find((l) => l.id === eventId)
+          if (l) this.callbacks.delete(l.handler)
+        },
+      }
     }
     globalThis.fetch = async (input) => {
       this.fetches.push(input)
       if (!this.protocol) throw new TypeError('Load failed')
+      if (this.reject === 'Error') throw new Error('fetch broke')
+      if (this.reject === 'DOMException') throw new DOMException('aborted', 'AbortError')
       if (this.status !== undefined) return new Response('{}', { status: this.status })
       const prefix = 'i18n-next://localhost/'
       if (!input.startsWith(prefix)) throw new TypeError(`unexpected URL ${input}`)
       const path = decodeURIComponent(input.slice(prefix.length))
       const body = this.source.chunk(path)
+      let res
       if (body === undefined) {
         const key = path.slice(17, -5)
-        return new Response(JSON.stringify({ kind: 'Gone', tag: this.source.tag(key), version: this.version }), { status: 410 })
+        res = new Response(JSON.stringify({ kind: 'Gone', tag: this.source.tag(key), version: this.version }), { status: 410 })
+      } else {
+        res = new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
       }
-      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+      if (this.hold?.(path)) return new Promise((resolve) => this.held.push(() => resolve(res)))
+      return res
     }
   }
 
   uninstall() {
+    if (globalThis.__i18nNextFake === this) delete globalThis.__i18nNextFake
     delete globalThis.__TAURI_INTERNALS__
+    delete globalThis.__TAURI_EVENT_PLUGIN_INTERNALS__
     if (this.realFetch) globalThis.fetch = this.realFetch
+  }
+
+  // answers the held fetches
+  release() {
+    this.hold = undefined
+    const held = this.held
+    this.held = []
+    for (const r of held) r()
+  }
+
+  // listeners of `changed` the plugin holds
+  listenerCount() {
+    return (this.listeners.get('i18n-next://changed') ?? []).length
+  }
+
+  // the JS handler of the first `changed` listener, as an event already on its way holds it
+  handlerOf() {
+    const l = (this.listeners.get('i18n-next://changed') ?? [])[0]
+    return l && this.callbacks.get(l.handler)
   }
 
   handle(cmd, a) {
     this.ipc.push(cmd)
     switch (cmd) {
       case 'plugin:event|listen': {
-        this.listeners.set(a.event, [...(this.listeners.get(a.event) ?? []), a.handler])
-        return a.handler
+        const id = ++this.eventIds
+        this.listeners.set(a.event, [...(this.listeners.get(a.event) ?? []), { id, handler: a.handler }])
+        return id
       }
       case 'plugin:event|unlisten': {
-        this.listeners.set(a.event, (this.listeners.get(a.event) ?? []).filter((h) => h !== a.eventId))
+        this.listeners.set(a.event, (this.listeners.get(a.event) ?? []).filter((l) => l.id !== a.eventId))
         return null
       }
       case 'plugin:i18n-next|meta': {
         this.lastMetaArgs = a
+        if (this.metaAnswer !== undefined) {
+          const answer = this.metaAnswer
+          this.metaAnswer = undefined
+          return answer
+        }
         const m = this.source.meta(this.locale, a.page)
         if (!m) throw { kind: 'UnknownPage', message: `unknown page: ${a.page}` }
         const out = raw({ ...m, version: this.version })
@@ -81,8 +141,11 @@ class Fake {
         after?.()
         return out
       }
-      case 'plugin:i18n-next|load':
-        return raw({ ...this.source.load(this.locale, a.page), version: this.version })
+      case 'plugin:i18n-next|load': {
+        const lag = this.staleLoads > 0 ? 1 : 0
+        if (lag) this.staleLoads--
+        return raw({ ...this.source.load(this.locale, a.page), version: this.version - lag })
+      }
       case 'plugin:i18n-next|set_locale':
         if (!this.source.locales().includes(a.locale)) throw { kind: 'UnknownLocale', message: `unknown locale: ${a.locale}` }
         this.switch(a.locale)
@@ -112,8 +175,8 @@ class Fake {
   deliver(index) {
     const [e] = this.pending.splice(index, 1)
     if (!e) return
-    for (const h of this.listeners.get('i18n-next://changed') ?? []) {
-      this.callbacks.get(h)?.({ event: 'i18n-next://changed', id: h, payload: e })
+    for (const l of this.listeners.get('i18n-next://changed') ?? []) {
+      this.callbacks.get(l.handler)?.({ event: 'i18n-next://changed', id: l.id, payload: e })
     }
   }
 

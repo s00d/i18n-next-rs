@@ -1166,23 +1166,42 @@ impl I18n {
 impl I18n {
     /// Replaces each `(locale, page)` chunk with its tree (`payload::apply`) and switches to
     /// `locale` unless it is disabled: one new snapshot, subscribers notified.
+    /// The loaded root (`None`) or page chunk of `locale` as stored: a guest that connects
+    /// again moves the chunks it had into its new instance instead of reading them.
+    #[cfg(all(feature = "tauri-guest", target_arch = "wasm32", target_os = "unknown"))]
+    pub(crate) fn ready_chunk(&self, locale: &str, page: Option<&str>) -> Option<Arc<Tree>> {
+        self.inner
+            .read(|s| match s.data.get(locale)?.layer(s.meta.page(page))? {
+                Layer::Ready(c) => Some(c.clone()),
+                Layer::Lazy(_) => None,
+            })
+    }
+
     pub(crate) fn replace_chunks(
         &self,
-        chunks: Vec<(Arc<str>, Option<String>, Tree)>,
+        chunks: Vec<(Arc<str>, Option<String>, Arc<Tree>)>,
         locale: Option<&str>,
     ) -> Result<(), Error> {
         self.inner.write(|s| {
             let mut data = DataMap::clone(&s.data);
-            for (code, page, tree) in chunks {
-                let mut slot = data
-                    .get(&code)
-                    .map(|d| LocaleData::clone(d))
-                    .unwrap_or_default();
+            // one copy of a locale's data however many of its chunks come
+            let mut slots: Vec<(Arc<str>, LocaleData)> = Vec::new();
+            for (code, page, tree) in &chunks {
+                let at = match slots.iter().position(|(c, _)| c == code) {
+                    Some(at) => at,
+                    None => {
+                        let slot = data.get(code).map(|d| LocaleData::clone(d));
+                        slots.push((code.clone(), slot.unwrap_or_default()));
+                        slots.len() - 1
+                    }
+                };
                 put(
-                    &mut slot,
+                    &mut slots[at].1,
                     s.meta.page(page.as_deref()),
-                    Layer::Ready(Arc::new(tree)),
+                    Layer::Ready(tree.clone()),
                 );
+            }
+            for (code, slot) in slots {
                 data.insert(code, Arc::new(slot));
             }
             let active = match locale {

@@ -253,6 +253,14 @@ pub fn meta(i18n: &I18n, locale: Option<&str>, page: Option<&str>) -> Vec<u8> {
 /// a field of the wrong type, [`Error::UnknownLocale`] / [`Error::UnknownPage`] for an
 /// empty or `__proto__` name. Nothing changes then.
 pub fn apply(i18n: &I18n, bytes: &[u8]) -> Result<u64, Error> {
+    apply_with(i18n, bytes, Vec::new())
+}
+
+/// A loaded chunk as [`apply`] stores it: `(locale, page, tree)`, `None` for the root.
+pub(crate) type Stored = (Arc<str>, Option<String>, Arc<Tree>);
+
+/// [`apply`], plus `extra` chunks a guest had already (by content tag) in the same snapshot.
+pub(crate) fn apply_with(i18n: &I18n, bytes: &[u8], mut extra: Vec<Stored>) -> Result<u64, Error> {
     let shape = |reason: &'static str| Error::Config {
         path: "payload".to_owned(),
         reason,
@@ -286,7 +294,10 @@ pub fn apply(i18n: &I18n, bytes: &[u8]) -> Result<u64, Error> {
                 loop {
                     match r.next()? {
                         Event::ArrayEnd => break,
-                        Event::ObjectStart => chunks.push(r.chunk()?),
+                        Event::ObjectStart => {
+                            let (l, p, t) = r.chunk()?;
+                            chunks.push((l, p, Arc::new(t)));
+                        }
                         _ => return Err(shape("chunks[] must hold objects")),
                     }
                 }
@@ -299,6 +310,7 @@ pub fn apply(i18n: &I18n, bytes: &[u8]) -> Result<u64, Error> {
     if let Some(l) = &locale {
         crate::i18n::chunk_names(l, None)?;
     }
+    chunks.append(&mut extra);
     i18n.replace_chunks(chunks, locale.as_deref())?;
     Ok(version)
 }
@@ -424,7 +436,7 @@ impl Meta {
 
     /// `text` (the meta itself) read as `i18n.json` gives the locales, `defaultLocale`, the
     /// global fallback and the formats; the chains become `fallback_for` links.
-    fn builder(&self, text: &str) -> crate::i18n::Builder {
+    pub(crate) fn builder(&self, text: &str) -> crate::i18n::Builder {
         let mut b = crate::i18n::Builder::default()
             .config_json(text)
             .locale(&self.locale);

@@ -252,3 +252,40 @@ fn marked_plurals_take_either_count() {
         "{report}"
     );
 }
+
+/// Given a catalog with a `{count}` placeholder outside a plural and a key the other locale
+/// sets to `null`, when it is checked, then `{count}` is compared like any name, the `null`
+/// is a missing key (JS reads it so), and the report is not clean.
+#[test]
+fn count_outside_plurals_and_null_keys() {
+    let i18n = I18n::builder()
+        .locale("en")
+        .files(
+            Locales::new()
+                .file("en.json", r#"{"n": "{count} left", "bye": "Bye"}"#)
+                .file("de.json", r#"{"n": "{cnt} übrig", "bye": null}"#)
+                .files(),
+        )
+        .build()
+        .unwrap();
+    let report = i18n.check();
+    assert!(!report.is_clean());
+    assert_eq!(
+        report.items,
+        vec![
+            CheckItem::MissingKey {
+                locale: s("de"),
+                page: s("index"),
+                key: s("bye"),
+            },
+            CheckItem::Placeholders {
+                locale: s("de"),
+                page: s("index"),
+                key: s("n"),
+                expected: vec![s("count")],
+                found: vec![s("cnt")],
+            },
+        ],
+        "{report}"
+    );
+}

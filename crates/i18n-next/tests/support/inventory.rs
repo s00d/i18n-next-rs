@@ -686,10 +686,17 @@ pub type k::Result<T> = core::result::Result<T, k::Error>
         let gone: BTreeSet<String> = native.difference(&wasm).cloned().collect();
         assert_eq!(
             added,
-            ["connect", "disconnect", "load", "preload", "refresh", "set_page"]
-                .map(str::to_owned)
-                .into_iter()
-                .collect()
+            [
+                "connect",
+                "disconnect",
+                "load",
+                "preload",
+                "refresh",
+                "set_page"
+            ]
+            .map(str::to_owned)
+            .into_iter()
+            .collect()
         );
         assert_eq!(
             gone,

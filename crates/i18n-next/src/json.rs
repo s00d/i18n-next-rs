@@ -108,6 +108,9 @@ enum State {
 /// single top-level value and the trailing whitespace.
 pub(crate) struct Reader<'a> {
     input: &'a [u8],
+    /// `input` as text when all of it is UTF-8 (checked once, up front): strings are slices
+    /// of it; else each string is checked on its own, for the exact offset of the error.
+    text: Option<&'a str>,
     pos: usize,
     depth: usize,
     /// Bit `i` set: the container at depth `i` is an object.
@@ -125,11 +128,17 @@ impl<'a> Reader<'a> {
         };
         Reader {
             input,
+            text: std::str::from_utf8(input).ok(),
             pos,
             depth: 0,
             objects: 0,
             state: State::Value,
         }
+    }
+
+    /// Bytes not read yet: what a value starting here can span at most.
+    pub(crate) fn rest(&self) -> usize {
+        self.input.len() - self.pos
     }
 
     /// Byte offset of the next unread byte.
@@ -305,6 +314,10 @@ impl<'a> Reader<'a> {
     }
 
     fn utf8(&self, start: usize, end: usize) -> Result<&'a str, JsonError> {
+        // `start` / `end` sit at ASCII delimiters: char boundaries of valid text
+        if let Some(s) = self.text.and_then(|t| t.get(start..end)) {
+            return Ok(s);
+        }
         let input: &'a [u8] = self.input;
         std::str::from_utf8(&input[start..end]).map_err(|e| JsonError {
             offset: start + e.valid_up_to(),

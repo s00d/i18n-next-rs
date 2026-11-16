@@ -423,6 +423,20 @@ const MAX_PATH: usize = 4096;
 const PATH_RATIO: usize = 64;
 const PATH_SLACK: usize = 1 << 20;
 
+/// Walk entries read before the walk reserves room for the rest of the document.
+const SAMPLE: usize = 64;
+
+/// Room in `walk` for the rest of the document, at the bytes per entry of the first
+/// [`SAMPLE`] entries (since `start`): bytes per entry go from 12 to 80 across the catalogs
+/// of `examples/locales` and `fixtures/compat` (median 27), and indentation alone doubles
+/// them, so no one ratio fits; the document's own does, and the walk stops rehashing as it
+/// grows. A value followed by more (a payload chunk before others) reserves for those too:
+/// [`Tree::read_object`] gives back what is far over.
+fn reserve(walk: &mut FastMap<Arc<str>, Node>, r: &Reader<'_>, start: usize) {
+    let used = (r.offset() - start).max(1);
+    walk.reserve(r.rest().saturating_mul(SAMPLE) / used);
+}
+
 /// The stored path bytes allowed for a document of `len` bytes.
 pub(crate) fn path_budget(len: usize) -> usize {
     len.saturating_mul(PATH_RATIO).saturating_add(PATH_SLACK)
@@ -596,6 +610,7 @@ impl Tree {
         };
         let json_err = |e: crate::json::JsonError| error(e.offset, e.kind.as_str());
         let mut tree = Tree::default();
+        let start = r.offset();
         let mut buf = String::new();
         let mut stack = vec![Frame {
             len: 0,
@@ -624,6 +639,11 @@ impl Tree {
                         *kids = false;
                     }
                     if stack.is_empty() {
+                        // an object followed by more (a payload's first chunk) took room
+                        // for the rest too: give back what is far over
+                        if tree.walk.capacity() > 4 * tree.walk.len() + 16 {
+                            tree.walk.shrink_to_fit();
+                        }
                         return Ok(tree);
                     }
                     continue;
@@ -685,6 +705,9 @@ impl Tree {
                             ));
                         }
                     };
+                    if tree.walk.len() == SAMPLE {
+                        reserve(&mut tree.walk, r, start);
+                    }
                     // A duplicate key replaces, it does not merge (`JSON.parse`).
                     match tree.walk.insert(Arc::from(buf.as_str()), node) {
                         Some(Node::Obj { kids: true } | Node::Arr { kids: true }) => {

@@ -115,10 +115,5 @@ pub(crate) fn find(d: &[u8], name: &str) -> Option<Table> {
         times.push(t);
         offsets.push(*types.get(r.len()?)?);
     }
-    Some(Table {
-        times: times.into(),
-        offsets: offsets.into(),
-        initial,
-        rule,
-    })
+    Some(Table::new(times.into(), offsets.into(), initial, rule))
 }

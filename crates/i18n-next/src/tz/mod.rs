@@ -166,6 +166,15 @@ impl Zone {
         if let Some(offset) = offset_name(name) {
             return Some(Zone::fixed(offset));
         }
+        // a canonical spelling is a key as it is (only canonical names are ever inserted)
+        if let Some(z) = CACHE.get().and_then(|c| {
+            c.read()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(name)
+                .cloned()
+        }) {
+            return Some(z);
+        }
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         if let Some(canon) = browser::canonical(name) {
             return cached(&canon, || browser::named(&canon));
@@ -424,12 +433,7 @@ pub(crate) fn detect(env: &Env<'_>) -> Zone {
     allow(dead_code, reason = "no TZ or files in the browser")
 )]
 fn posix_only(rule: Posix) -> Table {
-    Table {
-        times: Box::new([]),
-        offsets: Box::new([]),
-        initial: rule.std,
-        rule: Some(rule),
-    }
+    Table::new(Box::new([]), Box::new([]), rule.std, Some(rule))
 }
 
 #[cfg_attr(

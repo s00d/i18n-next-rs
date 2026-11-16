@@ -117,3 +117,29 @@ fn damaged_bundle_never_panics() {
     }
     assert!(tz::tzdb::find(DATA, "Nowhere/Zone").is_none());
 }
+
+/// Given every bundled zone, when asked past its last transition, then the years the table
+/// evaluates ahead (to 2100) give what the rule gives, around every Jan 1 and DST change
+/// of the range, at its end (2101-01-01) and beyond, in any order (the transition hint).
+#[test]
+fn years_ahead_match_the_rule() {
+    let mut rng = Rng(2100);
+    for name in tz::tzdb::names(DATA) {
+        let table = tz::tzdb::find(DATA, name).unwrap();
+        let Some(rule) = &table.rule else { continue };
+        let last = table.times.last().copied().unwrap_or(i64::MIN);
+        let mut ts: Vec<i64> = (1969..=2102)
+            .flat_map(|y| {
+                let jan1 = (y - 1970) * 31_556_952;
+                [jan1 - 86_400, jan1, jan1 + 86_400 * 180]
+            })
+            .collect();
+        ts.extend((0..300).map(|_| (rng.next() % 4_200_000_000) as i64));
+        ts.extend([4_133_980_799, 4_133_980_800, 4_133_984_400, i64::MAX]);
+        for &t in ts.iter().chain(ts.iter().rev()) {
+            if t >= last {
+                assert_eq!(table.offset_at(t), rule.offset_at(t), "{name} at {t}");
+            }
+        }
+    }
+}

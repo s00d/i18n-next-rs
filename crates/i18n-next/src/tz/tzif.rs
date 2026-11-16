@@ -5,10 +5,14 @@
 //! the std/wall indicators are skipped, as in `jiff`. Every count and index is checked, so
 //! malformed input gives `None`, never a panic (fuzz target `tzif`).
 
-use super::posix::Posix;
+use super::posix::{Posix, YearDst};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// The last year whose DST the rule is evaluated for ahead of time ([`Table::new`]).
+const YEARS_TO: i64 = 2100;
 
 /// Transitions and the rule beyond them: the parsed form of a TZif file or a bundled zone.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct Table {
     /// Strictly ascending unix seconds.
     pub(crate) times: Box<[i64]>,
@@ -18,22 +22,110 @@ pub(crate) struct Table {
     pub(crate) initial: i32,
     /// On and after the last transition (all the time when there are none).
     pub(crate) rule: Option<Posix>,
+    /// The rule's DST per year from the year of the last transition (1970 at the earliest)
+    /// to 2100, and the end of 2100: a lookup instead of the year arithmetic (benches/tz.rs
+    /// `rule_2080`). About 24 bytes a year for a zone with DST, nothing without.
+    years: Box<[YearDst]>,
+    years_end: i64,
+    /// The transition the last lookup landed after: the next one is usually the same
+    /// (dates of one page are close). A guess only, so any thread may overwrite it.
+    hint: AtomicUsize,
 }
 
+impl Clone for Table {
+    fn clone(&self) -> Self {
+        Table::new(
+            self.times.clone(),
+            self.offsets.clone(),
+            self.initial,
+            self.rule.clone(),
+        )
+    }
+}
+
+/// What the zone says; the cached years follow from it and the hint is no part of it.
+impl PartialEq for Table {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.times, &self.offsets, self.initial, &self.rule)
+            == (&other.times, &other.offsets, other.initial, &other.rule)
+    }
+}
+
+impl Eq for Table {}
+
 impl Table {
-    /// Binary search over the transitions, the rule past the last one (RFC 8536 3.2, as
-    /// jiff: an instant equal to the last transition already takes the rule).
+    pub(crate) fn new(
+        times: Box<[i64]>,
+        offsets: Box<[i32]>,
+        initial: i32,
+        rule: Option<Posix>,
+    ) -> Table {
+        // at most 1970..=2100: a damaged file's transition far in the past costs nothing
+        let from = times
+            .last()
+            .map_or(1970, |&t| super::civil_from_unix(t).year)
+            .max(1970);
+        let (years, years_end) = match &rule {
+            Some(r) if from <= YEARS_TO => r.years(from, YEARS_TO),
+            _ => (Box::new([]) as Box<[YearDst]>, 0),
+        };
+        Table {
+            times,
+            offsets,
+            initial,
+            rule,
+            years,
+            years_end,
+            hint: AtomicUsize::new(0),
+        }
+    }
+
+    /// Binary search over the transitions (after a check of the last hit), the rule past the
+    /// last one (RFC 8536 3.2, as jiff: an instant equal to the last transition already
+    /// takes the rule).
     pub(crate) fn offset_at(&self, t: i64) -> i32 {
-        let i = self.times.partition_point(|&x| x <= t);
-        if i == self.times.len()
+        let n = self.times.len();
+        let h = self.hint.load(Ordering::Relaxed);
+        let hit = self.times.get(h).is_some_and(|&x| x <= t)
+            && self.times.get(h + 1).is_none_or(|&x| t < x);
+        let i = if hit {
+            h + 1
+        } else {
+            let i = self.times.partition_point(|&x| x <= t);
+            if i > 0 {
+                self.hint.store(i - 1, Ordering::Relaxed);
+            }
+            i
+        };
+        if i == n
             && let Some(rule) = &self.rule
         {
-            return rule.offset_at(t);
+            return self.rule_at(rule, t);
         }
         match i.checked_sub(1) {
             Some(last) => self.offsets[last],
             None => self.initial,
         }
+    }
+
+    /// The rule at `t`: from the years evaluated ahead when `t` is among them.
+    fn rule_at(&self, rule: &Posix, t: i64) -> i32 {
+        let Some(first) = self.years.first() else {
+            return rule.offset_at(t);
+        };
+        if t < first.start || t >= self.years_end {
+            return rule.offset_at(t);
+        }
+        // the mean year guesses the index, off by one only near Jan 1
+        let mut k = usize::try_from((t - first.start) / 31_556_952).unwrap_or(0);
+        k = k.min(self.years.len() - 1);
+        while k > 0 && self.years[k].start > t {
+            k -= 1;
+        }
+        while self.years.get(k + 1).is_some_and(|y| y.start <= t) {
+            k += 1;
+        }
+        rule.in_year(&self.years[k], t)
     }
 }
 
@@ -117,12 +209,7 @@ pub(crate) fn parse(d: &[u8]) -> Option<Table> {
     } else {
         None
     };
-    Some(Table {
-        times: times.into(),
-        offsets: offsets.into(),
-        initial,
-        rule,
-    })
+    Some(Table::new(times.into(), offsets.into(), initial, rule))
 }
 
 /// `\n<TZ string>\n` after the v2+ data: `Some(None)` for an empty string or a missing

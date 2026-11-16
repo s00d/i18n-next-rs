@@ -71,8 +71,13 @@ impl Posix {
         } else if t >= y.end {
             y = Year::of(y.year + 1);
         }
-        let start = dst.start.to_utc(&y, self.std);
-        let mut end = dst.end.to_utc(&y, dst.offset);
+        self.in_year(&self.year_dst(dst, &y), t)
+    }
+
+    /// The DST interval of year `y` (jiff's evaluation, see the module doc).
+    fn year_dst(&self, dst: &Dst, y: &Year) -> YearDst {
+        let start = dst.start.to_utc(y, self.std);
+        let mut end = dst.end.to_utc(y, dst.offset);
         // Permanent DST (jiff `dst_info_utc`): a start at Jan 1 00:00 UTC and an end that,
         // read in standard time, falls into another year leave no room for standard time.
         if start.0 == y.start {
@@ -81,14 +86,46 @@ impl Posix {
                 end = (y.end, true);
             }
         }
-        let (s, e) = (start.0, end.0);
-        let in_dst = if s <= e {
-            s <= t && t < e
-        } else {
-            !(e <= t && t < s)
-        };
-        if in_dst { dst.offset } else { self.std }
+        YearDst {
+            start: y.start,
+            s: start.0,
+            e: end.0,
+        }
     }
+
+    /// The offset at `t` inside the year of `d`.
+    #[inline]
+    pub(crate) fn in_year(&self, d: &YearDst, t: i64) -> i32 {
+        let in_dst = if d.s <= d.e {
+            d.s <= t && t < d.e
+        } else {
+            !(d.e <= t && t < d.s)
+        };
+        match &self.dst {
+            Some(dst) if in_dst => dst.offset,
+            _ => self.std,
+        }
+    }
+
+    /// The DST interval of every year `from..=to` (none without DST) and the end of `to`.
+    pub(crate) fn years(&self, from: i64, to: i64) -> (Box<[YearDst]>, i64) {
+        let Some(dst) = &self.dst else {
+            return (Box::new([]), 0);
+        };
+        let years = (from..=to)
+            .map(|y| self.year_dst(dst, &Year::of(y)))
+            .collect();
+        (years, Year::of(to).end)
+    }
+}
+
+/// The DST of one year: its first second, and DST from `s` to `e` (`s > e`: outside
+/// `e..s`, a southern rule).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct YearDst {
+    pub(crate) start: i64,
+    s: i64,
+    e: i64,
 }
 
 /// A calendar year: its Jan 1 as a day number and as unix seconds, its end (Jan 1 of the

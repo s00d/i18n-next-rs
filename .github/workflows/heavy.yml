@@ -1,0 +1,52 @@
+# Benchmark suites on a GitHub runner, so they never load a developer machine: all criterion
+# benches, benches/compare and the guest-js bench, then the tables of docs/content/5.performance.md.
+# Manual (Actions -> heavy -> Run workflow); the regenerated page and raw reports are the artifact.
+name: heavy
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # All criterion benches, the compare crate and the guest-js bench on one runner, then the
+  # tables of 5.performance.md; the regenerated page and the raw reports are the artifact.
+  benches:
+    name: benches + performance tables
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux system deps (webkit for tauri)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cargo bench -p i18n-next --all-features --locked
+      - run: cargo bench -p tauri-plugin-i18n-next --locked
+      - run: cargo bench -p compare --locked
+      - name: guest-js bench
+        run: |
+          mkdir -p node_modules/.cache/logs
+          pnpm -C crates/tauri-plugin-i18n-next bench > node_modules/.cache/logs/guest-js-bench.log 2>&1
+      - run: node scripts/bench-table.mjs
+      - name: A second run changes nothing
+        run: |
+          cp docs/content/5.performance.md "$RUNNER_TEMP/first.md"
+          node scripts/bench-table.mjs
+          diff "$RUNNER_TEMP/first.md" docs/content/5.performance.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: performance
+          path: |
+            docs/content/5.performance.md
+            target/criterion
+            node_modules/.cache/logs/guest-js-bench.log

@@ -45,6 +45,21 @@ fn fold(a: u64, b: u64) -> u64 {
     (full as u64) ^ ((full >> 64) as u64)
 }
 
+/// The 1..=7 bytes of `t` as a zero-padded little-endian word, from fixed-size reads: a
+/// `copy_from_slice` of a variable length is a `memmove` call, which cost a short-key
+/// lookup a fifth of its time. Two overlapping reads put each byte at its own position.
+#[inline]
+fn tail_word(t: &[u8]) -> u64 {
+    let n = t.len();
+    if n >= 4 {
+        let lo = u32::from_le_bytes([t[0], t[1], t[2], t[3]]);
+        let hi = u32::from_le_bytes([t[n - 4], t[n - 3], t[n - 2], t[n - 1]]);
+        u64::from(lo) | u64::from(hi) << ((n - 4) * 8)
+    } else {
+        u64::from(t[0]) | u64::from(t[n / 2]) << (n / 2 * 8) | u64::from(t[n - 1]) << ((n - 1) * 8)
+    }
+}
+
 impl FastHasher {
     #[inline]
     fn block(&mut self, a: u64, b: u64) {
@@ -63,12 +78,7 @@ impl Hasher for FastHasher {
         // The tail is zero-padded, its length (0x80 + len) in the free top byte: "a" and
         // "a\0" differ, and for `str` no tail word can equal a full word (0x8N would be a
         // continuation byte right after a complete character).
-        let last = (!tail.is_empty()).then(|| {
-            let mut b = [0u8; 8];
-            b[..tail.len()].copy_from_slice(tail);
-            b[7] = 0x80 + tail.len() as u8;
-            u64::from_le_bytes(b)
-        });
+        let last = (!tail.is_empty()).then(|| tail_word(tail) | (0x80 + tail.len() as u64) << 56);
         match (odd.first(), last) {
             (Some(w), Some(t)) => self.block(u64::from_le_bytes(*w), t),
             (Some(w), None) => self.0 = fold(self.0 ^ u64::from_le_bytes(*w), K),
@@ -190,6 +200,16 @@ mod tests {
 
     /// Scenario: the hash is a pure function of the input (no seed), and every byte,
     /// word and tail position matters.
+    #[test]
+    fn tail_word_is_the_zero_padded_bytes() {
+        let bytes = [0x11u8, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
+        for n in 1..=7 {
+            let mut b = [0u8; 8];
+            b[..n].copy_from_slice(&bytes[..n]);
+            assert_eq!(tail_word(&bytes[..n]), u64::from_le_bytes(b), "{n} bytes");
+        }
+    }
+
     #[test]
     fn deterministic_and_input_sensitive() {
         assert_eq!(hash("nav.title"), hash("nav.title"));

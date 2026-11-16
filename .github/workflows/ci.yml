@@ -55,6 +55,10 @@ jobs:
       - name: Tests (nextest, ci profile)
         run: cargo nextest run --workspace --locked --profile ci
 
+      # `payload` (encode / apply for the Tauri plugin and a Rust guest) is off by default.
+      - name: Tests with payload (nextest)
+        run: cargo nextest run -p i18n-next --locked --features payload --profile ci
+
       # `Serialize for Text` exists only with the feature.
       - name: Tests with serde (nextest)
         run: cargo nextest run -p i18n-next --locked --features serde --profile ci
@@ -278,6 +282,32 @@ jobs:
       - name: Build guest-js and check dist
         run: pnpm -C crates/tauri-plugin-i18n-next build
       - run: pnpm -C crates/tauri-plugin-i18n-next test
+
+  # The Tauri playground (DESIGN 8a): its own workspace and lock, built on linux with the
+  # plugin from this checkout. The front end is static for now (M8 brings the Vue app).
+  tauri-app:
+    name: tauri-app build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: examples/tauri-app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux system deps (webkit for tauri)
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/tauri-app/src-tauri
+      - run: cargo fmt --check
+      - run: cargo clippy --locked -- -D warnings
+      - run: cargo build --locked
 
   # Console tour over every locale; fails on any problem (DESIGN 8a).
   playground:

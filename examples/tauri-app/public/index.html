@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>i18n-next demo</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem; }
+    pre { background: #8881; padding: .75rem; overflow: auto; max-height: 40vh; }
+  </style>
+</head>
+<body>
+  <!-- M7 skeleton: raw plugin calls. M8 replaces this page with Vue + guest-js. -->
+  <h1 id="greeting">…</h1>
+  <p>
+    <select id="locale"></select>
+    <span id="version"></span>
+  </p>
+  <pre id="payload"></pre>
+  <script>
+    const { invoke, convertFileSrc } = window.__TAURI__.core
+    const { listen } = window.__TAURI__.event
+    const $ = (id) => document.getElementById(id)
+
+    async function render() {
+      // data by protocol (fetch().json()), control by IPC (DESIGN 6.1)
+      const start = JSON.parse(new TextDecoder().decode(
+        await invoke('plugin:i18n-next|load', { languages: navigator.languages })))
+      const url = convertFileSrc(`v${start.version}/${start.locale}/index.json`, 'i18n-next')
+      const root = await fetch(url).then((r) => r.json())
+      const meta = start.locales.find((l) => l.code === start.locale) || {}
+      document.documentElement.lang = start.locale
+      document.documentElement.dir = meta.dir || 'ltr'
+      $('greeting').textContent = await invoke('greeting', { name: 'Tauri' })
+      $('version').textContent = `v${start.version}`
+      $('locale').innerHTML = start.locales
+        .map((l) => `<option value="${l.code}"${l.code === start.locale ? ' selected' : ''}>${l.displayName || l.code}</option>`)
+        .join('')
+      $('payload').textContent = JSON.stringify(root, null, 2)
+    }
+
+    $('locale').addEventListener('change', (e) =>
+      invoke('plugin:i18n-next|set_locale', { locale: e.target.value }))
+    // a switch from the tray, the other window or a dev reload
+    listen('i18n-next://changed', render)
+    render()
+  </script>
+</body>
+</html>

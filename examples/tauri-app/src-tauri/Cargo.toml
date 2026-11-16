@@ -1,0 +1,28 @@
+[package]
+name = "tauri-app"
+version = "0.1.0"
+description = "Playground of tauri-plugin-i18n-next (DESIGN 8a): native menu, tray, two windows, a command returning Text"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+publish = false
+
+# Its own workspace and lock: `generate_context!` needs the frontend, and `cargo test
+# --workspace` of the main workspace must not build it (DESIGN 8a).
+[workspace]
+
+[lib]
+name = "tauri_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = ["tray-icon"] }
+i18n-next = { path = "../../../crates/i18n-next" }
+tauri-plugin-i18n-next = { path = "../../../crates/tauri-plugin-i18n-next", features = ["tray-icon"] }
+
+[features]
+# used for production builds (`tauri build`): DO NOT REMOVE
+custom-protocol = ["tauri/custom-protocol"]

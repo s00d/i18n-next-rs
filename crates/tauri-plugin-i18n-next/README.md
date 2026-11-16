@@ -34,7 +34,12 @@ tauri::Builder::default()
   `i18n-next://changed { locale, version }`, in version order. Pages from other origins
   (`tauri-plugin-localhost`, an external URL) need `Builder::origins`.
 - The start locale: the saved one (`i18n-next.json` in the app config dir), else the
-  WebView's `navigator.languages`, else `defaultLocale`.
+  WebView's `navigator.languages`, else `defaultLocale`. Dates show in the catalog's
+  `time_zone`, else the WebView's zone (sent with the first `meta`), and the front end
+  formats them in the same zone.
+- An app with a Content Security Policy must allow the protocol:
+  `"connect-src": "ipc: http://ipc.localhost i18n-next: http://i18n-next.localhost"` (plus its own
+  sources) in `app.security.csp`; without it guest-js falls back to the raw `load` command.
 - Debug builds reload on file changes (`dir` / `lazy_dir`) and write
   `i18n-missing.json` to the app data dir. Front-end misses arrive by themselves; Rust
   misses only when the catalog is built with

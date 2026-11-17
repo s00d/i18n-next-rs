@@ -1,6 +1,6 @@
 {
   "name": "tauri-plugin-i18n-next-api",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": "s00d",
   "description": "Frontend API of tauri-plugin-i18n-next: translations from the Rust catalog for @i18n-micro in Tauri 2 apps",
   "repository": {

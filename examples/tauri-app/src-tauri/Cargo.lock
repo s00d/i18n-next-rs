@@ -1316,7 +1316,7 @@ dependencies = [
 
 [[package]]
 name = "i18n-next"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "js-sys",
  "serde",
@@ -3311,7 +3311,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-i18n-next"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "i18n-next",
  "serde",

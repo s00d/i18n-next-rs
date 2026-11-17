@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "compare"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -1888,7 +1888,7 @@ dependencies = [
 
 [[package]]
 name = "i18n-next"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -3426,7 +3426,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "playground-rust"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "axum",
  "i18n-next",
@@ -4649,7 +4649,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-i18n-next"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "i18n-next",

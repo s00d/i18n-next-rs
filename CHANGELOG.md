@@ -3,7 +3,7 @@
 All notable changes to `i18n-next`, `tauri-plugin-i18n-next` and `tauri-plugin-i18n-next-api`
 are documented here. The three packages are released together with one version.
 
-## Unreleased
+## 0.2.0 (2026-11-17)
 
 - Lookups hash the key once for the whole fallback chain: a key found in a fallback locale
   or missing everywhere is read faster.

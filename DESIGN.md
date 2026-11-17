@@ -757,7 +757,6 @@ git diff origin/main.. > target/pr.diff && cargo mutants -p i18n-next --in-diff 
 - JS-сторона: vitest-бенч `JSON.parse` payload и `connect` / `setPage` на тех же размерах.
 - IPC: размер и время `get_ipc_response` для root 1k / 10k и типичной страницы, raw против `Value`.
 - Размеры: native-бинарь и `.wasm` примера (весь CLDR, три локали, без `format`).
-- `scripts/bench-table.mjs` собирает criterion JSON в `docs/content/5.performance.md`: ns/op по каждой функции, аллокации, сравнение, размеры. Цифры в доках — с машины и версии, указанных в шапке таблицы.
 
 ## 8. Документация
 
@@ -781,36 +780,19 @@ git diff origin/main.. > target/pr.diff && cargo mutants -p i18n-next --in-diff 
 docs/content/
   index.md                         одна строка + один пример
   1.getting-started/               .navigation.yml (icon: i-lucide-rocket)
-    1.introduction.md              что это, чем отличается, когда брать
-    2.installation.md              crate, плагин, npm, фичи, I18N_NEXT_LOCALES, i18n.json
-    3.quick-start.md               Rust: install + t!; Tauri + Vue: createTauriI18n + <i18n-t>
+    1.introduction.md              что это, три пакета, когда брать
+    2.quick-start.md               установка, Rust-пример, Tauri + Vue
   2.guides/                        .navigation.yml (icon: i-lucide-book-open)
-    1.locale-files.md              формат, i18n.json, общие файлы с nuxt-i18n-micro
-    2.pages.md                     root и page, слои, Rust-only страницы, alias, pages(false)
-    3.parameters.md                {name}, {0}, Arg, вложенный Text
-    4.plurals.md                   индексы, unmarked, =0, iso
-    5.fallback.md                  цепочки, missing
-    6.linked-messages.md
-    7.loading.md                   dir / lazy_dir / files / remote + ensure_async / extend (библиотеки) / reload / watch
-    8.text.md                      Text: Display, Serialize, resolve, html, хранение в состоянии
-    9.rich-text.md                 fold / parts, рецепты egui, ratatui, Leptos, askama
-    10.global-and-scope.md         install, макросы, key!, scope для запроса
-    11.formats.md                  tn / td / tdr, именованные форматы, зоны, clock
-    12.tauri.md                    передача, события, кеш, окна, bind, persist, отчёт о промахах, безопасность имён
-    13.frontend.md                 connect, /vue, router guard, <html lang dir>, React / Preact / Solid, types-generator
-    15.checks.md                   check(), типобезопасные ключи (кодоген), CLI
-    14.testing-your-app.md         scope().instance, фиксированные clock / zone
-  3.reference/                     генерируется (icon: i-lucide-file-code)
-  4.platforms/                     .navigation.yml (icon: i-lucide-monitor-smartphone)
-    1.overview.md                  таблица целей и что где доступно
-    2.desktop.md
-    3.android.md                   files() вместо dir, ресурсы
-    4.ios.md
-    5.browser-wasm.md              Leptos / Yew / Dioxus, ensure_async, размер .wasm
-    6.tauri-guest.md               Rust-фронт в Tauri
-  5.performance.md                 методика и таблицы (генерируется из criterion JSON)
-  6.compatibility.md               матрица с nuxt-i18n-micro, опции Intl, данные CLDR и версии ICU у WebView
-  7.contributing.md                сценарии, модели, истории, голдены, nextest, mutants, wasm-тесты, бенчи
+    1.locale-files.md              формат, папки, i18n.json кратко
+    2.translating.md               t / t_with / get / has, параметры, плюралы, fallback, страницы, Text, rich text
+    3.linked-messages.md
+    4.formats.md                   tn / td / tdr, зоны, clock, I18N_NEXT_LOCALES
+    5.loading.md                   dir / lazy_dir / files / remote / reload / watch
+    6.global-and-scope.md          install, макросы, key!, scope; в тестах
+    7.tauri.md                     плагин и фронт: connect, /vue, смена локали, CSP, промахи
+    8.checks-and-tracing.md        check(), типобезопасные ключи, tracing
+  3.reference/                     1-4 генерируются, rust-api / features / i18n-json руками
+  4.platforms.md                   desktop, Android, iOS, браузер, Rust-фронт в Tauri
   9.changelog.md                   генерируется
 ```
 
@@ -1115,7 +1097,6 @@ fuzz/                              cargo-fuzz цели (8b.11), локально
 deny.toml  renovate.json
 .config/nextest.toml               профили default / ci / mutants, жёсткие таймауты, без retries
 docs/                              Nuxt 4 + @nuxt/ui + @nuxt/content, каркас из tauri-plugin-centrifugo/docs
-scripts/bench-table.mjs            criterion JSON → docs/content/5.performance.md
 .github/workflows/{ci,docs}.yml  .cargo/mutants.toml  CHANGELOG.md  .versionrc.json  pnpm-workspace.yaml
 ```
 

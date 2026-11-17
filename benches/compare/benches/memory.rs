@@ -5,7 +5,7 @@
 //! `FluentResource` owns its FTL string, so fluent's number includes it). rust-i18n's
 //! strings are `'static` in the binary, here leaked before the baseline: its number is the
 //! `HashMap` only.
-//! Writes `$CRITERION_HOME/compare_memory.json` for scripts/bench-table.mjs.
+//! Writes `$CRITERION_HOME/compare_memory.json`.
 
 use compare::{ftl, json, pairs};
 use fluent_bundle::{FluentBundle, FluentResource};

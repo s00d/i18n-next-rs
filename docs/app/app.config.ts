@@ -61,8 +61,7 @@ export default defineAppConfig({
     { label: 'Guide', to: '/getting-started/introduction' },
     { label: 'Guides', to: '/guides/locale-files' },
     { label: 'API reference', to: '/reference/javascript-api' },
-    { label: 'Platforms', to: '/platforms/overview' },
-    { label: 'Performance', to: '/performance' },
+    { label: 'Platforms', to: '/platforms' },
     { label: 'Changelog', to: '/changelog' },
   ],
 })

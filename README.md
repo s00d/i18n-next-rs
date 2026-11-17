@@ -62,7 +62,7 @@ import { createTauriI18n } from 'tauri-plugin-i18n-next-api/vue'
 app.use(await createTauriI18n({ router }))
 ```
 
-Full setup (capability, embedded locales for bundles, Leptos): [Quick start](https://s00d.github.io/i18n-next-rs/getting-started/quick-start).
+Full setup (capability, embedded locales for bundles): [Quick start](https://s00d.github.io/i18n-next-rs/getting-started/quick-start).
 
 ## Packages
 
@@ -70,7 +70,7 @@ Full setup (capability, embedded locales for bundles, Leptos): [Quick start](htt
 |---|---|---|
 | [`i18n-next`](crates/i18n-next) | Core: catalog, pages, plurals, `Intl`-compatible formats | [guide](https://s00d.github.io/i18n-next-rs/getting-started/introduction) · [api](https://s00d.github.io/i18n-next-rs/reference/rust-api) |
 | [`tauri-plugin-i18n-next`](crates/tauri-plugin-i18n-next) | Tauri 2 plugin: catalog for the WebView and native UI | [guide](https://s00d.github.io/i18n-next-rs/guides/tauri) |
-| `tauri-plugin-i18n-next-api` | npm package for the WebView (`connect`, `/vue`, React, Preact, Solid) | [guide](https://s00d.github.io/i18n-next-rs/guides/frontend) · [api](https://s00d.github.io/i18n-next-rs/reference/javascript-api) |
+| `tauri-plugin-i18n-next-api` | npm package for the WebView (`connect`, `/vue`, React, Preact, Solid) | [guide](https://s00d.github.io/i18n-next-rs/guides/tauri) · [api](https://s00d.github.io/i18n-next-rs/reference/javascript-api) |
 
 ## Examples
 
@@ -81,12 +81,10 @@ All on the shared catalog in [`examples/locales`](examples/locales):
 - [`examples/leptos-app`](examples/leptos-app): Leptos in the browser and inside Tauri;
 - [`examples/nuxt-site`](examples/nuxt-site): nuxt-i18n-micro on the same files.
 
-Performance and comparison with rust-i18n, fluent and ICU4X: [Performance](https://s00d.github.io/i18n-next-rs/performance).
-
 ## Contributing
 
 Issues and pull requests are welcome. Build, test and benchmark commands and the CI gate:
-[Contributing](https://s00d.github.io/i18n-next-rs/contributing). Design notes: [DESIGN.md](DESIGN.md).
+[CONTRIBUTING.md](CONTRIBUTING.md). Design notes: [DESIGN.md](DESIGN.md).
 Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## License

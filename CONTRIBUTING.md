@@ -1,7 +1,4 @@
----
-title: Contributing
-description: The gate commands, scenarios instead of per-function tests, goldens and how to regenerate them, the no-flaky rule, mutants and benchmarks.
----
+# Contributing
 
 Tests check scenarios through the public entry point, not single functions: the crate through `I18n` and the
 macros, the plugin through IPC, guest-js through its exported API.
@@ -113,7 +110,7 @@ cargo bench -p i18n-next                    # criterion
 cargo bench -p i18n-next --bench instructions   # instruction counts (gungraun, needs valgrind)
 ```
 
-Method and tables: [Performance](/performance).
+
 
 ## Docs
 

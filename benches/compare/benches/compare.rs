@@ -1,6 +1,5 @@
 //! The same workloads across i18n-next, rust-i18n, fluent-bundle and ICU4X (DESIGN 7.7).
-//! Ids are `versus/<workload>/<lib>[_case]`; `scripts/bench-table.mjs` turns them into the
-//! comparison table of docs/content/5.performance.md.
+//! Ids are `versus/<workload>/<lib>[_case]`.
 //!
 //! Each library is used the way its docs show, and every setup asserts each library's
 //! output before anything is timed: the same text, or on a miss what that library returns

@@ -1,6 +1,5 @@
-# The Android build of tauri-app and the benchmark suites on a GitHub runner, so they never load a developer machine: all criterion
-# benches, benches/compare and the guest-js bench, then the tables of docs/content/5.performance.md.
-# Manual (Actions -> heavy -> Run workflow); the regenerated page and raw reports are the artifact.
+# The Android build of tauri-app and the comparison benchmark on a GitHub runner, so they never
+# load a developer machine. Manual (Actions -> heavy -> Run workflow).
 name: heavy
 
 on:
@@ -8,59 +7,23 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  GUNGRAUN_HOME: ${{ github.workspace }}/target/gungraun
 
 jobs:
-  # All criterion benches, the compare crate and the guest-js bench on one runner, then the
-  # tables of 5.performance.md; the regenerated page and the raw reports are the artifact.
+  # benches/compare: i18n-next against rust-i18n, fluent-bundle and ICU4X; the raw criterion
+  # reports are the artifact.
   benches:
-    name: benches + performance tables
+    name: compare benches
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Linux system deps (webkit for tauri)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # the `instructions` bench of i18n-next runs under gungraun (valgrind), as in ci.yml `perf`
-      - name: Install valgrind
-        run: sudo apt-get install -y valgrind
-      - name: gungraun version
-        run: |
-          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name == "gungraun") | .version' | head -n1)
-          echo "GUNGRAUN_VERSION=$v" >> "$GITHUB_ENV"
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: gungraun-runner@${{ env.GUNGRAUN_VERSION }}
-      - run: cargo bench -p i18n-next --all-features --locked
-      - run: cargo bench -p tauri-plugin-i18n-next --locked
       - run: cargo bench -p compare --locked
-      - name: guest-js bench
-        run: |
-          mkdir -p node_modules/.cache/logs
-          pnpm -C crates/tauri-plugin-i18n-next bench > node_modules/.cache/logs/guest-js-bench.log 2>&1
-      - run: node scripts/bench-table.mjs
-      - name: A second run changes nothing
-        run: |
-          cp docs/content/5.performance.md "$RUNNER_TEMP/first.md"
-          node scripts/bench-table.mjs
-          diff "$RUNNER_TEMP/first.md" docs/content/5.performance.md
       - uses: actions/upload-artifact@v4
         with:
-          name: performance
-          path: |
-            docs/content/5.performance.md
-            target/criterion
-            node_modules/.cache/logs/guest-js-bench.log
+          name: compare
+          path: target/criterion
 
   # tauri-app for Android (DESIGN 8a): `gen/android` is generated here, never
   # committed (tauri android init), then a debug APK for aarch64. The runner image has the

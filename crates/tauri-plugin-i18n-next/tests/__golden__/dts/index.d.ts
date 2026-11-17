@@ -35,6 +35,25 @@ export interface Meta {
 export declare const EVENT_CHANGED = "i18n-next://changed";
 /** The dev event of the missing-key report: one `{ locale, page, key, count }` per new key. */
 export declare const EVENT_MISSING = "i18n-next://missing";
+/** Payload of {@link EVENT_CHANGED}. */
+export interface ChangedEvent {
+    /** The active locale after the change. */
+    locale: string;
+    /** The catalog version the change produced. */
+    version: number;
+}
+/** Payload of {@link EVENT_MISSING} (debug builds): a key missed for the first time. */
+export interface MissingEvent {
+    /** The locale it was looked up in. */
+    locale: string;
+    /** The page (`index` for the root). */
+    page: string;
+    /** The key. */
+    key: string;
+    /** Misses so far, Rust and front end together. */
+    count: number;
+}
+export type { Tree };
 /**
  * Asks the plugin for the meta of `locale` (the active one by default) and `page`. The
  * command answers raw JSON bytes (no serde round trip): they are parsed here. `languages`

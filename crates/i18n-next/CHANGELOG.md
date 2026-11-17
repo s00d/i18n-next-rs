@@ -9,6 +9,8 @@ are documented here. The three packages are released together with one version.
   the Rust crate's.
 - The crates ship only what a build needs: sources, `build.rs`, permissions, README, LICENSE
   and CHANGELOG, no tests or benchmarks.
+- `tauri-plugin-i18n-next-api` exports the `Tree` type (what `I18nInstance` takes) and the
+  event payload types `ChangedEvent` and `MissingEvent`.
 
 ## 0.1.0 (2026-11-17)
 

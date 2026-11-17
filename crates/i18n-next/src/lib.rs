@@ -15,6 +15,7 @@ mod hash;
 mod i18n;
 mod intern;
 mod json;
+mod key;
 mod lazy;
 mod linked;
 mod loader;

@@ -16,6 +16,7 @@ use crate::args::{Arg, Args, Count, MAX_SCALAR_LEN};
 use crate::error::Error;
 use crate::hash::FastMap;
 use crate::json::{Event, Reader, number_to_js_string};
+use crate::key::{Key, PathMap, PathMapExt, Probe};
 use crate::plural::{Plural, Shape};
 use std::sync::Arc;
 
@@ -433,7 +434,7 @@ const SAMPLE: usize = 64;
 /// them, so no one ratio fits; the document's own does, and the walk stops rehashing as it
 /// grows. A value followed by more (a payload chunk before others) reserves for those too:
 /// [`Tree::read_object`] gives back what is far over.
-fn reserve(walk: &mut FastMap<Arc<str>, Node>, r: &Reader<'_>, start: usize) {
+fn reserve(walk: &mut PathMap<Node>, r: &Reader<'_>, start: usize) {
     let used = (r.offset() - start).max(1);
     walk.reserve(r.rest().saturating_mul(SAMPLE) / used);
 }
@@ -448,8 +449,8 @@ pub(crate) fn path_budget(len: usize) -> usize {
 /// exact own-key read reaches (their subtrees never are).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Tree {
-    walk: FastMap<Arc<str>, Node>,
-    own: FastMap<Arc<str>, Node>,
+    walk: PathMap<Node>,
+    own: PathMap<Node>,
     /// The payload JSON of this tree and its content tag, written once on first use
     /// (8b.4): a loaded chunk never changes, and every `&mut self` method clears it.
     #[cfg(feature = "payload")]
@@ -488,11 +489,11 @@ fn parent(path: &str) -> Option<&str> {
 struct Kids(Option<Lists>);
 
 /// `first` child by container path, `next` sibling by child path.
-type Lists = (FastMap<Arc<str>, Arc<str>>, FastMap<Arc<str>, Arc<str>>);
+type Lists = (PathMap<Key>, PathMap<Key>);
 
 /// Links `child` (stored at its path) first under its parent.
-fn link(walk: &FastMap<Arc<str>, Node>, (first, next): &mut Lists, child: &Arc<str>) {
-    if let Some((p, _)) = parent(child).and_then(|p| walk.get_key_value(p))
+fn link(walk: &PathMap<Node>, (first, next): &mut Lists, child: &Key) {
+    if let Some(p) = parent(child).and_then(|p| walk.key_at(p))
         && let Some(was) = first.insert(p.clone(), child.clone())
     {
         next.insert(child.clone(), was);
@@ -501,24 +502,24 @@ fn link(walk: &FastMap<Arc<str>, Node>, (first, next): &mut Lists, child: &Arc<s
 
 impl Kids {
     /// `path` was just stored for the first time.
-    fn add(&mut self, walk: &FastMap<Arc<str>, Node>, path: &str) {
+    fn add(&mut self, walk: &PathMap<Node>, path: &str) {
         if let Some(lists) = &mut self.0
-            && let Some((k, _)) = walk.get_key_value(path)
+            && let Some(k) = walk.key_at(path)
         {
             link(walk, lists, k);
         }
     }
 
     /// Removes everything stored under `path` (the container there was just replaced).
-    fn drop_under(&mut self, walk: &mut FastMap<Arc<str>, Node>, path: &str) {
+    fn drop_under(&mut self, walk: &mut PathMap<Node>, path: &str) {
         let (first, next) = self.0.get_or_insert_with(|| {
-            let mut lists = (FastMap::default(), FastMap::default());
+            let mut lists = (PathMap::default(), PathMap::default());
             for k in walk.keys() {
                 link(walk, &mut lists, k);
             }
             lists
         });
-        let mut todo: Vec<Arc<str>> = first.remove(path).into_iter().collect();
+        let mut todo: Vec<Key> = first.take(path).into_iter().collect();
         while let Some(k) = todo.pop() {
             walk.remove(&k);
             todo.extend(next.remove(&k));
@@ -551,15 +552,21 @@ impl Tree {
 
     /// What `key` holds for a lookup: an own root key unless null, else the walk.
     pub(crate) fn get(&self, key: &str) -> Option<&Entry> {
-        fn read<'a>(map: &'a FastMap<Arc<str>, Node>, key: &str) -> Option<&'a Entry> {
-            match map.get(key)? {
+        self.find(&Probe::new(key))
+    }
+
+    /// [`Tree::get`] with the key hashed already: a lookup chain hashes it once.
+    #[inline]
+    pub(crate) fn find(&self, key: &Probe<'_>) -> Option<&Entry> {
+        fn read<'a>(map: &'a PathMap<Node>, key: &Probe<'_>) -> Option<&'a Entry> {
+            match map.at(key)? {
                 Node::Null => None,
                 Node::Obj { .. } | Node::Arr { .. } => Some(&NODE),
                 Node::Leaf(e) | Node::Linked(e) => Some(e),
             }
         }
         // The root key "" is never read (`t("")` reads nothing).
-        if key.is_empty() {
+        if key.text().is_empty() {
             return None;
         }
         if !self.own.is_empty()
@@ -635,7 +642,7 @@ impl Tree {
                         && !f.kids
                         && !stack.is_empty()
                         && let Some(Node::Obj { kids } | Node::Arr { kids }) =
-                            buf.get(..f.len).and_then(|p| tree.walk.get_mut(p))
+                            buf.get(..f.len).and_then(|p| tree.walk.at_mut(p))
                     {
                         *kids = false;
                     }
@@ -710,7 +717,7 @@ impl Tree {
                         reserve(&mut tree.walk, r, start);
                     }
                     // A duplicate key replaces, it does not merge (`JSON.parse`).
-                    match tree.walk.insert(Arc::from(buf.as_str()), node) {
+                    match tree.walk.insert(Key::from(buf.as_str()), node) {
                         Some(Node::Obj { kids: true } | Node::Arr { kids: true }) => {
                             kids.drop_under(&mut tree.walk, &buf);
                         }
@@ -720,7 +727,7 @@ impl Tree {
                     true
                 }
                 Target::Own(k) => {
-                    tree.own.insert(Arc::from(k), node);
+                    tree.own.insert(Key::from(k), node);
                     false
                 }
                 Target::Dead => false,
@@ -752,7 +759,7 @@ impl Tree {
         // in one scan for all of them, then insert.
         let mut incoming = incoming;
         // the walk's own map type: no new one in the binary (wasm size)
-        let mut gone: FastMap<Arc<str>, Node> = FastMap::default();
+        let mut gone: PathMap<Node> = FastMap::default();
         for (k, node) in &mut incoming.walk {
             match (node, self.walk.get(k)) {
                 // Object over object: the merged one holds the children of both.
@@ -768,7 +775,7 @@ impl Tree {
             self.walk.retain(|k, _| {
                 !k.bytes()
                     .enumerate()
-                    .any(|(i, b)| b == b'.' && k.get(..i).is_some_and(|p| gone.contains_key(p)))
+                    .any(|(i, b)| b == b'.' && k.get(..i).is_some_and(|p| gone.at_str(p).is_some()))
             });
         }
         self.walk.extend(incoming.walk);
@@ -809,14 +816,14 @@ impl PluralMsg {
 impl Tree {
     /// Whether an own root key (not `null`) covers the walk path `key`.
     fn covered(&self, key: &str) -> bool {
-        matches!(self.own.get(key), Some(n) if !matches!(n, Node::Null))
+        matches!(self.own.at_str(key), Some(n) if !matches!(n, Node::Null))
     }
 
     /// [`Tree::get`], except that the root key `""` is readable: a link `@:{''}` reads it
     /// (`valueAt` of `linked-messages`), `t("")` does not.
     pub(crate) fn link_target(&self, key: &str) -> Option<&Entry> {
         if key.is_empty() {
-            return match self.walk.get(key)? {
+            return match self.walk.at_str(key)? {
                 Node::Null => None,
                 Node::Obj { .. } | Node::Arr { .. } => Some(&NODE),
                 Node::Leaf(e) | Node::Linked(e) => Some(e),
@@ -834,7 +841,7 @@ impl Tree {
                     Node::Leaf(e @ Entry::Msg(_)) => e
                         .text()
                         .filter(|t| t.contains('@'))
-                        .map(|t| (k.clone(), own, t)),
+                        .map(|t| (k.text().clone(), own, t)),
                     _ => None,
                 })
             })
@@ -852,7 +859,7 @@ impl Tree {
     pub(crate) fn set_message(&mut self, key: &str, own: bool, text: &str) {
         self.changed();
         let map = if own { &mut self.own } else { &mut self.walk };
-        if let Some(node) = map.get_mut(key) {
+        if let Some(node) = map.at_mut(key) {
             *node = Node::Leaf(Entry::Msg(Msg::new(text)));
         }
     }
@@ -861,7 +868,7 @@ impl Tree {
     /// is not it ([`Node::Linked`]).
     pub(crate) fn insert_linked(&mut self, key: &str, entry: Entry) {
         self.changed();
-        self.walk.insert(Arc::from(key), Node::Linked(entry));
+        self.walk.insert(Key::from(key), Node::Linked(entry));
     }
 
     /// What `has` sees: [`Tree::get`] without [`Node::Linked`] texts.
@@ -869,7 +876,7 @@ impl Tree {
         if key.is_empty() {
             return false;
         }
-        let read = |map: &FastMap<Arc<str>, Node>| match map.get(key) {
+        let read = |map: &PathMap<Node>| match map.at_str(key) {
             None | Some(Node::Null) => None,
             Some(Node::Linked(_)) => Some(false),
             Some(_) => Some(true),
@@ -967,7 +974,7 @@ impl Tree {
     pub(crate) fn add_linked(&mut self, linked: Vec<(Arc<str>, Entry)>) {
         self.changed();
         for (k, e) in linked {
-            self.walk.insert(k, Node::Linked(e));
+            self.walk.insert(Key::from(k), Node::Linked(e));
         }
     }
 
@@ -1015,7 +1022,7 @@ impl Tree {
     /// stored there: named formats `{"<locale>": {"<name>": {..}}}` at depth 2, where a name
     /// given again wins whole, as `Builder::formats` documents.
     pub(crate) fn merge_replacing(&mut self, incoming: Tree, depth: usize) {
-        let at: Vec<Arc<str>> = incoming
+        let at: Vec<Key> = incoming
             .walk
             .keys()
             .filter(|k| k.bytes().filter(|&b| b == b'.').count() + 1 == depth)

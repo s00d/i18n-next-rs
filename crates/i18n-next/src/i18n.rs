@@ -33,20 +33,20 @@ pub(crate) struct LocaleData {
 
 impl LocaleData {
     /// Page layer, then root layer.
-    fn get(&self, page: Option<&str>, key: &str) -> Option<&Entry> {
+    fn get(&self, page: Option<&str>, key: &crate::key::Probe<'_>) -> Option<&Entry> {
         if let Some(p) = page
             && let Some(e) = self
                 .pages
                 .get(p)
                 .and_then(Layer::chunk)
-                .and_then(|c| c.get(key))
+                .and_then(|c| c.find(key))
         {
             return Some(e);
         }
         self.root
             .as_ref()
             .and_then(Layer::chunk)
-            .and_then(|c| c.get(key))
+            .and_then(|c| c.find(key))
     }
 
     /// The root (`None`) or page layer, as stored.
@@ -398,9 +398,10 @@ impl Snapshot {
         key: &str,
     ) -> Option<&Entry> {
         let page = self.meta.page(page);
+        let key = crate::key::Probe::new(key);
         self.layers(locale)
             .iter()
-            .find_map(|layer| layer.get(page, key))
+            .find_map(|layer| layer.get(page, &key))
     }
 
     /// Only the locale itself, page then root: no fallback (JS `has`).

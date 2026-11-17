@@ -3,14 +3,33 @@
 All notable changes to `i18n-next`, `tauri-plugin-i18n-next` and `tauri-plugin-i18n-next-api`
 are documented here. The three packages are released together with one version.
 
-## Unreleased
+## 0.1.0 (2026-11-17)
 
-- `t()` returns a plain `&str` and `get()` an `Option<&str>` (on `I18n` and `View`): catalog
-  texts are stored once for the life of the process (equal texts share one copy), so a
-  lookup neither allocates nor touches a reference count, and the text stays valid through
-  `set_locale`, `reload` and page eviction. The cost: texts are not freed until the process
-  exits; a reload adds only texts not seen before. `try_t` is gone: `get` is the same lookup
-  (`None` on a miss, `missing` not called).
+First release of `i18n-next`, `tauri-plugin-i18n-next` and `tauri-plugin-i18n-next-api`.
 
-- Project skeleton: workspace, both crates, CI (native matrix, MSRV 1.90, wasm, size,
-  dependency, API, perf jobs), test and bench scaffolding, shared example locales.
+### i18n-next
+
+- Catalog in the nuxt-i18n-micro format: JSON trees, root and `pages/` chunks, `i18n.json`,
+  fallback chains (`de-at` → `de` → `en`), the `missing` handler.
+- Lookups: `t()` returns a plain `&str` (the key on a miss), `get()` an `Option<&str>`, `has()`.
+  Catalog texts are stored once for the life of the process, so a lookup allocates nothing.
+- `t_with` parameters, plurals (`tc`, CLDR rules), linked messages (`@:key` and modifiers),
+  `Text` for lazy and rich text.
+- Numbers, dates and relative time (`tn`, `td`, `tdr`) on CLDR 48 data with IANA time zones;
+  `I18N_NEXT_LOCALES` picks the locales built in.
+- Loading from a folder, embedded files, lazy pages or the network (`remote` + `ensure_async`);
+  `reload`, `subscribe`, `watch` in debug builds.
+- The global instance with `t!` / `tc!` / `key!`, `scope()` per request or task.
+- `check()` for missing and broken keys, `tracing` events.
+- Desktop, Android, iOS, the browser (wasm) and a Rust frontend inside Tauri (`tauri-guest`).
+
+### tauri-plugin-i18n-next
+
+- Serves the catalog to the WebView over a custom protocol; one locale for Rust and every
+  window; relabels native menus, windows and the tray; persists the chosen locale; reports
+  missing keys from the frontend in debug builds.
+
+### tauri-plugin-i18n-next-api
+
+- `connect` for any `@i18n-micro` instance, the `/vue` entry with a router guard, React,
+  Preact and Solid adapters.

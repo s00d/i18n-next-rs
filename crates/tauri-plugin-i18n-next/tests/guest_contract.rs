@@ -142,7 +142,7 @@ fn guest_contract_fixture_is_up_to_date() {
             let v = view(&i18n, l, p);
             let a: BTreeMap<&str, Option<String>> = KEYS
                 .iter()
-                .map(|k| (*k, v.get(k, |t| t.map(str::to_owned))))
+                .map(|k| (*k, v.get(k).map(str::to_owned)))
                 .collect();
             answers.insert(id, a);
         }

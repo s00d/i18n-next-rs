@@ -103,8 +103,8 @@ async fn ensure_async_in_memory() {
         .unwrap();
     let fetch = |path: String| async move { Ok::<_, String>(body(&path).as_bytes().to_vec()) };
     i18n.ensure_async("de", Some("cart"), fetch).await.unwrap();
-    assert_eq!(i18n.page("cart").t("title", str::to_owned), "Warenkorb");
-    assert_eq!(i18n.t("hi", str::to_owned), "Hi");
+    assert_eq!(i18n.page("cart").t("title"), "Warenkorb");
+    assert_eq!(i18n.t("hi"), "Hi");
     assert!(i18n.missing_files("de", Some("cart")).is_empty());
 }
 
@@ -144,8 +144,8 @@ async fn ensure_async_with_a_real_fetch() {
     i18n.ensure_async("de", Some("cart"), real_fetch)
         .await
         .unwrap();
-    assert_eq!(i18n.page("cart").t("title", str::to_owned), "Warenkorb");
-    assert_eq!(i18n.t("hi", str::to_owned), "Hi");
+    assert_eq!(i18n.page("cart").t("title"), "Warenkorb");
+    assert_eq!(i18n.t("hi"), "Hi");
     let version = i18n.version();
     i18n.ensure_async("de", Some("cart"), real_fetch)
         .await
@@ -165,10 +165,7 @@ fn lazy_extend_subscribe_reload() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let log = seen.clone();
     let _sub = i18n.subscribe(move |c| log.lock().unwrap().push(c.version));
-    assert_eq!(
-        (i18n.t("a", str::to_owned), i18n.t("lib", str::to_owned)),
-        ("app".into(), "L".into())
-    );
+    assert_eq!((i18n.t("a"), i18n.t("lib")), ("app".into(), "L".into()));
     i18n.reload().unwrap();
     assert_eq!(*seen.lock().unwrap(), [1]);
 }

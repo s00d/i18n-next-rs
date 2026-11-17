@@ -60,19 +60,13 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
             "pages",
             expect(i18n.pages().join(", "), "about, settings, tray"),
         ),
-        ("t", expect(i18n.t("nav.home", str::to_owned), "Home")),
+        ("t", expect(i18n.t("nav.home"), "Home")),
         (
             "t_with",
             expect(i18n.t_with("greeting", &ann), "Hello, Ann!"),
         ),
-        (
-            "page",
-            expect(settings.t("title", str::to_owned), "Settings"),
-        ),
-        (
-            "page→root",
-            expect(settings.t("nav.settings", str::to_owned), "Settings"),
-        ),
+        ("page", expect(settings.t("title"), "Settings")),
+        ("page→root", expect(settings.t("nav.settings"), "Settings")),
         (
             "ru",
             expect(
@@ -124,20 +118,14 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
     // M3: linked messages (`@:brand`, `@.upper:{'nav.home'}`): a locale that lacks the message
     // reads the fallback's with its own words; check() lists what translators left out.
     stops.extend([
-        ("linked", expect(i18n.t("footer", str::to_owned), "Made with i18n-next")),
-        ("linked ru", expect(i18n.with_locale("ru").t("shout", str::to_owned), "ГЛАВНАЯ!")),
+        ("linked", expect(i18n.t("footer"), "Made with i18n-next")),
+        ("linked ru", expect(i18n.with_locale("ru").t("shout"), "ГЛАВНАЯ!")),
         ("check", expect(gaps(&i18n), "ar: page settings; ar/index/cart; ar/index/footer; ar/index/shout; ru/index/footer; ru/index/shout")),
     ]);
     i18n.set_locale("ru")?;
     stops.extend([
-        (
-            "set_locale",
-            expect(settings.t("language", str::to_owned), "Язык"),
-        ),
-        (
-            "fallback",
-            expect(i18n.t("footer", str::to_owned), "Made with i18n-next"),
-        ),
+        ("set_locale", expect(settings.t("language"), "Язык")),
+        ("fallback", expect(i18n.t("footer"), "Made with i18n-next")),
         (
             "has",
             expect(
@@ -147,17 +135,14 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
         ),
         (
             "try_t",
-            expect(
-                format!("{:?}", i18n.get("nav", |t| t.map(str::to_owned))),
-                "None",
-            ),
+            expect(format!("{:?}", i18n.get("nav").map(str::to_owned)), "None"),
         ),
     ]);
     i18n.add_messages("ru", Some("settings"), r#"{"saved": "Сохранено"}"#)?;
     stops.push((
         "add",
         expect(
-            format!("{} v{}", settings.t("saved", str::to_owned), i18n.version()),
+            format!("{} v{}", settings.t("saved"), i18n.version()),
             "Сохранено v2",
         ),
     ));
@@ -195,7 +180,7 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
                 format!(
                     "{} / {}",
                     lazy.pages().join(","),
-                    lazy.page("settings").t("title", str::to_owned)
+                    lazy.page("settings").t("title")
                 ),
                 "about,settings,tray / Settings",
             ),
@@ -203,11 +188,7 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
         (
             "extend",
             expect(
-                format!(
-                    "{} / {}",
-                    lazy.t("lib.powered", str::to_owned),
-                    lazy.t("nav.home", str::to_owned)
-                ),
+                format!("{} / {}", lazy.t("lib.powered"), lazy.t("nav.home")),
                 "Powered by a library / Home",
             ),
         ),
@@ -218,11 +199,7 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
         (
             "reload",
             expect(
-                format!(
-                    "{} v{}",
-                    lazy.page("settings").t("title", str::to_owned),
-                    lazy.version()
-                ),
+                format!("{} v{}", lazy.page("settings").t("title"), lazy.version()),
                 "Настройки v2",
             ),
         ),

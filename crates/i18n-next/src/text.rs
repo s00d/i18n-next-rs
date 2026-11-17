@@ -142,7 +142,7 @@ impl PluralCtx<'_> {
             .i18n
             .inner
             .read(|s| match s.lookup(self.view, self.page, key) {
-                Some(e) => Ok(e.text().map(|t| String::from(&**t))),
+                Some(e) => Ok(e.text().map(String::from)),
                 None => Err(s.locale.clone()),
             });
         match found {
@@ -1072,7 +1072,7 @@ impl Text {
                         let (start, end) = t.single_range();
                         return f(
                             Tpl::Holes {
-                                raw: &t.raw,
+                                raw: t.raw,
                                 start,
                                 end,
                                 holes: t.hole_slice(),
@@ -1084,7 +1084,7 @@ impl Text {
                         return match p.form(count, plural) {
                             Some((start, end, holes)) => f(
                                 Tpl::Holes {
-                                    raw: &p.text.raw,
+                                    raw: p.text.raw,
                                     start,
                                     end,
                                     holes,
@@ -1106,7 +1106,7 @@ impl Text {
                     Some(Entry::Msg(Msg::Text(t))) => {
                         return f(
                             Tpl::Holes {
-                                raw: &t.raw,
+                                raw: t.raw,
                                 start: 0,
                                 end: t.raw.len(),
                                 holes: t.hole_slice(),
@@ -1118,7 +1118,7 @@ impl Text {
                         let t = &p.text;
                         return f(
                             Tpl::Holes {
-                                raw: &t.raw,
+                                raw: t.raw,
                                 start: 0,
                                 end: t.raw.len(),
                                 holes: t.hole_slice(),

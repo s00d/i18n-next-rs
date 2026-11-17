@@ -132,7 +132,7 @@ fn lazy(c: &mut Criterion) {
     c.bench_function("view/t/lazy_first_access", |b| {
         b.iter_batched(
             lazy,
-            |i18n| black_box(i18n.page("p3").t("t", str::len)),
+            |i18n| black_box(i18n.page("p3").t("t")),
             BatchSize::SmallInput,
         )
     });
@@ -144,13 +144,13 @@ fn lazy(c: &mut Criterion) {
         .build()
         .unwrap();
     let (p_off, p_on) = (off.page("p3"), on.page("p3"));
-    let _ = (p_off.t("t", str::len), p_on.t("t", str::len));
+    let _ = (p_off.t("t"), p_on.t("t"));
     let mut g = c.benchmark_group("view/get");
     g.bench_function("lazy_page_hit_evict_off", |b| {
-        b.iter(|| p_off.get(black_box("t"), |t| t.map(str::len)))
+        b.iter(|| p_off.get(black_box("t")))
     });
     g.bench_function("lazy_page_hit_evict_on", |b| {
-        b.iter(|| p_on.get(black_box("t"), |t| t.map(str::len)))
+        b.iter(|| p_on.get(black_box("t")))
     });
     g.finish();
     // 1000 pages kept at 50: every access loads one page and evicts one.
@@ -165,7 +165,7 @@ fn lazy(c: &mut Criterion) {
     c.bench_function("view/t/evict_cycle_1000_pages_keep_50", |b| {
         b.iter(|| {
             at = (at + 1) % names.len();
-            black_box(cycle.page(&names[at]).t("t", str::len))
+            black_box(cycle.page(&names[at]).t("t"))
         })
     });
 }

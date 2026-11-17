@@ -112,9 +112,9 @@ fn catalog_numbers_show_as_js_strings() {
         )
         .build()
         .unwrap();
-    let shown: Vec<String> = ["a", "b", "c", "d", "e"]
+    let shown: Vec<&str> = ["a", "b", "c", "d", "e"]
         .iter()
-        .map(|k| i18n.t(k, str::to_owned))
+        .map(|k| i18n.t(k))
         .collect();
     assert_eq!(
         shown,

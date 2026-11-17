@@ -242,7 +242,7 @@ pub fn meta(i18n: &I18n, locale: Option<&str>, page: Option<&str>) -> Vec<u8> {
 /// let guest = I18n::builder().build()?;
 /// let (_, bytes) = payload::encode(&server, None, None, true);
 /// assert_eq!(payload::apply(&guest, &bytes)?, 0);
-/// assert_eq!((&*guest.locale(), guest.t("hi", str::to_owned)), ("de", "Hallo".into()));
+/// assert_eq!((&*guest.locale(), guest.t("hi")), ("de", "Hallo".into()));
 /// assert!(payload::apply(&guest, b"[]").is_err());
 /// # Ok::<(), i18n_next::Error>(())
 /// ```
@@ -333,7 +333,7 @@ pub(crate) fn apply_with(i18n: &I18n, bytes: &[u8], mut extra: Vec<Stored>) -> R
 ///     .build()?;
 /// let guest = payload::builder(&payload::meta(&server, None, None))?.build()?;
 /// payload::apply(&guest, &payload::encode(&server, None, None, false).1)?;
-/// assert_eq!((&*guest.locale(), guest.t("a", str::to_owned), guest.t("b", str::to_owned)), ("de-at", "A-de".into(), "B".into()));
+/// assert_eq!((&*guest.locale(), guest.t("a"), guest.t("b")), ("de-at", "A-de".into(), "B".into()));
 /// # Ok::<(), i18n_next::Error>(())
 /// ```
 ///
@@ -773,8 +773,8 @@ impl<'a> Payload<'a> {
         while let Event::Key(key) = self.next()? {
             let entry = match self.next()? {
                 Event::Str(s) => Some(Entry::Msg(Msg::new(&s))),
-                Event::Num(n) => Some(Entry::Value(number_to_js_string(n).into())),
-                Event::Bool(b) => Some(Entry::Value(Arc::from(if b { "true" } else { "false" }))),
+                Event::Num(n) => Some(Entry::Value(crate::intern::intern(&number_to_js_string(n)))),
+                Event::Bool(b) => Some(Entry::Value(if b { "true" } else { "false" })),
                 Event::ObjectStart | Event::ArrayStart => {
                     self.skip_rest()?;
                     Some(Entry::Node)

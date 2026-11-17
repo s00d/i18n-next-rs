@@ -89,7 +89,8 @@ impl Params for WithCount<'_, '_> {
 /// A string leaf, tokenized once at load: `{name}` ranges are found here, never on `t`.
 #[derive(Debug, Clone)]
 pub(crate) struct Template {
-    pub(crate) raw: Arc<str>,
+    /// Interned ([`crate::intern`]): lookups lend it without a reference count.
+    pub(crate) raw: &'static str,
     /// Byte ranges of placeholder names (without the braces), in order.
     holes: Box<[(u32, u32)]>,
 }
@@ -185,7 +186,7 @@ impl PluralMsg {
             return String::new();
         };
         render(
-            &self.text.raw,
+            self.text.raw,
             start,
             end,
             holes.iter().map(|&(s, e)| (s as usize, e as usize)),
@@ -214,17 +215,17 @@ impl PluralMsg {
 pub(crate) enum Entry {
     Msg(Msg),
     /// A number or boolean as JS prints it: returned as is, never interpolated.
-    Value(Arc<str>),
+    Value(&'static str),
     /// A subtree or an array: `has` is true, there is no text.
     Node,
 }
 
 impl Entry {
     /// The raw text: a message as written, a number or boolean as printed.
-    pub(crate) fn text(&self) -> Option<&Arc<str>> {
+    pub(crate) fn text(&self) -> Option<&'static str> {
         match self {
-            Entry::Msg(Msg::Text(t)) => Some(&t.raw),
-            Entry::Msg(Msg::Plural(p)) => Some(&p.text.raw),
+            Entry::Msg(Msg::Text(t)) => Some(t.raw),
+            Entry::Msg(Msg::Plural(p)) => Some(p.text.raw),
             Entry::Value(v) => Some(v),
             Entry::Node => None,
         }
@@ -289,14 +290,14 @@ impl Template {
     /// Finds the placeholders once ([`Holes`]).
     pub(crate) fn new(raw: &str) -> Self {
         Template {
-            raw: Arc::from(raw),
+            raw: crate::intern::intern(raw),
             holes: Holes::new(raw).map(|(s, e)| (s as u32, e as u32)).collect(),
         }
     }
 
     /// The text with every placeholder `args` has replaced, in one allocation.
     pub(crate) fn interpolate(&self, args: &impl Params) -> String {
-        let raw = &*self.raw;
+        let raw = self.raw;
         if self.holes.is_empty() {
             return String::from(raw);
         }
@@ -313,12 +314,12 @@ impl Template {
     pub(crate) fn single_form(&self, args: &impl Params) -> String {
         let (start, end) = self.single_range();
         let holes = self.holes().filter(|&(s, e)| s > start && e < end);
-        render(&self.raw, start, end, holes, self.holes.len(), args)
+        render(self.raw, start, end, holes, self.holes.len(), args)
     }
 
     /// The byte range of [`Template::single_form`] in `raw`.
     pub(crate) fn single_range(&self) -> (usize, usize) {
-        let raw = &*self.raw;
+        let raw = self.raw;
         let body = raw.strip_prefix(ZERO_MARKER).unwrap_or(raw);
         let trimmed = body.trim_matches(is_js_space);
         let start = trimmed.as_ptr() as usize - raw.as_ptr() as usize;
@@ -653,11 +654,11 @@ impl Tree {
                 Event::Str(s) => (None, Node::Leaf(Entry::Msg(Msg::new(&s)))),
                 Event::Num(n) => (
                     None,
-                    Node::Leaf(Entry::Value(number_to_js_string(n).into())),
+                    Node::Leaf(Entry::Value(crate::intern::intern(&number_to_js_string(n)))),
                 ),
                 Event::Bool(b) => (
                     None,
-                    Node::Leaf(Entry::Value(Arc::from(if b { "true" } else { "false" }))),
+                    Node::Leaf(Entry::Value(if b { "true" } else { "false" })),
                 ),
                 Event::Null => (None, Node::Null),
             };
@@ -833,7 +834,7 @@ impl Tree {
                     Node::Leaf(e @ Entry::Msg(_)) => e
                         .text()
                         .filter(|t| t.contains('@'))
-                        .map(|t| (k.clone(), own, t.clone())),
+                        .map(|t| (k.clone(), own, t)),
                     _ => None,
                 })
             })
@@ -841,7 +842,7 @@ impl Tree {
                 hidden: !own && self.covered(&key),
                 key,
                 own,
-                raw,
+                raw: Arc::from(raw),
             })
             .collect();
         out

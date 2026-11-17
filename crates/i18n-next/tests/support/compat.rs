@@ -378,7 +378,7 @@ impl Probe {
         if missed {
             return spell(&out);
         }
-        if view.get(key, |t| t.map(str::to_owned)).is_none() && out == key {
+        if view.get(key).map(str::to_owned).is_none() && out == key {
             return if key.is_empty() {
                 "<missing>"
             } else {
@@ -391,11 +391,11 @@ impl Probe {
 
     /// Raw lookup: `try_t`, or which kind of nothing.
     fn lookup(&self, view: &View, key: &str) -> String {
-        match view.get(key, |t| t.map(str::to_owned)) {
+        match view.get(key).map(str::to_owned) {
             Some(s) => spell(&s),
             None => {
                 let before = self.misses.load(Ordering::Relaxed);
-                let _ = view.t(key, str::to_owned);
+                let _ = view.t(key);
                 if self.misses.load(Ordering::Relaxed) > before || key.is_empty() {
                     "<missing>".to_owned()
                 } else {
@@ -537,7 +537,7 @@ pub fn run() -> Result<usize, String> {
                     let plural = field(opts, "plural").is_some();
                     let get = field(opts, "customPluralRule") == Some(&V::Str("get".into()));
                     let node = !key.is_empty()
-                        && view.get(key, |t| t.map(str::to_owned)).is_none()
+                        && view.get(key).map(str::to_owned).is_none()
                         && missed.lock().unwrap().is_empty();
                     if fname == "text_missing" {
                         spell(&missed.lock().unwrap().join("; "))
@@ -831,7 +831,7 @@ fn answer(
                     }
                     probe.answer(&view, key, || {
                         if args(params).is_none() && default.is_none() {
-                            view.t(key, str::to_owned)
+                            view.t(key).to_owned()
                         } else {
                             view.t_with(key, &a)
                         }
@@ -847,7 +847,7 @@ fn answer(
             });
             let view = probe.i18n.page("index");
             match args(params) {
-                None => spell(&view.t("k", str::to_owned)),
+                None => spell(view.t("k")),
                 Some(a) => spell(&view.t_with("k", &a)),
             }
         }

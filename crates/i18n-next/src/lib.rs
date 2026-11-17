@@ -13,6 +13,7 @@ mod evict;
 mod format;
 mod hash;
 mod i18n;
+mod intern;
 mod json;
 mod lazy;
 mod linked;

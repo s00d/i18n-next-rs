@@ -208,7 +208,7 @@ Locales: `en` (global fallback), `de`, `de-at → de`, `de-ch → de`, `tr`, `el
 tag). Results are spelled as Rust `t` returns them: numbers and booleans as strings, a subtree `<node>`.
 
 - `linked_t("<locale>", "<page>", "<key>") → <result>`: every leaf of the premerged view (`index`, `about`,
-  `contact`, `nopage`). Rust: `with_locale(locale).page(page).get(key, |t| t.map(str::to_owned))` with `linked_messages(true)`.
+  `contact`, `nopage`). Rust: `with_locale(locale).page(page).get(key)` with `linked_messages(true)`.
 - `plain_t(...)`: the same view without `linkedMessages` (off by default: every `@:` as written).
 - `linked_tp(..., <params>)`: core `interpolate` on the resolved message: placeholders of a linked text fill
   at read. Rust: `t_with`.

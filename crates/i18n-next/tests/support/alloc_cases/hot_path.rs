@@ -44,8 +44,8 @@ pub fn hot_path_allocations() {
         .unwrap();
     let settings = i18n.page("settings");
     // Warm this thread's snapshot cache (and the thread-local registration).
-    let _ = i18n.t("nav.home", str::len);
-    let _ = settings.t("title", str::len);
+    let _ = i18n.t("nav.home");
+    let _ = settings.t("title");
 
     #[cfg(feature = "format")]
     let num = I18n::builder()
@@ -83,9 +83,9 @@ pub fn hot_path_allocations() {
 
     // case: get() hit, root and through the fallback → 0 blocks (the text borrowed).
     let n = blocks(|| {
-        std::hint::black_box(i18n.get("nav.home", |t| t.map(str::len)));
-        std::hint::black_box(i18n.get("only_en", |t| t.map(str::len)));
-        std::hint::black_box(settings.get("title", |t| t.map(str::len)));
+        std::hint::black_box(i18n.get("nav.home"));
+        std::hint::black_box(i18n.get("only_en"));
+        std::hint::black_box(settings.get("title"));
     });
     dhat::assert_eq!(n, 0);
 
@@ -101,17 +101,17 @@ pub fn hot_path_allocations() {
     // case: has() / get() miss → 0 blocks.
     let n = blocks(|| {
         std::hint::black_box(i18n.has("nav.home"));
-        std::hint::black_box(i18n.get("nope", |t| t.map(str::len)));
+        std::hint::black_box(i18n.get("nope"));
     });
     dhat::assert_eq!(n, 0);
 
     // case: t() without args → 0 blocks: a hit, through the fallback, on a page, a miss
     // (the stored text or the key borrowed).
     let n = blocks(|| {
-        std::hint::black_box(i18n.t("nav.home", str::len));
-        std::hint::black_box(i18n.t("only_en", str::len));
-        std::hint::black_box(settings.t("title", str::len));
-        std::hint::black_box(i18n.t("nope", str::len));
+        std::hint::black_box(i18n.t("nav.home"));
+        std::hint::black_box(i18n.t("only_en"));
+        std::hint::black_box(settings.t("title"));
+        std::hint::black_box(i18n.t("nope"));
     });
     dhat::assert_eq!(n, 0);
 
@@ -386,20 +386,20 @@ pub fn hot_path_allocations() {
     let grown = dhat::HeapStats::get().curr_bytes - base;
     let x2 = x.clone();
     let helper = std::thread::spawn(move || {
-        assert_eq!(x2.t("key1", str::to_owned), "value number 1");
+        assert_eq!(x2.t("key1"), "value number 1");
         drop(x2);
         back.send(()).unwrap();
         wait.recv().unwrap();
-        std::hint::black_box(other.get("nav.home", |t| t.map(str::len)));
+        std::hint::black_box(other.get("nav.home"));
         back.send(()).unwrap();
         wait.recv().unwrap();
     });
     done.recv().unwrap();
-    assert_eq!(x.t("key2", str::to_owned), "value number 2");
+    assert_eq!(x.t("key2"), "value number 2");
     drop(x);
     go.send(()).unwrap();
     done.recv().unwrap();
-    std::hint::black_box(i18n.get("nav.home", |t| t.map(str::len)));
+    std::hint::black_box(i18n.get("nav.home"));
     let left = dhat::HeapStats::get().curr_bytes.saturating_sub(base);
     go.send(()).unwrap();
     helper.join().unwrap();
@@ -421,15 +421,15 @@ pub fn hot_path_allocations() {
         }
         let lazy = b.build().unwrap();
         let page = lazy.page("p");
-        let _ = (page.t("t", str::len), page.t("root", str::len));
+        let _ = (page.t("t"), page.t("root"));
         let n = blocks(|| {
-            std::hint::black_box(page.get("t", |t| t.map(str::len)));
-            std::hint::black_box(page.get("root", |t| t.map(str::len)));
+            std::hint::black_box(page.get("t"));
+            std::hint::black_box(page.get("root"));
             std::hint::black_box(page.has("t"));
         });
         assert_eq!(n, 0, "lazy get/has, evict {evict}: {n} blocks");
         let n = blocks(|| {
-            std::hint::black_box(page.t("t", str::len));
+            std::hint::black_box(page.t("t"));
         });
         assert_eq!(n, 0, "lazy t, evict {evict}: {n} blocks");
     }
@@ -462,14 +462,14 @@ pub fn hot_path_allocations() {
         .unwrap();
     let page = lazy.page("p");
     let first = blocks(|| {
-        std::hint::black_box(page.get("k7", |t| t.map(str::len)));
+        std::hint::black_box(page.get("k7"));
     });
     assert!(
         first > 200 && first < eager_blocks,
         "first lazy access: {first} blocks (an eager build: {eager_blocks})"
     );
     let n = blocks(|| {
-        std::hint::black_box(page.get("k8", |t| t.map(str::len)));
+        std::hint::black_box(page.get("k8"));
     });
     assert_eq!(n, 0, "second lazy access: {n} blocks");
 
@@ -499,7 +499,7 @@ pub fn hot_path_allocations() {
     let base = dhat::HeapStats::get().curr_bytes;
     remote.add_file("en.json", remote_file.as_bytes()).unwrap();
     let added = dhat::HeapStats::get().curr_bytes - base;
-    assert_eq!(remote.t("k4999", str::to_owned), "value 4999");
+    assert_eq!(remote.t("k4999"), "value 4999");
     assert!(
         added < eager_bytes + eager_bytes / 4,
         "add_file holds {added} bytes, an eager build {eager_bytes}"

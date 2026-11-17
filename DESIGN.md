@@ -239,10 +239,10 @@ i18n_next::tauri_guest::set_locale("de").await?;             // Rust-бэкен�
 
 ```rust
 let settings = i18n.page("settings");          // Page: дешёвый view (Arc + имя), Clone + Send + Sync
-settings.t("title", str::to_owned);                           // page → root → fallback page → fallback root
+settings.t("title");                           // page → root → fallback page → fallback root
 settings.text("hint").arg("n", 3);             // Text в контексте страницы
 i18n.text("hint").page("settings");            // то же из цепочки
-i18n.with_locale("de").page("settings").t("title", str::to_owned);
+i18n.with_locale("de").page("settings").t("title");
 
 // Rust-only область для нативного UI
 let tray = i18n.page("tray");
@@ -303,7 +303,7 @@ let i18n = I18n::builder()
 ### 4.2 Короткие вызовы (имена из JS)
 
 ```rust
-i18n.t("nav.home", str::to_owned); i18n.get("nav.home", |t| t.map(str::to_owned)); i18n.has("nav.home");
+i18n.t("nav.home"); i18n.get("nav.home"); i18n.has("nav.home");
 i18n.tc("apples", 5);
 i18n.tn(1234.5); i18n.tn_as(9.99, "currency");
 i18n.td(when); i18n.td_as(when, "short"); i18n.tdr(when);
@@ -540,7 +540,7 @@ Msg      = Text(Template) | Plural { marked, forms: Vec<Template> }
 tauri::Builder::default()
     .plugin(tauri_plugin_i18n_next::Builder::new(i18n.clone()).system_locale(true).build())
 t!("menu.quit");                // плагин сам делает install; .global(false) — отключить
-app.i18n().t("menu.quit", str::to_owned);      // трейт-расширение Manager; app.state::<I18n>() тоже работает
+app.i18n().t("menu.quit");      // трейт-расширение Manager; app.state::<I18n>() тоже работает
 ```
 
 ### 6.1 Передача
@@ -745,8 +745,8 @@ git diff origin/main.. > target/pr.diff && cargo mutants -p i18n-next --in-diff 
 - `gungraun` (бывший iai-callgrind, Valgrind, только linux) считает инструкции и обращения к кешу на тех же сценариях. CI-джоб `perf` запускает его на базовом коммите и на PR в одном джобе с одним toolchain и падает при росте инструкций горячего пути больше порога (по умолчанию 3%). Число инструкций не зависит от загрузки машины.
 - `tests/alloc.rs` (dhat в режиме testing) фиксирует число аллокаций:
   - `Display` у `Text` без параметров — 0;
-  - `t(key, f)` — 0 (текст одалживается замыканию из снимка или сам ключ при промахе, без счётчика ссылок);
-  - `get(key, f)` — 0;
+  - `t()` — 0 (`&str` текста, хранимого до конца процесса, или сам ключ при промахе; без счётчика ссылок);
+  - `get()` — 0;
   - `write_to` в готовый буфер — 0;
   - `load_page` payload — 1.
 

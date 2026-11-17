@@ -197,8 +197,8 @@ impl<'a> Resolver<'a> {
     /// The text a link reads at `key`: a message, or a number in its JS spelling.
     fn text_at(&self, key: &str) -> Option<Arc<str>> {
         match self.layers.iter().find_map(|c| c.link_target(key))? {
-            Entry::Value(v) if &**v == "true" || &**v == "false" => None,
-            e => e.text().cloned(),
+            Entry::Value(v) if *v == "true" || *v == "false" => None,
+            e => e.text().map(Arc::from),
         }
     }
 
@@ -334,8 +334,8 @@ impl Answer<'_> {
     fn shape(&self) -> (u8, Option<&str>) {
         match self {
             Answer::Text(t) => (0, Some(t)),
-            Answer::Stored(e @ Entry::Msg(_)) => (0, e.text().map(|t| &**t)),
-            Answer::Stored(e @ Entry::Value(_)) => (1, e.text().map(|t| &**t)),
+            Answer::Stored(e @ Entry::Msg(_)) => (0, e.text()),
+            Answer::Stored(e @ Entry::Value(_)) => (1, e.text()),
             Answer::Stored(Entry::Node) => (2, None),
         }
     }

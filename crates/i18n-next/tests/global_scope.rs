@@ -61,10 +61,7 @@ fn global_instance_and_scope() {
     i18n_next::set_locale("de").unwrap();
     assert_eq!(stored, "Hallo");
     assert_eq!(i18n_next::locale().as_deref(), Some("de"));
-    assert_eq!(
-        i18n_next::page("p").unwrap().t("hi", str::to_owned),
-        "Hallo, Seite"
-    );
+    assert_eq!(i18n_next::page("p").unwrap().t("hi"), "Hallo, Seite");
     assert!(std::ptr::eq(installed, i18n_next::global().unwrap()));
     assert!(matches!(
         i18n_next::set_locale("fr"),

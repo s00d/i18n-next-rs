@@ -43,13 +43,10 @@ fn dir_with_pages() {
 
     // step 3: page → root → fallback page → fallback root
     let settings = i18n.page("settings");
-    assert_eq!(settings.t("title", str::to_owned), "Einstellungen");
-    assert_eq!(settings.t("nav.home", str::to_owned), "Startseite"); // de root beats the en page
-    assert_eq!(settings.t("nav.settings", str::to_owned), "Settings");
-    assert_eq!(
-        i18n.page("user-profile").t("title", str::to_owned),
-        "Profile"
-    );
+    assert_eq!(settings.t("title"), "Einstellungen");
+    assert_eq!(settings.t("nav.home"), "Startseite"); // de root beats the en page
+    assert_eq!(settings.t("nav.settings"), "Settings");
+    assert_eq!(i18n.page("user-profile").t("title"), "Profile");
 
     // step 4: the locales the files define
     let codes: Vec<_> = i18n.locales().into_iter().map(|l| l.code).collect();
@@ -73,9 +70,9 @@ fn files_like_android_assets() {
     // step 2: two folders, one page, merged in path order
     assert_eq!(i18n.pages(), ["user-profile"]);
     let page = i18n.page("user-profile");
-    assert_eq!(page.t("a", str::to_owned), "nested page");
-    assert_eq!(page.t("b", str::to_owned), "dash page");
-    assert_eq!(i18n.t("a", str::to_owned), "root");
+    assert_eq!(page.t("a"), "nested page");
+    assert_eq!(page.t("b"), "dash page");
+    assert_eq!(i18n.t("a"), "root");
 }
 
 /// Given a broken locale file, when the app builds, then it fails with the file's path
@@ -151,7 +148,7 @@ fn non_object_file_is_an_error() {
     let err = i18n.add_messages("en", None, "[1]").unwrap_err();
     assert!(matches!(&err, Error::NotObject { path } if path == "messages:en/index"));
     assert_eq!(i18n.version(), 0);
-    assert_eq!(i18n.t("a", str::to_owned), "A");
+    assert_eq!(i18n.t("a"), "A");
 }
 
 /// Given a catalog with `en` and `de`, when the front end asks for names it does not
@@ -178,15 +175,15 @@ fn unknown_and_bad_names() {
         assert_eq!(&*i18n.locale(), "de");
         // step 2: with_locale → the global fallback answers, `has` is false
         let view = i18n.with_locale(name);
-        assert_eq!(view.t("a", str::to_owned), "A");
+        assert_eq!(view.t("a"), "A");
         assert!(!view.has("a"));
         assert_eq!(&*view.locale(), name);
         // step 3: a page of that name → just the root
-        assert_eq!(i18n.page(name).t("a", str::to_owned), "Ä");
+        assert_eq!(i18n.page(name).t("a"), "Ä");
     }
     // step 4: a miss in an unknown locale reports that locale
     guard.allow("xx|index|nope");
-    assert_eq!(i18n.with_locale("xx").t("nope", str::to_owned), "nope");
+    assert_eq!(i18n.with_locale("xx").t("nope"), "nope");
     // step 5: chunk names that can never be valid
     assert!(matches!(
         i18n.add_messages("", None, "{}"),
@@ -225,7 +222,8 @@ fn disabled_locale() {
     assert!(matches!(i18n.set_locale("es"), Err(Error::DisabledLocale(c)) if c == "es"));
     assert_eq!(
         i18n.with_locale("es")
-            .get("a", |t| t.map(str::to_owned))
+            .get("a")
+            .map(str::to_owned)
             .as_deref(),
         Some("A-es")
     );
@@ -259,10 +257,10 @@ fn pages_false_folds_into_root() {
         .build()
         .unwrap();
     assert_eq!(i18n.pages(), Vec::<String>::new());
-    assert_eq!(i18n.t("k", str::to_owned), "page");
-    assert_eq!(i18n.t("r", str::to_owned), "root");
-    assert_eq!(i18n.with_locale("aa").t("k", str::to_owned), "page");
-    assert_eq!(i18n.with_locale("aa").t("only", str::to_owned), "page");
+    assert_eq!(i18n.t("k"), "page");
+    assert_eq!(i18n.t("r"), "root");
+    assert_eq!(i18n.with_locale("aa").t("k"), "page");
+    assert_eq!(i18n.with_locale("aa").t("only"), "page");
 }
 
 /// Given `page_alias("about-us", "about")` (`routesLocaleLinks`), when the app reads the
@@ -275,12 +273,12 @@ fn page_alias() {
         .build()
         .unwrap();
     // step 1: the alias reads the target page, and is a known page itself
-    assert_eq!(i18n.page("about-us").t("title", str::to_owned), "About");
+    assert_eq!(i18n.page("about-us").t("title"), "About");
     assert_eq!(i18n.pages(), ["about", "about-us"]);
     // step 2: writing through the alias writes the target
     i18n.add_messages("en", Some("about-us"), r#"{"sub": "Us"}"#)
         .unwrap();
-    assert_eq!(i18n.page("about").t("sub", str::to_owned), "Us");
+    assert_eq!(i18n.page("about").t("sub"), "Us");
     // step 3: an alias to a page nothing defines
     let err = I18n::builder()
         .page_alias("a", "nowhere")
@@ -321,14 +319,7 @@ fn config_drives_locales_and_fallbacks() {
         .build()
         .unwrap();
     assert_eq!(&*i18n.locale(), "de-at");
-    assert_eq!(
-        [
-            i18n.t("a", str::to_owned),
-            i18n.t("b", str::to_owned),
-            i18n.t("c", str::to_owned)
-        ],
-        ["at", "de", "en"]
-    );
+    assert_eq!([i18n.t("a"), i18n.t("b"), i18n.t("c")], ["at", "de", "en"]);
 
     // step 2: locales() in file order, then the rest; builder iso wins
     let infos = i18n.locales();
@@ -368,7 +359,7 @@ fn config_drives_locales_and_fallbacks() {
         .locale("de-at")
         .build()
         .unwrap();
-    assert_eq!(i18n.t("b", str::to_owned), "en");
+    assert_eq!(i18n.t("b"), "en");
 
     // step 4: a malformed config → Config error with the field; a missing one → Io
     let err = I18n::builder()
@@ -423,11 +414,11 @@ fn missing_handler_fires_exactly_on_misses() {
         .unwrap();
 
     // step 1: hits, a subtree, a number, the empty key → no call
-    assert_eq!(i18n.t("nav.home", str::to_owned), "Home");
-    assert_eq!(i18n.t("nav", str::to_owned), "nav");
-    assert_eq!(i18n.t("n", str::to_owned), "5");
+    assert_eq!(i18n.t("nav.home"), "Home");
+    assert_eq!(i18n.t("nav"), "nav");
+    assert_eq!(i18n.t("n"), "5");
     assert_eq!(i18n.t_with("n", &Args::new().str("name", "x")), "5");
-    assert_eq!(i18n.t("", str::to_owned), "");
+    assert_eq!(i18n.t(""), "");
     assert_eq!(
         i18n.t_with("greet", &Args::new().str("name", "Ann")),
         "Hi Ann"
@@ -435,7 +426,7 @@ fn missing_handler_fires_exactly_on_misses() {
     assert_eq!(guard.seen(), Vec::<String>::new());
 
     // step 2: get / has never report
-    assert_eq!(i18n.get("nope", |t| t.map(str::to_owned)), None);
+    assert_eq!(i18n.get("nope").map(str::to_owned), None);
     assert!(!i18n.has("nope"));
     assert_eq!(guard.seen(), Vec::<String>::new());
 
@@ -443,7 +434,7 @@ fn missing_handler_fires_exactly_on_misses() {
     guard.allow("de|index|nope");
     guard.allow("de|cart|nope.cart");
     guard.allow("en|index|gone");
-    assert_eq!(i18n.t("nope", str::to_owned), "nope");
+    assert_eq!(i18n.t("nope"), "nope");
     assert_eq!(
         i18n.page("cart")
             .t_with("nope.cart", &Args::new().int("n", 2).or("{n} items")),
@@ -472,21 +463,17 @@ fn add_messages_and_versions() {
         )
         .build()
         .unwrap();
-    let old = i18n.get("nav.home", |t| t.map(str::to_owned)).unwrap();
+    let old = i18n.get("nav.home").map(str::to_owned).unwrap();
 
     // step 1: objects merge, arrays and scalars replace
     i18n.add_messages("en", None, r#"{"nav": {"home": "Start"}, "list": ["z"]}"#)
         .unwrap();
     assert_eq!(i18n.version(), 1);
     assert_eq!(
-        [
-            i18n.t("nav.home", str::to_owned),
-            i18n.t("nav.about", str::to_owned),
-            i18n.t("list.0", str::to_owned)
-        ],
+        [i18n.t("nav.home"), i18n.t("nav.about"), i18n.t("list.0")],
         ["Start", "About", "z"]
     );
-    assert_eq!(i18n.get("list.1", |t| t.map(str::to_owned)), None);
+    assert_eq!(i18n.get("list.1").map(str::to_owned), None);
     assert_eq!(old, "Home");
 
     // step 2: a new locale becomes known and switchable
@@ -494,7 +481,7 @@ fn add_messages_and_versions() {
         .unwrap();
     i18n.set_locale("fr").unwrap();
     assert_eq!(i18n.version(), 3);
-    assert_eq!(i18n.page("x").t("t", str::to_owned), "Titre");
+    assert_eq!(i18n.page("x").t("t"), "Titre");
 
     // step 3: the same locale again is no change
     i18n.set_locale("fr").unwrap();
@@ -561,25 +548,19 @@ fn locales_named_only_by_the_builder_are_known() {
 
     // step 1: a link key with no file → a view reads de, then the global fallback
     let ch = i18n.with_locale("de-ch");
-    assert_eq!(
-        [ch.t("a", str::to_owned), ch.t("b", str::to_owned)],
-        ["de", "en"]
-    );
+    assert_eq!([ch.t("a"), ch.t("b")], ["de", "en"]);
     assert!(!ch.has("a")); // nothing of its own
 
     // step 2: set_locale accepts it; the active chain is de-ch → de → en
     i18n.set_locale("de-ch").unwrap();
     assert_eq!(&*i18n.locale(), "de-ch");
-    assert_eq!(
-        [i18n.t("a", str::to_owned), i18n.t("b", str::to_owned)],
-        ["de", "en"]
-    );
+    assert_eq!([i18n.t("a"), i18n.t("b")], ["de", "en"]);
     assert!(!i18n.has("a"));
 
     // step 3: a link target, an iso code → known, reading the global fallback
     for code in ["x-dst", "x-src", "ua"] {
         i18n.set_locale(code).unwrap();
-        assert_eq!(i18n.t("a", str::to_owned), "en");
+        assert_eq!(i18n.t("a"), "en");
     }
 
     // step 4: locales() lists all of them, by code; the iso tag stays
@@ -596,7 +577,7 @@ fn locales_named_only_by_the_builder_are_known() {
         .unwrap();
     assert_eq!(codes(&i18n), ["de", "en"]);
     i18n.set_locale("en").unwrap();
-    assert_eq!(i18n.get("a", |t| t.map(str::to_owned)), None);
+    assert_eq!(i18n.get("a").map(str::to_owned), None);
 
     // step 6: the implicit default `en`, active with no file → known and switchable back
     let i18n = I18n::builder()
@@ -616,7 +597,7 @@ fn locales_named_only_by_the_builder_are_known() {
         .messages("de", None, r#"{"a": "de"}"#)
         .build()
         .unwrap();
-    assert_eq!(i18n.t("a", str::to_owned), "de");
+    assert_eq!(i18n.t("a"), "de");
     assert_eq!(codes(&i18n), ["de-ch", "de"]);
 }
 
@@ -635,8 +616,8 @@ fn page_alias_with_pages_folded() {
         .build()
         .unwrap();
     // step 2: the alias and its target read the root, which holds the folded page
-    assert_eq!(i18n.page("about-us").t("t", str::to_owned), "About");
-    assert_eq!(i18n.page("about").t("k", str::to_owned), "root");
+    assert_eq!(i18n.page("about-us").t("t"), "About");
+    assert_eq!(i18n.page("about").t("k"), "root");
 }
 
 /// Given `pages(false)` and a root file that sorts after two page files of its locale
@@ -660,18 +641,13 @@ fn pages_false_merges_in_js_order() {
         .build()
         .unwrap();
     // step 2: page b over page a, then the root under both
-    assert_eq!(i18n.get("k", |t| t.map(str::to_owned)), None);
+    assert_eq!(i18n.get("k").map(str::to_owned), None);
     assert!(i18n.has("k"));
     assert_eq!(
-        [
-            i18n.t("k.x", str::to_owned),
-            i18n.t("k.y", str::to_owned),
-            i18n.t("m.x", str::to_owned),
-            i18n.t("m.y", str::to_owned)
-        ],
+        [i18n.t("k.x"), i18n.t("k.y"), i18n.t("m.x"), i18n.t("m.y")],
         ["B", "R", "B", "R"]
     );
-    assert_eq!(i18n.t("same", str::to_owned), "pa");
+    assert_eq!(i18n.t("same"), "pa");
 }
 
 /// Given fallback links that form a cycle, through the builder and through `i18n.json`,
@@ -691,12 +667,12 @@ fn fallback_cycles_end() {
         .missing(guard.missing())
         .build()
         .unwrap();
-    assert_eq!(i18n.t("x", str::to_owned), "B");
+    assert_eq!(i18n.t("x"), "B");
     guard.allow("a|index|nope");
     guard.allow("c|index|nope");
-    assert_eq!(i18n.t("nope", str::to_owned), "nope");
-    assert_eq!(i18n.with_locale("c").t("nope", str::to_owned), "nope");
-    assert_eq!(i18n.with_locale("c").t("x", str::to_owned), "B");
+    assert_eq!(i18n.t("nope"), "nope");
+    assert_eq!(i18n.with_locale("c").t("nope"), "nope");
+    assert_eq!(i18n.with_locale("c").t("x"), "B");
 
     // step 2: the same cycle from `i18n.json`
     let i18n = I18n::builder()
@@ -710,8 +686,8 @@ fn fallback_cycles_end() {
         .build()
         .unwrap();
     guard.allow("b|index|nope");
-    assert_eq!(i18n.with_locale("b").t("y", str::to_owned), "A");
-    assert_eq!(i18n.with_locale("b").t("nope", str::to_owned), "nope");
+    assert_eq!(i18n.with_locale("b").t("y"), "A");
+    assert_eq!(i18n.with_locale("b").t("nope"), "nope");
     assert_eq!(
         guard.seen(),
         ["a|index|nope", "c|index|nope", "b|index|nope"]
@@ -735,14 +711,11 @@ fn global_fallback_is_the_last_step_alone() {
         .build()
         .unwrap();
     // step 1: de-at → de → en, never en → fr
-    assert_eq!(
-        [i18n.t("a", str::to_owned), i18n.t("b", str::to_owned)],
-        ["en", "de"]
-    );
-    assert_eq!(i18n.get("only_fr", |t| t.map(str::to_owned)), None);
+    assert_eq!([i18n.t("a"), i18n.t("b")], ["en", "de"]);
+    assert_eq!(i18n.get("only_fr").map(str::to_owned), None);
     // step 2: en active → en → fr
     i18n.set_locale("en").unwrap();
-    assert_eq!(i18n.t("only_fr", str::to_owned), "fr");
+    assert_eq!(i18n.t("only_fr"), "fr");
 }
 
 /// Given an `i18n.json` whose global fallback `en` links to `fr`, a disabled `de` with
@@ -765,35 +738,29 @@ fn unknown_and_disabled_locales_read_the_js_chain() {
         .build()
         .unwrap();
     // step 1: the active en follows its own link → en, fr
-    assert_eq!(
-        [i18n.t("e", str::to_owned), i18n.t("z", str::to_owned)],
-        ["E", "fr-z"]
-    );
+    assert_eq!([i18n.t("e"), i18n.t("z")], ["E", "fr-z"]);
     // step 2: unknown qq → the global fallback alone, never en → fr
     guard.allow("qq|index|z");
-    assert_eq!(i18n.with_locale("qq").t("e", str::to_owned), "E");
-    assert_eq!(i18n.with_locale("qq").t("z", str::to_owned), "z");
+    assert_eq!(i18n.with_locale("qq").t("e"), "E");
+    assert_eq!(i18n.with_locale("qq").t("z"), "z");
     assert!(!i18n.with_locale("qq").has("e"));
     // step 3: disabled de → its own messages, then en; set_locale still refuses it
     guard.allow("de|index|z");
-    assert_eq!(i18n.with_locale("de").t("d", str::to_owned), "D");
-    assert_eq!(i18n.with_locale("de").t("e", str::to_owned), "E");
-    assert_eq!(i18n.with_locale("de").t("z", str::to_owned), "z");
+    assert_eq!(i18n.with_locale("de").t("d"), "D");
+    assert_eq!(i18n.with_locale("de").t("e"), "E");
+    assert_eq!(i18n.with_locale("de").t("z"), "z");
     assert!(i18n.with_locale("de").has("d"));
     assert!(matches!(
         i18n.set_locale("de"),
         Err(Error::DisabledLocale(_))
     ));
     // step 4: fr, a known locale, ends with en alone → fr, en (not en → fr again)
-    assert_eq!(i18n.with_locale("fr").t("e", str::to_owned), "E");
+    assert_eq!(i18n.with_locale("fr").t("e"), "E");
     // step 5: pt → zz with no zz messages: zz adds no layer, as JS stops there → pt, en
-    assert_eq!(i18n.with_locale("pt").t("e", str::to_owned), "E");
+    assert_eq!(i18n.with_locale("pt").t("e"), "E");
     i18n.set_locale("zz").unwrap();
     guard.allow("zz|index|z");
-    assert_eq!(
-        [i18n.t("e", str::to_owned), i18n.t("z", str::to_owned)],
-        ["E", "z"]
-    );
+    assert_eq!([i18n.t("e"), i18n.t("z")], ["E", "z"]);
     assert_eq!(guard.seen(), ["qq|index|z", "de|index|z", "zz|index|z"]);
 }
 
@@ -830,7 +797,7 @@ fn oversized_key_paths_are_refused() {
         .messages("en", None, &format!("{{\"{at_limit}\": \"ok\"}}"))
         .build()
         .unwrap();
-    assert_eq!(i18n.t(&at_limit, str::to_owned), "ok");
+    assert_eq!(i18n.t(&at_limit), "ok");
     let over = format!("{{\"{at_limit}b\": \"no\"}}");
     assert_eq!(json_kind(&over), "key path longer than 4096 bytes");
     // `add_messages` checks the same, and changes nothing
@@ -855,24 +822,24 @@ fn replaced_containers_drop_their_subtree() {
         )
         .build()
         .unwrap();
-    assert_eq!(i18n.get("a.b", |t| t.map(str::to_owned)), None);
+    assert_eq!(i18n.get("a.b").map(str::to_owned), None);
     assert!(i18n.has("a"));
-    assert_eq!(i18n.t("c.d", str::to_owned), "y");
-    assert_eq!(i18n.get("e.0", |t| t.map(str::to_owned)), None);
+    assert_eq!(i18n.t("c.d"), "y");
+    assert_eq!(i18n.get("e.0").map(str::to_owned), None);
 
     // step 2: an empty object merged over a full one keeps the children…
     i18n.add_messages("en", None, r#"{"c": {}}"#).unwrap();
-    assert_eq!(i18n.t("c.d", str::to_owned), "y");
+    assert_eq!(i18n.t("c.d"), "y");
     // …so a later scalar over it still drops them
     i18n.add_messages("en", None, r#"{"c": "flat"}"#).unwrap();
-    assert_eq!(i18n.t("c", str::to_owned), "flat");
-    assert_eq!(i18n.get("c.d", |t| t.map(str::to_owned)), None);
+    assert_eq!(i18n.t("c"), "flat");
+    assert_eq!(i18n.get("c.d").map(str::to_owned), None);
     // an empty object, then children merged into it, then replaced
     i18n.add_messages("en", None, r#"{"a": {"z": "1"}}"#)
         .unwrap();
-    assert_eq!(i18n.t("a.z", str::to_owned), "1");
+    assert_eq!(i18n.t("a.z"), "1");
     i18n.add_messages("en", None, r#"{"a": []}"#).unwrap();
-    assert_eq!(i18n.get("a.z", |t| t.map(str::to_owned)), None);
+    assert_eq!(i18n.get("a.z").map(str::to_owned), None);
 
     // step 3: 5k keys and 20k duplicate empty objects (the audit's quadratic case)
     let mut doc: String = (0..5_000).map(|i| format!("\"k{i}\":\"v\",")).collect();
@@ -881,10 +848,7 @@ fn replaced_containers_drop_their_subtree() {
         .messages("en", None, &format!("{{{doc}\"end\":\"e\"}}"))
         .build()
         .unwrap();
-    assert_eq!(
-        [i18n.t("k4999", str::to_owned), i18n.t("end", str::to_owned)],
-        ["v", "e"]
-    );
+    assert_eq!([i18n.t("k4999"), i18n.t("end")], ["v", "e"]);
     assert!(i18n.has("x"));
 }
 
@@ -997,7 +961,7 @@ fn tc_on_every_kind_of_value() {
     // step 1: plural forms; `t` keeps the whole string
     assert_eq!(i18n.tc("car", 0), "car");
     assert_eq!(i18n.tc("car", 7), "cars");
-    assert_eq!(i18n.t("car", str::to_owned), "car | cars");
+    assert_eq!(i18n.t("car"), "car | cars");
     assert_eq!(i18n.tc("marked", 0), "none");
     assert_eq!(i18n.tc("marked", 2), "2 many");
 
@@ -1566,11 +1530,11 @@ fn missing_is_reported_once_per_display() {
     assert!(take().is_empty());
 }
 
-/// Given an app that reads texts through `t`, when the closure reads again, switches
-/// the locale and reports a miss from inside the call, then each read sees the catalog as
-/// it is at that moment and nothing locks up.
+/// Given an app that keeps texts `t` returned, when the locale switches, the files reload
+/// with other texts and the instance is dropped, then the kept texts still read as they
+/// were, and equal texts of two instances are one stored copy.
 #[test]
-fn t_lends_the_text_in_place() {
+fn t_texts_outlive_catalog_changes() {
     let misses = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen = misses.clone();
     let i18n = I18n::builder()
@@ -1584,24 +1548,30 @@ fn t_lends_the_text_in_place() {
         .unwrap();
 
     // step 1: hit, fallback, page, miss → the stored text, the fallback, the page, the key
-    assert_eq!(i18n.t("hi", str::to_owned), "Hallo");
-    assert_eq!(i18n.t("bye", str::to_owned), "Bye");
-    assert_eq!(
-        i18n.page("settings").t("title", str::to_owned),
-        "Einstellungen"
-    );
-    assert_eq!(i18n.t("nope", str::to_owned), "nope");
-    assert_eq!(i18n.t("", str::len), 0);
+    let hallo = i18n.t("hi");
+    assert_eq!(hallo, "Hallo");
+    assert_eq!(i18n.t("bye"), "Bye");
+    assert_eq!(i18n.page("settings").t("title"), "Einstellungen");
+    assert_eq!(i18n.t("nope"), "nope");
+    assert_eq!(i18n.t(""), "");
     assert_eq!(*misses.lock().unwrap(), ["de:nope"]);
 
-    // step 2: nested reads and a locale switch inside the closure → the outer text stays,
-    // the inner read after the switch sees `en`
-    let (outer, inner) = i18n.t("hi", |outer| {
-        let before = i18n.t("hi", str::to_owned);
-        i18n.set_locale("en").unwrap();
-        (format!("{outer}/{before}"), i18n.t("hi", str::to_owned))
-    });
-    assert_eq!(outer, "Hallo/Hallo");
-    assert_eq!(inner, "Hello");
-    assert_eq!(i18n.t("hi", str::to_owned), "Hello");
+    // step 2: switch the locale, replace the text → new answers, the kept one unchanged
+    i18n.set_locale("en").unwrap();
+    i18n.add_messages("de", None, r#"{"hi": "Servus"}"#)
+        .unwrap();
+    assert_eq!(i18n.t("hi"), "Hello");
+    assert_eq!(i18n.with_locale("de").t("hi"), "Servus");
+    assert_eq!(hallo, "Hallo");
+
+    // step 3: another instance with the same text → the same stored copy; dropping both
+    // keeps the kept text readable
+    let other = I18n::builder()
+        .locale("de")
+        .messages("de", None, r#"{"x": "Hallo"}"#)
+        .build()
+        .unwrap();
+    assert!(std::ptr::eq(other.t("x"), hallo));
+    drop((i18n, other));
+    assert_eq!(hallo, "Hallo");
 }

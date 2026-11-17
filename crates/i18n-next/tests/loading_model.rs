@@ -144,8 +144,8 @@ fn ask(i: &I18n, locale: Option<usize>, page: Option<usize>, key: usize) -> Opti
         None => i.page(""),
     };
     match page {
-        Some(p) => view.page(PAGES[p]).get(KEYS[key], |t| t.map(str::to_owned)),
-        None => view.get(KEYS[key], |t| t.map(str::to_owned)),
+        Some(p) => view.page(PAGES[p]).get(KEYS[key]).map(str::to_owned),
+        None => view.get(KEYS[key]).map(str::to_owned),
     }
 }
 

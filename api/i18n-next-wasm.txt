@@ -314,7 +314,7 @@ pub fn i18n_next::I18n::missing_files(&self, &str, core::option::Option<&str>) -
 impl i18n_next::I18n
 pub fn i18n_next::I18n::add_messages(&self, &str, core::option::Option<&str>, &str) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::I18n::builder() -> i18n_next::Builder
-pub fn i18n_next::I18n::get<R>(&self, &str, impl core::ops::function::FnOnce(core::option::Option<&str>) -> R) -> R
+pub fn i18n_next::I18n::get(&self, &str) -> core::option::Option<&'static str>
 pub fn i18n_next::I18n::has(&self, &str) -> bool
 pub fn i18n_next::I18n::has_locale(&self, &str) -> bool
 pub fn i18n_next::I18n::has_page(&self, &str) -> bool
@@ -324,7 +324,7 @@ pub fn i18n_next::I18n::page(&self, &str) -> i18n_next::View
 pub fn i18n_next::I18n::pages(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn i18n_next::I18n::reload(&self) -> core::result::Result<(), i18n_next::Error>
 pub fn i18n_next::I18n::set_locale(&self, &str) -> core::result::Result<(), i18n_next::Error>
-pub fn i18n_next::I18n::t<R>(&self, &str, impl core::ops::function::FnOnce(&str) -> R) -> R
+pub fn i18n_next::I18n::t<'k>(&self, &'k str) -> &'k str
 pub fn i18n_next::I18n::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
 pub fn i18n_next::I18n::tc(&self, &str, impl core::convert::Into<i18n_next::Count>) -> alloc::string::String
 pub fn i18n_next::I18n::tc_with(&self, &str, impl core::convert::Into<i18n_next::Count>, &i18n_next::Args<'_>) -> alloc::string::String
@@ -522,11 +522,11 @@ impl core::marker::Copy for i18n_next::Timestamp
 impl core::marker::StructuralPartialEq for i18n_next::Timestamp
 pub struct i18n_next::View
 impl i18n_next::View
-pub fn i18n_next::View::get<R>(&self, &str, impl core::ops::function::FnOnce(core::option::Option<&str>) -> R) -> R
+pub fn i18n_next::View::get(&self, &str) -> core::option::Option<&'static str>
 pub fn i18n_next::View::has(&self, &str) -> bool
 pub fn i18n_next::View::locale(&self) -> alloc::sync::Arc<str>
 pub fn i18n_next::View::page(&self, &str) -> i18n_next::View
-pub fn i18n_next::View::t<R>(&self, &str, impl core::ops::function::FnOnce(&str) -> R) -> R
+pub fn i18n_next::View::t<'k>(&self, &'k str) -> &'k str
 pub fn i18n_next::View::t_with(&self, &str, &i18n_next::Args<'_>) -> alloc::string::String
 pub fn i18n_next::View::tc(&self, &str, impl core::convert::Into<i18n_next::Count>) -> alloc::string::String
 pub fn i18n_next::View::tc_with(&self, &str, impl core::convert::Into<i18n_next::Count>, &i18n_next::Args<'_>) -> alloc::string::String

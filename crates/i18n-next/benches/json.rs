@@ -171,11 +171,7 @@ fn json(c: &mut Criterion) {
         assert_eq!(a, serde_visitor_flat(d));
         let own = reader_load(d);
         for (k, v) in &a {
-            assert_eq!(
-                own.get(k, |t| t.map(str::to_owned)).as_deref(),
-                Some(v.as_str()),
-                "{k}"
-            );
+            assert_eq!(own.get(k), Some(v.as_str()), "{k}");
         }
     }
     let mut g = c.benchmark_group("json/reader");

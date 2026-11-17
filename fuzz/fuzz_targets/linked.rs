@@ -71,7 +71,7 @@ fuzz_target!(|data: &[u8]| {
         for page in ["", "p", "q", "none"] {
             let view = i18n.with_locale(locale).page(page);
             for key in KEYS {
-                let _ = view.t(key, str::to_owned);
+                let _ = view.t(key);
                 let _ = view.tc(key, 2);
             }
         }

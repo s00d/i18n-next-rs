@@ -279,10 +279,7 @@ fn explicit_options_beat_the_scope() {
         assert_eq!(a.with_locale("en").page("index").text("who"), "A:en:root");
         // step 5: the free functions read the same frame
         assert_eq!(i18n_next::locale().as_deref(), Some("de"));
-        assert_eq!(
-            i18n_next::page("index").unwrap().t("who", str::to_owned),
-            "B:de:root"
-        );
+        assert_eq!(i18n_next::page("index").unwrap().t("who"), "B:de:root");
         // step 6: an inner frame overrides one part, inherits the rest
         scope().locale("en").run(|| assert_eq!(t!("who"), "B:en:p"));
         assert_eq!(t!("who"), "B:de:p");

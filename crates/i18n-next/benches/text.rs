@@ -150,7 +150,7 @@ fn text(c: &mut Criterion) {
 fn macros(c: &mut Criterion) {
     let i18n = catalog();
     c.bench_function("i18n/t/macro_baseline", |b| {
-        b.iter(|| i18n.t(black_box("plain"), str::len))
+        b.iter(|| i18n.t(black_box("plain")))
     });
     c.bench_function("text/to_string/macro_explicit", |b| {
         b.iter(|| t!(i18n => black_box("plain")).to_string())

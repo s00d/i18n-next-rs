@@ -318,7 +318,7 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
             for key in KEYS.iter().chain(&["zz"]) {
                 let want = answer(&merged, key, locale == "tr");
                 prop_assert_eq!(
-                    v_on.get(key, |t| t.map(str::to_owned)),
+                    v_on.get(key).map(str::to_owned),
                     want.clone(),
                     "{} {:?} {}",
                     locale,
@@ -329,7 +329,7 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
                     Value::Text(t) => t.clone(),
                     Value::Num(n) => n.to_string(),
                 });
-                prop_assert_eq!(v_off.get(key, |t| t.map(str::to_owned)), raw.clone());
+                prop_assert_eq!(v_off.get(key).map(str::to_owned), raw.clone());
                 // a view's answer that the layer's own stored result could not give
                 let own_layer = chain(case, locale).into_iter().find_map(|code| {
                     [page.filter(|p| *p != "nopage"), None]
@@ -370,7 +370,8 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
             let text = on
                 .with_locale(&locale)
                 .page(&page)
-                .get(&key, |t| t.map(str::to_owned))
+                .get(&key)
+                .map(str::to_owned)
                 .unwrap_or_default();
             prop_assert!(
                 text.contains(&link),

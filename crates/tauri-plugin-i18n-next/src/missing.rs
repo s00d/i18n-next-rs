@@ -45,7 +45,7 @@ static WRITE: Mutex<()> = Mutex::new(());
 /// let i18n = i18n_next::I18n::builder()
 ///     .missing(tauri_plugin_i18n_next::missing)
 ///     .build()?;
-/// assert_eq!(i18n.t("nope", str::to_owned), "nope");
+/// assert_eq!(i18n.t("nope"), "nope");
 /// # Ok::<(), i18n_next::Error>(())
 /// ```
 pub fn missing(locale: &str, key: &str, page: &str) {

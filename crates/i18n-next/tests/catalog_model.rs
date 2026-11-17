@@ -1245,7 +1245,7 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
         .cloned();
     let kept = kept_key
         .as_deref()
-        .and_then(|k| i18n.get(k, |t| t.map(str::to_owned)));
+        .and_then(|k| i18n.get(k).map(str::to_owned));
     let kept_text = kept.as_deref().map(str::to_owned);
     let kept_view = i18n.page("p");
     let mut versions = vec![i18n.version()];
@@ -1346,17 +1346,12 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
                 }
                 1 => {
                     let (want, miss) = m.t(None, Some(name), "a", None);
-                    prop_assert_eq!(i18n.page(name).t("a", str::to_owned), want, "step {}", step);
+                    prop_assert_eq!(i18n.page(name).t("a"), want, "step {}", step);
                     expected_missing.extend(miss);
                 }
                 2 => {
                     let (want, miss) = m.t(Some(name), None, "a", None);
-                    prop_assert_eq!(
-                        i18n.with_locale(name).t("a", str::to_owned),
-                        want,
-                        "step {}",
-                        step
-                    );
+                    prop_assert_eq!(i18n.with_locale(name).t("a"), want, "step {}", step);
                     prop_assert_eq!(
                         i18n.with_locale(name).has("a"),
                         m.has(Some(name), None, "a")
@@ -1436,7 +1431,7 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
                     .lookup_as(Some(code), *page, key, false, false)
                     .and_then(|h| h.text());
                 prop_assert_eq!(
-                    a.get(key, |t| t.map(str::to_owned)),
+                    a.get(key).map(str::to_owned),
                     want.clone(),
                     "end: {} {:?} {:?}",
                     code,
@@ -1444,7 +1439,7 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
                     key
                 );
                 prop_assert_eq!(
-                    b.get(key, |t| t.map(str::to_owned)),
+                    b.get(key).map(str::to_owned),
                     want,
                     "fresh: {} {:?} {:?}",
                     code,
@@ -1466,8 +1461,8 @@ fn run(case: &Case) -> Result<(), TestCaseError> {
     let now = i18n.page("p");
     for key in &keys {
         prop_assert_eq!(
-            kept_view.get(key, |t| t.map(str::to_owned)),
-            now.get(key, |t| t.map(str::to_owned)),
+            kept_view.get(key).map(str::to_owned),
+            now.get(key).map(str::to_owned),
             "kept view: {:?}",
             key
         );
@@ -1503,9 +1498,9 @@ fn check_lookup(
             };
             let args = kind.map(ArgsKind::args);
             let got = match (&view, &args) {
-                (Some(v), None) => v.t(key, str::to_owned),
+                (Some(v), None) => v.t(key).to_owned(),
                 (Some(v), Some(a)) => v.t_with(key, a),
-                (None, None) => i18n.t(key, str::to_owned),
+                (None, None) => i18n.t(key).to_owned(),
                 (None, Some(a)) => i18n.t_with(key, a),
             };
             let (want, miss) = m.t(vloc, page, key, kind);
@@ -1514,10 +1509,10 @@ fn check_lookup(
         }
         Via::TryT | Via::Get => {
             let got = match (&view, via) {
-                (Some(v), Via::TryT) => v.get(key, |t| t.map(str::to_owned)),
-                (Some(v), _) => v.get(key, |t| t.map(str::to_owned)),
-                (None, Via::TryT) => i18n.get(key, |t| t.map(str::to_owned)),
-                (None, _) => i18n.get(key, |t| t.map(str::to_owned)),
+                (Some(v), Via::TryT) => v.get(key).map(str::to_owned),
+                (Some(v), _) => v.get(key).map(str::to_owned),
+                (None, Via::TryT) => i18n.get(key).map(str::to_owned),
+                (None, _) => i18n.get(key).map(str::to_owned),
             };
             let want = m.lookup(vloc, page, key).and_then(|h| h.text());
             prop_assert_eq!(got, want, "{}", what);

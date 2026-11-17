@@ -7,6 +7,9 @@ are documented here. The three packages are released together with one version.
 
 - Lookups hash the key once for the whole fallback chain: a key found in a fallback locale
   or missing everywhere is read faster.
+- **Breaking:** the `chrono` feature is removed. `chrono` is unmaintained
+  (RUSTSEC-2026-0543); use the `time` feature, or pass milliseconds
+  (`dt.timestamp_millis()`) to `td` / `tdr`.
 
 ## 0.1.1 (2026-11-17)
 

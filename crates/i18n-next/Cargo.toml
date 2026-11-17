@@ -26,8 +26,7 @@ bench = false
 tracing = { version = "0.1", optional = true, default-features = false }
 # `serde` feature only: `Text` serializes as its displayed string (`collect_str`).
 serde = { version = "1.0.229", optional = true, default-features = false }
-# `chrono` / `time` features only: `Timestamp` from their date-time types.
-chrono = { version = "0.4.45", optional = true, default-features = false }
+# `time` feature only: `Timestamp` from its date-time types.
 time = { version = "0.3.55", optional = true, default-features = false }
 
 # Browser time zones (`tz` on wasm32-unknown-unknown only, DESIGN 2.1 / 5.4 / S12):
@@ -58,7 +57,6 @@ payload = []
 # on wasm32-unknown-unknown through `js-sys` alone (its `futures` and the `wasm-bindgen` it
 # re-exports; no web-sys). Elsewhere it is only `payload`.
 tauri-guest = ["payload", "dep:js-sys"]
-chrono = ["dep:chrono"]
 time = ["dep:time"]
 
 # Checks only, never shipped (DESIGN 2.3). Native-only: proptest models and dhat run

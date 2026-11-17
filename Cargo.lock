@@ -1890,7 +1890,6 @@ dependencies = [
 name = "i18n-next"
 version = "0.1.1"
 dependencies = [
- "chrono",
  "criterion",
  "dhat",
  "foldhash",

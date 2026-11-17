@@ -322,27 +322,6 @@ fn dates_in_texts_arguments_and_macros() {
     });
 }
 
-/// Given `chrono` date-times (with a zone, an offset, naive), when they become a
-/// `Timestamp`, then they are the same instant in whole milliseconds toward zero.
-#[cfg(feature = "chrono")]
-#[test]
-fn timestamps_from_chrono() {
-    use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Utc};
-    use i18n_next::Timestamp;
-    let utc = Utc.timestamp_millis_opt(AT).unwrap();
-    assert_eq!(Timestamp::from(utc).millis(), Some(AT));
-    let berlin = utc.with_timezone(&FixedOffset::east_opt(3600).unwrap());
-    assert_eq!(Timestamp::from(berlin).millis(), Some(AT));
-    assert_eq!(Timestamp::from(utc.naive_utc()).millis(), Some(AT));
-    let before = DateTime::from_timestamp(-1, 999_600_000).unwrap();
-    assert_eq!(Timestamp::from(before).millis(), Some(0), "toward zero");
-    // chrono's range (±262 143 years) is inside a JS `Date`'s: its ends stay valid
-    let last = NaiveDate::MAX.and_hms_opt(23, 59, 59).unwrap();
-    assert!(Timestamp::from(last).is_valid());
-    let i18n = I18n::builder().time_zone("UTC").build().unwrap();
-    assert_eq!(i18n.td(utc), "1/5/2024");
-}
-
 /// Given `time` date-times (offset, UTC, primitive), when they become a `Timestamp`, then
 /// they are the same instant in whole milliseconds toward zero.
 #[cfg(feature = "time")]

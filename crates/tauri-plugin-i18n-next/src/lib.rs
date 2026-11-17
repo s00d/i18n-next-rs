@@ -1,4 +1,4 @@
-#![doc = include_str!("../README.md")]
+#![doc = include_str!("../CRATE_README.md")]
 #![forbid(unsafe_code)]
 
 use i18n_next::{Change, I18n, Subscription, Text, WatchGuard};

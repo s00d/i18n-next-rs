@@ -3,6 +3,13 @@
 All notable changes to `i18n-next`, `tauri-plugin-i18n-next` and `tauri-plugin-i18n-next-api`
 are documented here. The three packages are released together with one version.
 
+## 0.1.1 (2026-11-17)
+
+- `tauri-plugin-i18n-next-api` on npm has its own README (install, Vue, `connect`) instead of
+  the Rust crate's.
+- The crates ship only what a build needs: sources, `build.rs`, permissions, README, LICENSE
+  and CHANGELOG, no tests or benchmarks.
+
 ## 0.1.0 (2026-11-17)
 
 First release of `i18n-next`, `tauri-plugin-i18n-next` and `tauri-plugin-i18n-next-api`.

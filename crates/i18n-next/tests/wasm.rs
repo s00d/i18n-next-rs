@@ -165,7 +165,7 @@ fn lazy_extend_subscribe_reload() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let log = seen.clone();
     let _sub = i18n.subscribe(move |c| log.lock().unwrap().push(c.version));
-    assert_eq!((i18n.t("a"), i18n.t("lib")), ("app".into(), "L".into()));
+    assert_eq!((i18n.t("a"), i18n.t("lib")), ("app", "L"));
     i18n.reload().unwrap();
     assert_eq!(*seen.lock().unwrap(), [1]);
 }

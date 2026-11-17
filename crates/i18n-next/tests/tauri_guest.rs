@@ -378,7 +378,7 @@ async fn connect_builds_from_meta_and_caches_chunks_by_tag() {
             i18n.t("title"),
             i18n.tc("apples", 3)
         ),
-        ("One".into(), "App".into(), "3 apples".into())
+        ("One", "App", "3 apples".into())
     );
     assert_eq!(fake.fetches(), 2); // en/index, en/p1
     assert_eq!(
@@ -397,13 +397,13 @@ async fn connect_builds_from_meta_and_caches_chunks_by_tag() {
     // de-at → de → en: own, then de, then en
     assert_eq!(
         (i18n.t("nav.home"), i18n.t("title"), i18n.page("p1").t("h")),
-        ("Daham".into(), "Anwendung".into(), "Eins".into())
+        ("Daham", "Anwendung", "Eins")
     );
     assert_eq!(fake.fetches(), 5); // + de-at/index, de/index, de/p1
     tauri_guest::set_locale("en").await.unwrap();
     assert_eq!(
         (&*i18n.locale(), i18n.page("p1").t("h"), fake.fetches()),
-        ("en", "One".into(), 5)
+        ("en", "One", 5)
     );
     // a page checked at the version shown: no call at all
     let calls = Array::from(&get(&fake.0, "ipc")).length();
@@ -429,10 +429,7 @@ async fn changed_events_apply_in_version_order() {
     fake.switch("de");
     fake.deliver(0);
     tauri_guest::set_page("index").await.unwrap();
-    assert_eq!(
-        (&*i18n.locale(), i18n.t("title")),
-        ("de", "Anwendung".into())
-    );
+    assert_eq!((&*i18n.locale(), i18n.t("title")), ("de", "Anwendung"));
     // step 2: en, then de-at; de-at's event comes first, en's late
     fake.switch("en");
     fake.switch("de-at");
@@ -455,7 +452,7 @@ async fn changed_events_apply_in_version_order() {
     tauri_guest::set_page("index").await.unwrap();
     assert_eq!(
         (i18n.t("title"), fake.count("|meta")),
-        ("Servus".into(), metas + 2)
+        ("Servus", metas + 2)
     );
 }
 
@@ -485,7 +482,7 @@ async fn gone_chunks_read_meta_again() {
     tauri_guest::set_page("p2").await.unwrap();
     assert_eq!(
         (i18n.page("p2").t("h"), fake.fetches() - fetches),
-        ("Two!!".into(), 2)
+        ("Two!!", 2)
     );
     // step 2: the catalog changes under every read
     fn edit(server: Rc<RefCell<I18n>>, fake: JsValue, n: u32) {
@@ -543,21 +540,15 @@ async fn falls_back_to_invoke_only_when_fetch_rejects() {
     );
     fake.set("status", JsValue::UNDEFINED);
     tauri_guest::set_page("p1").await.unwrap();
-    assert_eq!(
-        (i18n.page("p1").t("h"), fake.count("|load")),
-        ("One".into(), 0)
-    );
+    assert_eq!((i18n.page("p1").t("h"), fake.count("|load")), ("One", 0));
     fake.set("protocol", false);
     tauri_guest::set_page("p2").await.unwrap();
     let fetches = fake.fetches();
-    assert_eq!(
-        (i18n.page("p2").t("h"), fake.count("|load")),
-        ("Two".into(), 1)
-    );
+    assert_eq!((i18n.page("p2").t("h"), fake.count("|load")), ("Two", 1));
     tauri_guest::set_locale("de").await.unwrap();
     assert_eq!(
         (i18n.t("title"), fake.fetches(), fake.count("|load")),
-        ("Anwendung".into(), fetches, 2)
+        ("Anwendung", fetches, 2)
     );
 }
 
@@ -610,7 +601,7 @@ async fn preload_and_load_follow_the_locale() {
     tauri_guest::set_locale("de").await.unwrap();
     assert_eq!(
         (i18n.page("p1").t("h"), i18n.page("p2").t("h")),
-        ("Eins".into(), "Zwei".into())
+        ("Eins", "Zwei")
     );
     let calls = fake.count("|meta");
     tauri_guest::set_page("p2").await.unwrap();
@@ -696,7 +687,7 @@ async fn a_second_connect_waits_its_turn_and_never_shows_an_older_catalog() {
             i18n.t("title"),
             i18n.page("p1").t("h")
         ),
-        ("de", "de".to_owned(), "Anwendung".into(), "Eins".into())
+        ("de", "de".to_owned(), "Anwendung", "Eins")
     );
 }
 
@@ -717,7 +708,7 @@ async fn concurrent_connects_share_one_link_and_one_listener() {
     fake.switch("de");
     fake.deliver(0);
     tauri_guest::set_page("p1").await.unwrap();
-    assert_eq!((&*b.locale(), b.page("p1").t("h")), ("de", "Eins".into()));
+    assert_eq!((&*b.locale(), b.page("p1").t("h")), ("de", "Eins"));
     tauri_guest::disconnect();
     microtasks().await;
     assert_eq!(
@@ -799,7 +790,7 @@ async fn only_a_type_error_moves_reads_to_raw_invoke() {
             fake.fetches() - fetches,
             fake.count("|load")
         ),
-        ("One".into(), 1, 0)
+        ("One", 1, 0)
     );
 }
 
@@ -825,7 +816,7 @@ async fn a_raw_load_of_an_older_version_is_read_again() {
             fake.count("|meta") - metas,
             fake.count("|load") - loads
         ),
-        ("One!".into(), 2, 2)
+        ("One!", 2, 2)
     );
 }
 
@@ -906,7 +897,7 @@ async fn a_reconnect_reads_only_chunks_it_did_not_have() {
     let i18n = tauri_guest::connect("p1").await.unwrap();
     assert_eq!(
         (i18n.t("title"), i18n.page("p1").t("h"), fake.fetches()),
-        ("App".into(), "One".into(), fetches)
+        ("App", "One", fetches)
     );
     tauri_guest::set_page("p2").await.unwrap();
     assert_eq!(fake.fetches(), fetches + 1);

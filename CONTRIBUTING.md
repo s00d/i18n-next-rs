@@ -9,7 +9,7 @@ macros, the plugin through IPC, guest-js through its exported API.
 crates/i18n-next/                 the crate
 crates/tauri-plugin-i18n-next/    the plugin, guest-js/ and its tests
 scripts/                          generators: compat goldens, CLDR data, case tables, tzdb
-tools/                            the size probe and tools/size-check.sh
+tools/                            the mutants survivor list
 api/                              public API snapshots (cargo public-api)
 fixtures/compat/                  goldens written by the JS library
 examples/                         playgrounds on one shared locales/ folder
@@ -35,7 +35,6 @@ cargo test --doc --workspace --locked
 cargo build -p i18n-next --locked --target wasm32-unknown-unknown --features tauri-guest
 cargo test -p i18n-next --locked --target wasm32-unknown-unknown --features tauri-guest   # Node; CHROMEDRIVER=… for Chrome
 cargo test -p i18n-next --locked --target wasm32-wasip1                                   # wasmtime
-tools/size-check.sh                                                # .wasm budgets
 
 # guest-js
 pnpm install
@@ -105,12 +104,12 @@ reason.
 
 ## Benchmarks
 
+Local only, not in CI:
+
 ```bash
 cargo bench -p i18n-next                    # criterion
-cargo bench -p i18n-next --bench instructions   # instruction counts (gungraun, needs valgrind)
+cargo bench -p compare                      # against rust-i18n, fluent-bundle, ICU4X
 ```
-
-
 
 ## Docs
 

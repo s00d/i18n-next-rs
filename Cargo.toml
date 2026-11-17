@@ -9,7 +9,7 @@ members = [
 # Tauri apps have their own workspace and lock: `generate_context!` needs a
 # built frontend, and `cargo test --workspace` must not depend on it (DESIGN 8a).
 # The size probe is a cdylib built only by the CI `size` job.
-exclude = ["examples/tauri-app", "examples/leptos-app", "tools/size-probe"]
+exclude = ["examples/tauri-app", "examples/leptos-app"]
 
 [workspace.package]
 version = "0.2.0"

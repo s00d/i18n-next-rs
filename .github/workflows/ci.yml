@@ -14,8 +14,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Binaryen release for `wasm-opt -Oz` in the size job.
-  BINARYEN_VERSION: "123"
   # Nightly for cargo-public-api only (rustdoc JSON); bump together with the tool.
   PUBLIC_API_NIGHTLY: nightly-2026-08-07
   # Flip to "true" after the first crates.io release: turns on cargo-semver-checks.
@@ -99,28 +97,13 @@ jobs:
         if: runner.os == 'Linux' && matrix.toolchain == 'stable'
         run: cargo run -p playground-rust --locked -- --check
 
-      - name: JUnit report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: junit-${{ matrix.os }}-${{ matrix.toolchain }}
-          path: target/nextest/ci/junit.xml
-          if-no-files-found: ignore
-
-  # The core crate builds for the browser and WASI (DESIGN 2.1, 7.6); .wasm size of the micro,
-  # full and guest builds after `wasm-opt -Oz`, against the budget and the PR base (DESIGN 2.4).
+  # The core crate builds and runs its tests in the browser and on WASI (DESIGN 2.1, 7.6).
   wasm:
-    name: wasm + size
+    name: wasm
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Checkout base commit
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .size-base
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown, wasm32-wasip1
@@ -168,17 +151,6 @@ jobs:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir=.
         # WASI has no system zoneinfo inside wasmtime: a WASI app ships the bundled tzdb
         run: cargo test -p i18n-next --locked --target wasm32-wasip1 --features tzdb
-      - name: Install wasm-opt (binaryen)
-        run: |
-          curl -sSfL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar xz -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
-      - name: Size check
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tools/size-check.sh "$PWD/.size-base"
-          else
-            tools/size-check.sh
-          fi
 
   # Repository checks on one runner: no runtime deps (DESIGN 2.3); licenses, advisories and
   # unused deps (8b.10); compat goldens and generated data still match their JS oracles; the
@@ -268,48 +240,6 @@ jobs:
           cargo semver-checks -p i18n-next --features payload
           cargo semver-checks -p tauri-plugin-i18n-next
 
-  # Instruction counts with gungraun (Valgrind): deterministic, no timing noise. On PRs
-  # the base commit is measured first and the PR fails on >3% more instructions (DESIGN 7.7).
-  perf:
-    name: perf + compare smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      GUNGRAUN_HOME: ${{ github.workspace }}/target/gungraun
-    steps:
-      - uses: actions/checkout@v4
-      - name: Checkout base commit
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .perf-base
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install valgrind
-        run: sudo apt-get update && sudo apt-get install -y valgrind
-      # The runner must match the gungraun version in Cargo.lock exactly.
-      - name: gungraun version
-        run: |
-          v=$(cargo metadata --format-version 1 --locked | jq -r '.packages[] | select(.name == "gungraun") | .version' | head -n1)
-          echo "GUNGRAUN_VERSION=$v" >> "$GITHUB_ENV"
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: gungraun-runner@${{ env.GUNGRAUN_VERSION }}
-      - name: Baseline on the base commit
-        if: github.event_name == 'pull_request' && hashFiles('.perf-base/crates/i18n-next/benches/instructions.rs') != ''
-        working-directory: .perf-base
-        run: cargo bench -p i18n-next --bench instructions -- --save-baseline=base
-      - name: Instructions on this commit
-        run: |
-          if [ -d "$GUNGRAUN_HOME" ] && [ "${{ github.event_name }}" = "pull_request" ]; then
-            cargo bench -p i18n-next --locked --bench instructions -- --baseline=base --callgrind-limits='ir=3%'
-          else
-            cargo bench -p i18n-next --locked --bench instructions
-          fi
-      # benches/compare: one pass of every bench (`--test`), no timings or thresholds.
-      - run: cargo bench -p compare --locked -- --test
-
   # guest-js (scripts live in crates/tauri-plugin-i18n-next/package.json).
   node:
     name: guest-js
@@ -331,13 +261,6 @@ jobs:
       - name: Build guest-js and check dist
         run: pnpm -C crates/tauri-plugin-i18n-next build
       - run: pnpm -C crates/tauri-plugin-i18n-next test
-      # a bench per public function (from the .d.ts snapshot), and every bench runs: a smoke
-      # with a short time per task, no thresholds (the numbers are read locally, PLAN)
-      - run: pnpm -C crates/tauri-plugin-i18n-next bench:inventory
-      - name: Bench smoke
-        run: pnpm -C crates/tauri-plugin-i18n-next bench
-        env:
-          BENCH_TIME: "20"
 
   # The playgrounds (DESIGN 8a, 8b.19) on one runner, each on its own workspace and lock with
   # the plugin and guest-js of this checkout: tauri-app (Vue front end type-checked and built

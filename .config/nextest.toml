@@ -31,9 +31,6 @@ leak-timeout = "1s"
 slow-timeout = { period = "30s", terminate-after = 2 }
 fail-fast = false
 
-[profile.ci.junit]
-path = "junit.xml"
-
 # cargo-mutants (.cargo/mutants.toml): a mutant can loop and allocate without bound,
 # so kill early, stop at the first failure (the mutant is caught) and leave cores free.
 [profile.mutants]

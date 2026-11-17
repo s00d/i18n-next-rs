@@ -1,5 +1,5 @@
-# The Android build of tauri-app and the comparison benchmark on a GitHub runner, so they never
-# load a developer machine. Manual (Actions -> heavy -> Run workflow).
+# The Android build of tauri-app on a GitHub runner, so it never loads a developer machine.
+# Manual (Actions -> heavy -> Run workflow).
 name: heavy
 
 on:
@@ -9,22 +9,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # benches/compare: i18n-next against rust-i18n, fluent-bundle and ICU4X; the raw criterion
-  # reports are the artifact.
-  benches:
-    name: compare benches
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo bench -p compare --locked
-      - uses: actions/upload-artifact@v4
-        with:
-          name: compare
-          path: target/criterion
-
   # tauri-app for Android (DESIGN 8a): `gen/android` is generated here, never
   # committed (tauri android init), then a debug APK for aarch64. The runner image has the
   # Android SDK and NDK; the lock must not move (the CLI runs cargo without --locked).

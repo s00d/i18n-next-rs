@@ -140,7 +140,10 @@ fn guest_contract_fixture_is_up_to_date() {
             loads.insert(id.clone(), load);
             metas.insert(id.clone(), meta);
             let v = view(&i18n, l, p);
-            let a: BTreeMap<&str, Option<String>> = KEYS.iter().map(|k| (*k, v.try_t(k))).collect();
+            let a: BTreeMap<&str, Option<String>> = KEYS
+                .iter()
+                .map(|k| (*k, v.get(k, |t| t.map(str::to_owned))))
+                .collect();
             answers.insert(id, a);
         }
     }

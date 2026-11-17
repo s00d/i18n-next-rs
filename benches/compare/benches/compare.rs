@@ -139,17 +139,25 @@ fn lookup(c: &mut Criterion) {
     let ours = i18n_next();
     let fluent = Fluent::new();
     // same texts before timing
-    assert_eq!(ours.t("s3.g4.k5"), t!("s3.g4.k5", locale = "de"));
-    assert_eq!(ours.t("s3.g4.k5"), fluent.format("s3-g4-k5", None).unwrap());
-    assert_eq!(ours.t("only_en"), t!("only_en", locale = "de"));
-    assert_eq!(ours.t("only_en"), fluent.format("only_en", None).unwrap());
-    assert!(ours.t_ref("s3.g4.k5", |t| t == ours.t("s3.g4.k5")));
+    assert_eq!(
+        ours.t("s3.g4.k5", str::to_owned),
+        t!("s3.g4.k5", locale = "de")
+    );
+    assert_eq!(
+        ours.t("s3.g4.k5", str::to_owned),
+        fluent.format("s3-g4-k5", None).unwrap()
+    );
+    assert_eq!(
+        ours.t("only_en", str::to_owned),
+        t!("only_en", locale = "de")
+    );
+    assert_eq!(
+        ours.t("only_en", str::to_owned),
+        fluent.format("only_en", None).unwrap()
+    );
 
     c.bench_function("versus/lookup_hit/i18n_next", |b| {
-        b.iter(|| ours.t(black_box("s3.g4.k5")))
-    });
-    c.bench_function("versus/lookup_hit/i18n_next_ref", |b| {
-        b.iter(|| ours.t_ref(black_box("s3.g4.k5"), |t| black_box(t).len()))
+        b.iter(|| ours.t(black_box("s3.g4.k5"), |t| black_box(t).len()))
     });
     c.bench_function("versus/lookup_hit/rust_i18n", |b| {
         b.iter(|| t!(black_box("s3.g4.k5"), locale = "de"))
@@ -159,10 +167,7 @@ fn lookup(c: &mut Criterion) {
     });
     // missing in `de`, found in `en`
     c.bench_function("versus/lookup_fallback/i18n_next", |b| {
-        b.iter(|| ours.t(black_box("only_en")))
-    });
-    c.bench_function("versus/lookup_fallback/i18n_next_ref", |b| {
-        b.iter(|| ours.t_ref(black_box("only_en"), |t| black_box(t).len()))
+        b.iter(|| ours.t(black_box("only_en"), |t| black_box(t).len()))
     });
     c.bench_function("versus/lookup_fallback/rust_i18n", |b| {
         b.iter(|| t!(black_box("only_en"), locale = "de"))
@@ -172,14 +177,11 @@ fn lookup(c: &mut Criterion) {
     });
     // missing everywhere: each returns its miss (the key, for rust-i18n too; `None` for
     // fluent)
-    assert_eq!(ours.t("s3.g4.nope"), "s3.g4.nope");
+    assert_eq!(ours.t("s3.g4.nope", str::to_owned), "s3.g4.nope");
     assert_eq!(t!("s3.g4.nope", locale = "de"), "s3.g4.nope");
     assert_eq!(fluent.format("s3-g4-nope", None), None);
     c.bench_function("versus/lookup_miss/i18n_next", |b| {
-        b.iter(|| ours.t(black_box("s3.g4.nope")))
-    });
-    c.bench_function("versus/lookup_miss/i18n_next_ref", |b| {
-        b.iter(|| ours.t_ref(black_box("s3.g4.nope"), |t| black_box(t).len()))
+        b.iter(|| ours.t(black_box("s3.g4.nope"), |t| black_box(t).len()))
     });
     c.bench_function("versus/lookup_miss/rust_i18n", |b| {
         b.iter(|| t!(black_box("s3.g4.nope"), locale = "de"))
@@ -327,7 +329,7 @@ fn cold(c: &mut Criterion) {
         };
         // the three catalogs answer the same key with the same text
         let want = "en text 0.0.7";
-        assert_eq!(ours().t("s0.g0.k7"), want);
+        assert_eq!(ours().t("s0.g0.k7", str::to_owned), want);
         assert_eq!(rust_i18n().translate("en", "s0.g0.k7").unwrap(), want);
         let bundle = fluent(src_ftl.clone());
         let pattern = bundle.get_message("s0-g0-k7").unwrap().value().unwrap();

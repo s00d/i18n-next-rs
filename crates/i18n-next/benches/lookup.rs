@@ -75,34 +75,19 @@ fn catalog() -> I18n {
 fn i18n_lookup(c: &mut Criterion) {
     let i18n = catalog();
     c.bench_function("i18n/t/root_hit", |b| {
-        b.iter(|| i18n.t(black_box("s3.g4.k5")))
+        b.iter(|| i18n.t(black_box("s3.g4.k5"), str::len))
     });
     c.bench_function("i18n/t/chain_3_to_en", |b| {
-        b.iter(|| i18n.t(black_box("only_en")))
+        b.iter(|| i18n.t(black_box("only_en"), str::len))
     });
     c.bench_function("i18n/t/chain_3_miss", |b| {
-        b.iter(|| i18n.t(black_box("s3.g4.nope")))
+        b.iter(|| i18n.t(black_box("s3.g4.nope"), str::len))
     });
     c.bench_function("i18n/t/deep_6", |b| {
-        b.iter(|| i18n.t(black_box("a.b.c.d.e.f")))
-    });
-    c.bench_function("i18n/t_ref/root_hit", |b| {
-        b.iter(|| i18n.t_ref(black_box("s3.g4.k5"), str::len))
-    });
-    c.bench_function("i18n/t_ref/chain_3_to_en", |b| {
-        b.iter(|| i18n.t_ref(black_box("only_en"), str::len))
-    });
-    c.bench_function("i18n/t_ref/chain_3_miss", |b| {
-        b.iter(|| i18n.t_ref(black_box("s3.g4.nope"), str::len))
-    });
-    c.bench_function("i18n/try_t/root_hit", |b| {
-        b.iter(|| i18n.try_t(black_box("s3.g4.k5")))
-    });
-    c.bench_function("i18n/try_t/chain_3_miss", |b| {
-        b.iter(|| i18n.try_t(black_box("s3.g4.nope")))
+        b.iter(|| i18n.t(black_box("a.b.c.d.e.f"), str::len))
     });
     c.bench_function("i18n/get/root_hit", |b| {
-        b.iter(|| i18n.get(black_box("s3.g4.k5")))
+        b.iter(|| i18n.get(black_box("s3.g4.k5"), |t| t.map(str::len)))
     });
     c.bench_function("i18n/has/root_hit", |b| {
         b.iter(|| i18n.has(black_box("s3.g4.k5")))
@@ -184,25 +169,16 @@ fn view_lookup(c: &mut Criterion) {
     let settings = i18n.page("settings");
     let en = i18n.with_locale("en");
     c.bench_function("view/t/page_hit", |b| {
-        b.iter(|| settings.t(black_box("title")))
+        b.iter(|| settings.t(black_box("title"), str::len))
     });
     c.bench_function("view/t/page_miss_root", |b| {
-        b.iter(|| settings.t(black_box("s3.g4.k5")))
+        b.iter(|| settings.t(black_box("s3.g4.k5"), str::len))
     });
     c.bench_function("view/t/other_locale_hit", |b| {
-        b.iter(|| en.t(black_box("s3.g4.k5")))
-    });
-    c.bench_function("view/t_ref/page_hit", |b| {
-        b.iter(|| settings.t_ref(black_box("title"), str::len))
-    });
-    c.bench_function("view/try_t/page_hit", |b| {
-        b.iter(|| settings.try_t(black_box("title")))
-    });
-    c.bench_function("view/try_t/page_miss_root", |b| {
-        b.iter(|| settings.try_t(black_box("s3.g4.k5")))
+        b.iter(|| en.t(black_box("s3.g4.k5"), str::len))
     });
     c.bench_function("view/get/page_hit", |b| {
-        b.iter(|| settings.get(black_box("title")))
+        b.iter(|| settings.get(black_box("title"), |t| t.map(str::len)))
     });
     c.bench_function("view/has/page_hit", |b| {
         b.iter(|| settings.has(black_box("title")))
@@ -415,7 +391,7 @@ fn readers(i18n: &I18n, threads: usize, iters: u64) -> Duration {
         for _ in 0..threads {
             s.spawn(|| {
                 for _ in 0..per {
-                    black_box(i18n.get(black_box("s3.g4.k5")));
+                    black_box(i18n.get(black_box("s3.g4.k5"), |t| t.map(str::len)));
                 }
             });
         }

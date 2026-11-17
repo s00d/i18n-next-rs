@@ -29,7 +29,7 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     for key in ["a", "a.b", "0", "", "__proto__", "x.0.y"] {
-        let _ = i18n.t(key);
+        let _ = i18n.t(key, str::to_owned);
         let _ = i18n.page("a").t_with(key, &Args::new().str("name", "Ann").or("{name}"));
         let _ = i18n.tc(key, 3);
         let _ = i18n.has(key);

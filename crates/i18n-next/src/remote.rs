@@ -153,7 +153,7 @@ impl I18n {
     /// assert_eq!(i18n.missing_files("de", Some("settings")), ["de.json", "pages/settings/de.json", "en.json"]);
     /// i18n.add_file("de.json", br#"{"hi": "Hallo"}"#)?;
     /// assert_eq!(i18n.missing_files("de", None), ["en.json"]);
-    /// assert_eq!(i18n.t("hi"), "Hallo");
+    /// assert_eq!(i18n.t("hi", str::to_owned), "Hallo");
     /// # Ok::<(), i18n_next::Error>(())
     /// ```
     #[must_use]
@@ -318,7 +318,7 @@ impl I18n {
     ///     unreachable!()
     /// };
     /// result?;
-    /// assert_eq!(i18n.t("hi"), "Hallo");
+    /// assert_eq!(i18n.t("hi", str::to_owned), "Hallo");
     /// let mut fut = Box::pin(i18n.ensure_async("de", Some("cart"), fetch));
     /// let Poll::Ready(Err(e)) = fut.as_mut().poll(&mut Context::from_waker(Waker::noop())) else {
     ///     unreachable!()

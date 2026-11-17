@@ -24,14 +24,14 @@ fuzz_target!(|data: &[u8]| {
     assert_eq!(guest.locale(), copy.locale());
     let finite = |s: &str| !(s.ends_with("Infinity") || s == "NaN");
     for key in KEYS {
-        let t = guest.t(key);
+        let t = guest.t(key, str::to_owned);
         if finite(&t) {
-            assert_eq!(t, copy.t(key), "{key:?}");
+            assert_eq!(t, copy.t(key, str::to_owned), "{key:?}");
         }
         if let Some(p) = pages.first() {
-            let t = guest.page(p).t(key);
+            let t = guest.page(p).t(key, str::to_owned);
             if finite(&t) {
-                assert_eq!(t, copy.page(p).t(key), "{p}/{key:?}");
+                assert_eq!(t, copy.page(p).t(key, str::to_owned), "{p}/{key:?}");
             }
         }
     }

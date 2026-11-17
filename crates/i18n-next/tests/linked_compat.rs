@@ -4,7 +4,7 @@
 //! the public API on the same files (`fixtures/compat/linked`):
 //!
 //! - `linked_t(locale, page, key)`: every leaf of every premerged `(locale, page)` view, read
-//!   with `with_locale(locale).page(page).try_t(key)` (`<node>`: a subtree, `t` returns the key
+//!   with `with_locale(locale).page(page).get(key, |t| t.map(str::to_owned))` (`<node>`: a subtree, `t` returns the key
 //!   without `missing`; `<missing>`: nothing);
 //! - `plain_t`: the same views without `linked_messages(true)` (off by default);
 //! - `linked_tp`: `t_with` on a resolved message, its placeholders filled at read;
@@ -79,11 +79,11 @@ impl Catalog {
     /// The golden spelling of a lookup: the text, `<node>` or `<missing>`.
     fn read(&self, locale: &str, page: &str, key: &str) -> String {
         let view = self.i18n.with_locale(locale).page(page);
-        if let Some(text) = view.try_t(key) {
+        if let Some(text) = view.get(key, |t| t.map(str::to_owned)) {
             return text;
         }
         let before = self.misses.load(Ordering::Relaxed);
-        let _ = view.t(key);
+        let _ = view.t(key, str::to_owned);
         let missed = key.is_empty() || self.misses.load(Ordering::Relaxed) > before;
         if missed { "\u{0}missing" } else { "\u{0}node" }.to_owned()
     }
@@ -123,7 +123,10 @@ fn case_catalog(tag: &str, texts: &[&str]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for (i, text) in texts.iter().enumerate() {
         for m in ["upper", "lower", "capitalize"] {
-            out.insert(format!("{m}\u{0}{text}"), i18n.t(&format!("{m}{i}")).into());
+            out.insert(
+                format!("{m}\u{0}{text}"),
+                i18n.t(&format!("{m}{i}"), str::to_owned),
+            );
         }
     }
     out

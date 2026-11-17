@@ -41,22 +41,22 @@ fn lazy_file_is_read_once() {
     assert_eq!(loads(&i18n), 0);
 
     // step 2: a page hit reads the page file only (the key is there)
-    assert_eq!(i18n.page("settings").t("title"), "Settings");
+    assert_eq!(i18n.page("settings").t("title", str::to_owned), "Settings");
     assert_eq!(loads(&i18n), 1);
 
     // step 3: a page miss reaches the root layer → the root file is read
-    assert_eq!(i18n.page("settings").t("ok"), "OK");
+    assert_eq!(i18n.page("settings").t("ok", str::to_owned), "OK");
     assert_eq!(loads(&i18n), 2);
 
     // step 4: the files are gone from disk → the loaded pairs still answer, no re-read
     std::fs::remove_file(dir.join("pages/settings/en.json")).unwrap();
     std::fs::remove_file(dir.join("en.json")).unwrap();
-    assert_eq!(i18n.page("settings").t("title"), "Settings");
-    assert_eq!(i18n.t("title"), "App");
+    assert_eq!(i18n.page("settings").t("title", str::to_owned), "Settings");
+    assert_eq!(i18n.t("title", str::to_owned), "App");
     assert_eq!(loads(&i18n), 2);
 
     // step 5: `about` was never read; a lazy load changes no answer → no Change, version 0
-    assert_eq!(i18n.page("about").t("title"), "About");
+    assert_eq!(i18n.page("about").t("title", str::to_owned), "About");
     assert_eq!(loads(&i18n), 3);
     assert_eq!(i18n.version(), 0);
     assert!(seen.lock().unwrap().is_empty());
@@ -75,8 +75,8 @@ fn broken_lazy_file_is_skipped_once() {
         .build()
         .unwrap();
     // step 1: the broken page reads the root
-    assert_eq!(i18n.page("bad").t("title"), "App");
-    assert_eq!(i18n.page("bad").t("title"), "App");
+    assert_eq!(i18n.page("bad").t("title", str::to_owned), "App");
+    assert_eq!(i18n.page("bad").t("title", str::to_owned), "App");
     // step 2: only the root counted as loaded
     assert_eq!(loads(&i18n), 1);
 }
@@ -118,7 +118,7 @@ fn remote_with_a_fetch_error() {
             "pages/cart/en.json"
         ]
     );
-    assert_eq!(i18n.t("hi"), "hi");
+    assert_eq!(i18n.t("hi", str::to_owned), "hi");
 
     // step 2: ensure → four requests at once
     let mut ex = Executor::new();
@@ -143,7 +143,11 @@ fn remote_with_a_fetch_error() {
     assert_eq!(versions(&seen), [1]);
     let cart = i18n.page("cart");
     assert_eq!(
-        (cart.t("hi"), cart.t("title"), cart.t("total")),
+        (
+            cart.t("hi", str::to_owned),
+            cart.t("title", str::to_owned),
+            cart.t("total", str::to_owned)
+        ),
         ("Hallo".into(), "Cart".into(), "Total".into())
     );
     assert_eq!(
@@ -158,7 +162,7 @@ fn remote_with_a_fetch_error() {
     net.answer("pages/cart/de.json", Ok(br#"{"title": "Warenkorb"}"#));
     ex.run_until_stalled();
     result.borrow_mut().take().unwrap().unwrap();
-    assert_eq!(cart.t("title"), "Warenkorb");
+    assert_eq!(cart.t("title", str::to_owned), "Warenkorb");
     assert_eq!(net.count("pages/cart/de.json"), 2);
     assert_eq!(net.total(), 5);
 
@@ -215,7 +219,7 @@ fn concurrent_ensure_fetches_each_file_once() {
     net.answer_at(1, Ok(br#"{"x": "X"}"#));
     wait.run_until_stalled();
     assert!(matches!(*second.borrow(), Some(Ok(()))));
-    assert_eq!(i18n.with_locale("en").t("x"), "X");
+    assert_eq!(i18n.with_locale("en").t("x", str::to_owned), "X");
 }
 
 /// Given a remote manifest, when `add_file` gets a path the manifest does not list or
@@ -245,7 +249,10 @@ fn add_file_takes_names_only_from_the_manifest() {
         .unwrap();
     i18n.add_file("pages/cart/en.json", br#"{"t": "two"}"#)
         .unwrap();
-    assert_eq!(i18n.with_locale("en").page("cart").t("t"), "one");
+    assert_eq!(
+        i18n.with_locale("en").page("cart").t("t", str::to_owned),
+        "one"
+    );
     assert_eq!(versions(&seen), [1]);
     assert_eq!(loads(&i18n), 1);
 }
@@ -263,7 +270,7 @@ fn messages_wait_over_a_remote_file() {
     i18n.add_messages("en", None, r#"{"b": "runtime"}"#)
         .unwrap();
     assert_eq!(
-        (i18n.t("a"), i18n.t("b")),
+        (i18n.t("a", str::to_owned), i18n.t("b", str::to_owned)),
         ("builder".into(), "runtime".into())
     );
     assert_eq!(i18n.missing_files("en", None), ["en.json"]);
@@ -271,7 +278,11 @@ fn messages_wait_over_a_remote_file() {
     i18n.add_file("en.json", br#"{"a": "file", "b": "file", "c": "file"}"#)
         .unwrap();
     assert_eq!(
-        [i18n.t("a"), i18n.t("b"), i18n.t("c")],
+        [
+            i18n.t("a", str::to_owned),
+            i18n.t("b", str::to_owned),
+            i18n.t("c", str::to_owned)
+        ],
         ["builder", "runtime", "file"]
     );
 }
@@ -306,14 +317,17 @@ fn extend_order_app_wins() {
         .build()
         .unwrap();
     // step 1: the app beats both libraries; B beats A; objects merge, nothing is lost
-    assert_eq!(i18n.t("ui.ok"), "App ok");
-    assert_eq!(i18n.t("ui.cancel"), "B cancel");
-    assert_eq!(i18n.t("ui.only_b"), "B");
-    assert_eq!(i18n.t("ui.help"), "messages help");
+    assert_eq!(i18n.t("ui.ok", str::to_owned), "App ok");
+    assert_eq!(i18n.t("ui.cancel", str::to_owned), "B cancel");
+    assert_eq!(i18n.t("ui.only_b", str::to_owned), "B");
+    assert_eq!(i18n.t("ui.help", str::to_owned), "messages help");
     // step 2: per page too
     let dialog = i18n.page("dialog");
     assert_eq!(
-        (dialog.t("title"), dialog.t("x")),
+        (
+            dialog.t("title", str::to_owned),
+            dialog.t("x", str::to_owned)
+        ),
         ("App dialog".into(), "A x".into())
     );
     // step 3: a library's page is a known page even when the app has none
@@ -326,7 +340,10 @@ fn extend_order_app_wins() {
         .build()
         .unwrap();
     assert_eq!(
-        (lazy.page("dialog").t("title"), lazy.page("dialog").t("x")),
+        (
+            lazy.page("dialog").t("title", str::to_owned),
+            lazy.page("dialog").t("x", str::to_owned)
+        ),
         ("Lazy".into(), "A x".into())
     );
 }
@@ -350,24 +367,24 @@ fn evict_and_pin() {
     let (seen, _sub) = changes(&i18n);
 
     // step 1: tray and a → both stay (tray is pinned)
-    assert_eq!(i18n.page("tray").t("t"), "tray");
-    assert_eq!(i18n.page("a").t("t"), "a");
+    assert_eq!(i18n.page("tray").t("t", str::to_owned), "tray");
+    assert_eq!(i18n.page("a").t("t", str::to_owned), "a");
     assert_eq!((loads(&i18n), i18n.version()), (2, 0));
 
     // step 2: b → a leaves the next snapshot, no Change, the same version
-    assert_eq!(i18n.page("b").t("t"), "b");
+    assert_eq!(i18n.page("b").t("t", str::to_owned), "b");
     assert_eq!((loads(&i18n), i18n.version()), (3, 0));
     assert!(seen.lock().unwrap().is_empty());
 
     // step 3: tray and b still loaded (no load), the root read once
-    assert_eq!(i18n.page("tray").t("t"), "tray");
-    assert_eq!(i18n.page("b").t("root"), "R");
+    assert_eq!(i18n.page("tray").t("t", str::to_owned), "tray");
+    assert_eq!(i18n.page("b").t("root", str::to_owned), "R");
     assert_eq!(loads(&i18n), 4);
 
     // step 4: a again → same answer, read again, b evicted
-    assert_eq!(i18n.page("a").t("t"), "a");
+    assert_eq!(i18n.page("a").t("t", str::to_owned), "a");
     assert_eq!((loads(&i18n), i18n.version()), (5, 0));
-    assert_eq!(i18n.page("b").t("t"), "b");
+    assert_eq!(i18n.page("b").t("t", str::to_owned), "b");
     assert_eq!(loads(&i18n), 6);
 
     // step 5: a remote page evicted is missing again until the next ensure
@@ -379,8 +396,8 @@ fn evict_and_pin() {
     i18n.add_file("pages/a/en.json", br#"{"t": "a"}"#).unwrap();
     i18n.add_file("pages/b/en.json", br#"{"t": "b"}"#).unwrap();
     assert_eq!(i18n.missing_files("en", Some("a")), ["pages/a/en.json"]);
-    assert_eq!(i18n.page("a").t("t"), "t");
-    assert_eq!(i18n.page("b").t("t"), "b");
+    assert_eq!(i18n.page("a").t("t", str::to_owned), "t");
+    assert_eq!(i18n.page("b").t("t", str::to_owned), "b");
 }
 
 /// Given a directory and a reader holding a value, when a file changes on disk, then
@@ -402,38 +419,41 @@ fn reload_keeps_old_answers_until_the_swap() {
         .build()
         .unwrap();
     let (seen, _sub) = changes(&i18n);
-    let held = i18n.get("a").unwrap();
-    assert_eq!(i18n.page("p").t("t"), "old page");
+    let held = i18n.get("a", |t| t.map(str::to_owned)).unwrap();
+    assert_eq!(i18n.page("p").t("t", str::to_owned), "old page");
     i18n.add_messages("en", None, r#"{"m": "runtime"}"#)
         .unwrap();
 
     // step 1: the files change → still the old answers
     std::fs::write(dir.join("en.json"), r#"{"a": "new", "keep": "same"}"#).unwrap();
     std::fs::write(lazy.join("pages/p/en.json"), r#"{"t": "new page"}"#).unwrap();
-    assert_eq!(i18n.t("a"), "old");
+    assert_eq!(i18n.t("a", str::to_owned), "old");
 
     // step 2: a broken file → reload fails with its path, nothing changes
     std::fs::write(dir.join("en.json"), "{").unwrap();
     let err = i18n.reload().unwrap_err();
     assert!(matches!(&err, Error::Json { path, .. } if path.ends_with("en.json")));
-    assert_eq!((i18n.t("a"), i18n.version()), ("old".into(), 1));
+    assert_eq!(
+        (i18n.t("a", str::to_owned), i18n.version()),
+        ("old".into(), 1)
+    );
 
     // step 3: fixed → one swap: new root, new lazy page, builder messages kept, runtime
     // ones dropped
     std::fs::write(dir.join("en.json"), r#"{"a": "new", "keep": "same"}"#).unwrap();
     i18n.reload().unwrap();
-    assert_eq!(i18n.t("a"), "new");
-    assert_eq!(i18n.page("p").t("t"), "new page");
-    assert_eq!(i18n.t("m"), "builder");
+    assert_eq!(i18n.t("a", str::to_owned), "new");
+    assert_eq!(i18n.page("p").t("t", str::to_owned), "new page");
+    assert_eq!(i18n.t("m", str::to_owned), "builder");
     assert_eq!(&*held, "old");
     assert_eq!(versions(&seen), [1, 2]);
 
     // step 4: remote files are fetched again after a reload
     let i18n = remote();
     i18n.add_file("en.json", br#"{"x": "X"}"#).unwrap();
-    assert_eq!(i18n.with_locale("en").t("x"), "X");
+    assert_eq!(i18n.with_locale("en").t("x", str::to_owned), "X");
     i18n.reload().unwrap();
-    assert_eq!(i18n.with_locale("en").t("x"), "x");
+    assert_eq!(i18n.with_locale("en").t("x", str::to_owned), "x");
     assert_eq!(i18n.missing_files("en", None), ["en.json"]);
 }
 
@@ -518,13 +538,20 @@ fn folded_remote_root_waits_for_all_its_files() {
     // step 1: one of two → not visible yet, no new version
     i18n.add_file("pages/a/en.json", br#"{"k": "page"}"#)
         .unwrap();
-    assert_eq!((i18n.t("k"), i18n.version()), ("k".into(), 0));
+    assert_eq!(
+        (i18n.t("k", str::to_owned), i18n.version()),
+        ("k".into(), 0)
+    );
     assert_eq!(i18n.missing_files("en", None), ["en.json"]);
     // step 2: both → the page file wins over the root, as in an eager build
     i18n.add_file("en.json", br#"{"k": "root", "r": "root"}"#)
         .unwrap();
     assert_eq!(
-        (i18n.t("k"), i18n.t("r"), i18n.version()),
+        (
+            i18n.t("k", str::to_owned),
+            i18n.t("r", str::to_owned),
+            i18n.version()
+        ),
         ("page".into(), "root".into(), 1)
     );
 }
@@ -569,19 +596,22 @@ fn repeated_containers_are_replaced_in_linear_work() {
         (".c", "2"),
         ("keep.k", "K"),
     ] {
-        assert_eq!(i18n.t(key), want, "{key}");
+        assert_eq!(i18n.t(key, str::to_owned), want, "{key}");
     }
     for gone in ["x.y.z", "x.y.w", "x.y.l", "x.y.l.1.0", "l.1", "l.1.0", ".b"] {
-        assert!(i18n.try_t(gone).is_none() && !i18n.has(gone), "{gone}");
+        assert!(
+            i18n.get(gone, |t| t.map(str::to_owned)).is_none() && !i18n.has(gone),
+            "{gone}"
+        );
     }
 
     // step 2: 100k repeats of a non-empty object after 100k keys, through `add_file`
     let big = dup_containers(100_000);
     let remote = I18n::builder().remote(["en.json"]).build().unwrap();
     remote.add_file("en.json", big.as_bytes()).unwrap();
-    assert_eq!(remote.t("d.a99999"), "b");
+    assert_eq!(remote.t("d.a99999", str::to_owned), "b");
     assert!(!remote.has("d.a99998"));
-    assert_eq!(remote.t("u99999"), "v");
+    assert_eq!(remote.t("u99999", str::to_owned), "v");
 
     // step 3: a merge that replaces 100k non-empty objects with strings
     let mut objects = String::from("{");
@@ -599,7 +629,7 @@ fn repeated_containers_are_replaced_in_linear_work() {
     merged
         .add_messages("en", None, &objects.replace("{\"x\":\"y\"}", "\"z\""))
         .unwrap();
-    assert_eq!(merged.t("o99999"), "z");
+    assert_eq!(merged.t("o99999", str::to_owned), "z");
     assert!(!merged.has("o99999.x"));
 }
 
@@ -620,13 +650,13 @@ fn eviction_drops_the_least_recently_used_page() {
             .unwrap();
         // step 1: x, y, x again (a hit), then c → three loads, y evicted
         for p in [x, y, x, "c"] {
-            assert_eq!(i18n.page(p).t("t"), p);
+            assert_eq!(i18n.page(p).t("t", str::to_owned), p);
         }
         assert_eq!(loads(&i18n), 3);
         // step 2: x is still in → no load; y comes back → one load
-        assert_eq!(i18n.page(x).t("t"), x);
+        assert_eq!(i18n.page(x).t("t", str::to_owned), x);
         assert_eq!(loads(&i18n), 3, "{x} was evicted instead of {y}");
-        assert_eq!(i18n.page(y).t("t"), y);
+        assert_eq!(i18n.page(y).t("t", str::to_owned), y);
         assert_eq!(loads(&i18n), 4);
     }
 }
@@ -653,7 +683,7 @@ fn a_missing_handler_may_write_during_reload() {
     *slot.lock().unwrap() = Some(i18n.clone());
     // step 1: reload → the broken link is reported, the handler writes
     i18n.reload().unwrap();
-    assert_eq!(i18n.t("seen_a"), "yes");
+    assert_eq!(i18n.t("seen_a", str::to_owned), "yes");
     // the handler held a clone: drop it to free the catalog
     slot.lock().unwrap().take();
 }

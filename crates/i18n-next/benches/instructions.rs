@@ -29,7 +29,7 @@ fn catalog() -> I18n {
         .messages("de", Some("settings"), r#"{"title": "Einstellungen"}"#)
         .build()
         .unwrap();
-    let _ = i18n.t("nav.home");
+    let _ = i18n.t("nav.home", str::len);
     i18n
 }
 
@@ -42,15 +42,15 @@ fn version() -> &'static str {
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 #[bench::root_hit(setup = catalog)]
-fn t(i18n: I18n) -> i18n_next::Translation<'static> {
-    black_box(i18n.t(black_box("nav.home")))
+fn t(i18n: I18n) -> usize {
+    black_box(i18n.t(black_box("nav.home"), str::len))
 }
 
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 #[bench::fallback_hit(setup = catalog)]
-fn get(i18n: I18n) -> Option<std::sync::Arc<str>> {
-    black_box(i18n.get(black_box("only_en")))
+fn get(i18n: I18n) -> Option<usize> {
+    black_box(i18n.get(black_box("only_en"), |t| t.map(str::len)))
 }
 
 #[cfg(target_os = "linux")]

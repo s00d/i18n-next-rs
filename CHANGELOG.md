@@ -5,11 +5,10 @@ are documented here. The three packages are released together with one version.
 
 ## Unreleased
 
-- `t()` (on `I18n` and `View`) returns `Translation<'k>` instead of `String`: the stored
-  text shared or the key borrowed, no allocation. It reads as `&str` (`Deref`, `Display`,
-  comparisons); `String::from(..)` / `.into()` makes an owned copy.
-- `t_ref(key, |text| ..)` (on `I18n` and `View`): the text as a `&str` borrowed from the
-  catalog for the closure's call, no allocation and no reference count.
+- `t(key, f)` and `get(key, f)` (on `I18n` and `View`) lend the text to `f` as a `&str`
+  borrowed from the catalog instead of returning a `String` / `Arc<str>`: no allocation, no
+  reference count. `t(key, str::to_owned)` keeps a copy. `try_t` is gone: `get` is the same
+  lookup (`None` on a miss, `missing` not called).
 
 - Project skeleton: workspace, both crates, CI (native matrix, MSRV 1.90, wasm, size,
   dependency, API, perf jobs), test and bench scaffolding, shared example locales.

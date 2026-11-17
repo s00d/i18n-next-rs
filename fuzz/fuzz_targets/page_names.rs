@@ -44,12 +44,12 @@ fuzz_target!(|data: &[u8]| {
                 assert_eq!(i18n.locale(), before);
             }
         }
-        let _ = i18n.page(name).t("a");
+        let _ = i18n.page(name).t("a", str::to_owned);
         let _ = i18n.with_locale(name).page(name).tc("a", 1);
         let _ = i18n.with_locale(name).has("n.x");
         let other = names.get(i + 1).copied();
         if i18n.add_messages(name, other, r#"{"added": "yes"}"#).is_ok() {
-            assert_eq!(i18n.with_locale(name).page(other.unwrap_or("")).t("added"), "yes");
+            assert_eq!(i18n.with_locale(name).page(other.unwrap_or("")).t("added", str::to_owned), "yes");
         }
         let _ = i18n.pages();
     }

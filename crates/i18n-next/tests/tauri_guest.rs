@@ -257,9 +257,9 @@ async fn settle<T>(what: &str, cell: &Rc<RefCell<Option<T>>>) -> T {
 /// What a guest view reads, as the fixtures record it: `null` for a miss or a subtree.
 fn answer(i18n: &I18n, page: &str, key: &str) -> JsValue {
     let got = if page == "index" {
-        i18n.try_t(key)
+        i18n.get(key, |t| t.map(str::to_owned))
     } else {
-        i18n.page(page).try_t(key)
+        i18n.page(page).get(key, |t| t.map(str::to_owned))
     };
     got.map_or(JsValue::NULL, |s| JsValue::from_str(&s))
 }
@@ -374,8 +374,8 @@ async fn connect_builds_from_meta_and_caches_chunks_by_tag() {
     assert!(get(&args, "timeZone").as_string().is_some());
     assert_eq!(
         (
-            i18n.page("p1").t("h"),
-            i18n.t("title"),
+            i18n.page("p1").t("h", str::to_owned),
+            i18n.t("title", str::to_owned),
             i18n.tc("apples", 3)
         ),
         ("One".into(), "App".into(), "3 apples".into())
@@ -396,13 +396,21 @@ async fn connect_builds_from_meta_and_caches_chunks_by_tag() {
     assert_eq!(get(&fake.0, "locale").as_string().unwrap(), "de-at");
     // de-at → de → en: own, then de, then en
     assert_eq!(
-        (i18n.t("nav.home"), i18n.t("title"), i18n.page("p1").t("h")),
+        (
+            i18n.t("nav.home", str::to_owned),
+            i18n.t("title", str::to_owned),
+            i18n.page("p1").t("h", str::to_owned)
+        ),
         ("Daham".into(), "Anwendung".into(), "Eins".into())
     );
     assert_eq!(fake.fetches(), 5); // + de-at/index, de/index, de/p1
     tauri_guest::set_locale("en").await.unwrap();
     assert_eq!(
-        (&*i18n.locale(), i18n.page("p1").t("h"), fake.fetches()),
+        (
+            &*i18n.locale(),
+            i18n.page("p1").t("h", str::to_owned),
+            fake.fetches()
+        ),
         ("en", "One".into(), 5)
     );
     // a page checked at the version shown: no call at all
@@ -430,7 +438,7 @@ async fn changed_events_apply_in_version_order() {
     fake.deliver(0);
     tauri_guest::set_page("index").await.unwrap();
     assert_eq!(
-        (&*i18n.locale(), i18n.t("title")),
+        (&*i18n.locale(), i18n.t("title", str::to_owned)),
         ("de", "Anwendung".into())
     );
     // step 2: en, then de-at; de-at's event comes first, en's late
@@ -454,7 +462,7 @@ async fn changed_events_apply_in_version_order() {
     fake.deliver(0);
     tauri_guest::set_page("index").await.unwrap();
     assert_eq!(
-        (i18n.t("title"), fake.count("|meta")),
+        (i18n.t("title", str::to_owned), fake.count("|meta")),
         ("Servus".into(), metas + 2)
     );
 }
@@ -484,7 +492,10 @@ async fn gone_chunks_read_meta_again() {
     let fetches = fake.fetches();
     tauri_guest::set_page("p2").await.unwrap();
     assert_eq!(
-        (i18n.page("p2").t("h"), fake.fetches() - fetches),
+        (
+            i18n.page("p2").t("h", str::to_owned),
+            fake.fetches() - fetches
+        ),
         ("Two!!".into(), 2)
     );
     // step 2: the catalog changes under every read
@@ -502,9 +513,9 @@ async fn gone_chunks_read_meta_again() {
     let err = tauri_guest::set_page("p1").await.unwrap_err();
     assert!(err.to_string().contains("kept changing"), "{err}");
     fake.set("afterMeta", JsValue::UNDEFINED);
-    assert_eq!(i18n.page("p2").t("h"), "Two!!");
+    assert_eq!(i18n.page("p2").t("h", str::to_owned), "Two!!");
     tauri_guest::set_page("p1").await.unwrap();
-    assert!(i18n.page("p1").t("h").starts_with("One "));
+    assert!(i18n.page("p1").t("h", str::to_owned).starts_with("One "));
     drop(fake);
     // step 3: raw invoke: a load landing after a newer change is read again
     let fake = Fake::new(&rust_source(&server), "en");
@@ -524,7 +535,7 @@ async fn gone_chunks_read_meta_again() {
         call(&f, "bump", &[]);
     });
     tauri_guest::refresh().await.unwrap();
-    assert_eq!(i18n.t("title"), "C");
+    assert_eq!(i18n.t("title", str::to_owned), "C");
 }
 
 /// Given the protocol, when it answers an HTTP error, then the read fails and the protocol
@@ -544,19 +555,23 @@ async fn falls_back_to_invoke_only_when_fetch_rejects() {
     fake.set("status", JsValue::UNDEFINED);
     tauri_guest::set_page("p1").await.unwrap();
     assert_eq!(
-        (i18n.page("p1").t("h"), fake.count("|load")),
+        (i18n.page("p1").t("h", str::to_owned), fake.count("|load")),
         ("One".into(), 0)
     );
     fake.set("protocol", false);
     tauri_guest::set_page("p2").await.unwrap();
     let fetches = fake.fetches();
     assert_eq!(
-        (i18n.page("p2").t("h"), fake.count("|load")),
+        (i18n.page("p2").t("h", str::to_owned), fake.count("|load")),
         ("Two".into(), 1)
     );
     tauri_guest::set_locale("de").await.unwrap();
     assert_eq!(
-        (i18n.t("title"), fake.fetches(), fake.count("|load")),
+        (
+            i18n.t("title", str::to_owned),
+            fake.fetches(),
+            fake.count("|load")
+        ),
         ("Anwendung".into(), fetches, 2)
     );
 }
@@ -569,7 +584,7 @@ async fn unknown_pages_failures_and_removed_chunks() {
     let fake = Fake::new(&rust_source(&server), "en");
     let i18n = tauri_guest::connect("p1").await.unwrap();
     tauri_guest::set_page("ghost").await.unwrap();
-    assert_eq!(i18n.page("ghost").t("title"), "App");
+    assert_eq!(i18n.page("ghost").t("title", str::to_owned), "App");
     // the plugin fails: the call says so, the texts stay
     let source = get(&fake.0, "source");
     let meta = get(&source, "meta");
@@ -580,7 +595,7 @@ async fn unknown_pages_failures_and_removed_chunks() {
     );
     let err = tauri_guest::set_page("p2").await.unwrap_err();
     assert!(err.to_string().contains("boom"), "{err}");
-    assert_eq!(i18n.page("p1").t("h"), "One");
+    assert_eq!(i18n.page("p1").t("h", str::to_owned), "One");
     put(&source, "meta", &meta);
     // p1 loses its chunk in Rust: the guest clears it
     *server.borrow_mut() = I18n::builder()
@@ -591,7 +606,7 @@ async fn unknown_pages_failures_and_removed_chunks() {
     fake.bump();
     fake.deliver(0);
     tauri_guest::set_page("p1").await.unwrap();
-    assert_eq!(i18n.page("p1").t("h"), "Root h");
+    assert_eq!(i18n.page("p1").t("h", str::to_owned), "Root h");
 }
 
 /// Given a page preloaded and one loaded by a router guard, when the locale switches, then
@@ -609,7 +624,10 @@ async fn preload_and_load_follow_the_locale() {
         .unwrap();
     tauri_guest::set_locale("de").await.unwrap();
     assert_eq!(
-        (i18n.page("p1").t("h"), i18n.page("p2").t("h")),
+        (
+            i18n.page("p1").t("h", str::to_owned),
+            i18n.page("p2").t("h", str::to_owned)
+        ),
         ("Eins".into(), "Zwei".into())
     );
     let calls = fake.count("|meta");
@@ -625,7 +643,11 @@ async fn misses_go_to_report_missing_once() {
     let server = server();
     let fake = Fake::new(&rust_source(&server), "en");
     let i18n = tauri_guest::connect("index").await.unwrap();
-    let _ = (i18n.t("nope"), i18n.t("nope"), i18n.page("p1").t("gone"));
+    let _ = (
+        i18n.t("nope", str::to_owned),
+        i18n.t("nope", str::to_owned),
+        i18n.page("p1").t("gone", str::to_owned),
+    );
     microtasks().await;
     let missing = JSON::stringify(&get(&fake.0, "missing")).unwrap();
     assert_eq!(
@@ -634,9 +656,9 @@ async fn misses_go_to_report_missing_once() {
     );
     assert_eq!(fake.count("|report_missing"), 1);
     fake.set("dev", false);
-    let _ = i18n.t("other");
+    let _ = i18n.t("other", str::to_owned);
     microtasks().await;
-    let _ = i18n.t("third");
+    let _ = i18n.t("third", str::to_owned);
     microtasks().await;
     assert_eq!(fake.count("|report_missing"), 2);
 }
@@ -693,8 +715,8 @@ async fn a_second_connect_waits_its_turn_and_never_shows_an_older_catalog() {
         (
             &*i18n.locale(),
             get(&fake.0, "locale").as_string().unwrap(),
-            i18n.t("title"),
-            i18n.page("p1").t("h")
+            i18n.t("title", str::to_owned),
+            i18n.page("p1").t("h", str::to_owned)
         ),
         ("de", "de".to_owned(), "Anwendung".into(), "Eins".into())
     );
@@ -712,12 +734,15 @@ async fn concurrent_connects_share_one_link_and_one_listener() {
     let a = settle("connect a", &a).await.unwrap();
     let b = settle("connect b", &b).await.unwrap();
     a.add_messages("en", None, r#"{"only": "here"}"#).unwrap();
-    assert_eq!(b.t("only"), "here"); // one instance
+    assert_eq!(b.t("only", str::to_owned), "here"); // one instance
     assert_eq!((fake.listeners(), fake.callbacks()), (1, 1));
     fake.switch("de");
     fake.deliver(0);
     tauri_guest::set_page("p1").await.unwrap();
-    assert_eq!((&*b.locale(), b.page("p1").t("h")), ("de", "Eins".into()));
+    assert_eq!(
+        (&*b.locale(), b.page("p1").t("h", str::to_owned)),
+        ("de", "Eins".into())
+    );
     tauri_guest::disconnect();
     microtasks().await;
     assert_eq!(
@@ -795,7 +820,7 @@ async fn only_a_type_error_moves_reads_to_raw_invoke() {
     tauri_guest::set_page("p1").await.unwrap();
     assert_eq!(
         (
-            i18n.page("p1").t("h"),
+            i18n.page("p1").t("h", str::to_owned),
             fake.fetches() - fetches,
             fake.count("|load")
         ),
@@ -821,7 +846,7 @@ async fn a_raw_load_of_an_older_version_is_read_again() {
     tauri_guest::set_page("p1").await.unwrap();
     assert_eq!(
         (
-            i18n.page("p1").t("h"),
+            i18n.page("p1").t("h", str::to_owned),
             fake.count("|meta") - metas,
             fake.count("|load") - loads
         ),
@@ -839,11 +864,11 @@ async fn misses_while_chunks_load_are_not_reported() {
     fake.hold("en/p1.json");
     let shown = spawn(tauri_guest::set_page("p1"));
     until("the p1 read starts", || fake.held() == 1).await;
-    let _ = i18n.page("p1").t("h");
+    let _ = i18n.page("p1").t("h", str::to_owned);
     microtasks().await;
     fake.release();
     settle("set_page(p1)", &shown).await.unwrap();
-    let _ = i18n.t("nope");
+    let _ = i18n.t("nope", str::to_owned);
     microtasks().await;
     let missing = JSON::stringify(&get(&fake.0, "missing")).unwrap();
     assert_eq!(
@@ -874,7 +899,7 @@ async fn a_dropped_waiting_call_does_not_stall_the_queue() {
     settle("set_page(p2) after a dropped one", &next)
         .await
         .unwrap();
-    assert_eq!(i18n.page("p2").t("h"), "Two");
+    assert_eq!(i18n.page("p2").t("h", str::to_owned), "Two");
 }
 
 /// Given an instance of an earlier connection, when the guest connects again, then misses
@@ -886,10 +911,10 @@ async fn an_old_instance_reports_nothing_after_a_reconnect() {
     let old = tauri_guest::connect("index").await.unwrap();
     tauri_guest::disconnect();
     let new = tauri_guest::connect("index").await.unwrap();
-    let _ = old.t("old-miss");
+    let _ = old.t("old-miss", str::to_owned);
     microtasks().await;
     assert_eq!(fake.count("|report_missing"), 0);
-    let _ = new.t("new-miss");
+    let _ = new.t("new-miss", str::to_owned);
     microtasks().await;
     assert_eq!(fake.count("|report_missing"), 1);
 }
@@ -905,7 +930,11 @@ async fn a_reconnect_reads_only_chunks_it_did_not_have() {
     tauri_guest::disconnect();
     let i18n = tauri_guest::connect("p1").await.unwrap();
     assert_eq!(
-        (i18n.t("title"), i18n.page("p1").t("h"), fake.fetches()),
+        (
+            i18n.t("title", str::to_owned),
+            i18n.page("p1").t("h", str::to_owned),
+            fake.fetches()
+        ),
         ("App".into(), "One".into(), fetches)
     );
     tauri_guest::set_page("p2").await.unwrap();

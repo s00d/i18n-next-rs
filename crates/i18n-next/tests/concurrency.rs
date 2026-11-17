@@ -50,7 +50,7 @@ fn readers_and_one_writer_each(instances: usize, writes: u64) {
                 done = 0;
                 for (n, i18n) in catalogs.iter().enumerate() {
                     let before = i18n.version();
-                    let k: u64 = i18n.get("k").unwrap().parse().unwrap();
+                    let k: u64 = i18n.get("k", |t| t.unwrap().parse::<u64>()).unwrap();
                     let after = i18n.version();
                     // step: the value is a published snapshot, between the versions seen
                     // around it: a stale cached snapshot reads below `before`
@@ -60,7 +60,7 @@ fn readers_and_one_writer_each(instances: usize, writes: u64) {
                     );
                     assert!(k >= last[n], "instance {n} went back: {} -> {k}", last[n]);
                     assert_eq!(
-                        i18n.t("id"),
+                        i18n.t("id", str::to_owned),
                         n.to_string(),
                         "the thread cache mixed instances"
                     );
@@ -150,7 +150,7 @@ fn writers_on_one_instance_lose_nothing() {
                     // step: a write that returned is visible to this thread
                     let key = format!("w{w}_{}", n - 1);
                     assert_eq!(
-                        i18n.get(&key).as_deref(),
+                        i18n.get(&key, |t| t.map(str::to_owned)).as_deref(),
                         Some(format!("{w}.{}", n - 1).as_str()),
                         "reader lost {key}"
                     );
@@ -209,7 +209,7 @@ fn lazy_load_race_on_one_pair_loads_once() {
                 let (i18n, start) = (i18n.clone(), start.clone());
                 thread::spawn(move || {
                     start.wait();
-                    i18n.page("p").t("t")
+                    i18n.page("p").t("t", str::to_owned)
                 })
             })
             .collect();
@@ -249,8 +249,8 @@ fn eviction_under_concurrent_readers_is_invisible() {
                 for round in 0..200 {
                     let p = (t * 5 + round * 7) % PAGES;
                     let page = i18n.page(&format!("p{p}"));
-                    assert_eq!(page.t("t"), p.to_string());
-                    assert_eq!(page.t("root"), "R");
+                    assert_eq!(page.t("t", str::to_owned), p.to_string());
+                    assert_eq!(page.t("root", str::to_owned), "R");
                 }
             })
         })
@@ -292,7 +292,10 @@ fn lazy_links_in_a_fallback_cycle_never_deadlock() {
                 let (i18n, barrier) = (i18n.clone(), barrier.clone());
                 std::thread::spawn(move || {
                     barrier.wait();
-                    assert_eq!(i18n.with_locale(locale).page("p").t(key), want);
+                    assert_eq!(
+                        i18n.with_locale(locale).page("p").t(key, str::to_owned),
+                        want
+                    );
                 })
             })
             .collect();

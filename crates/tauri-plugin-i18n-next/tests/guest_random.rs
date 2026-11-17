@@ -192,7 +192,7 @@ fn guest_random_fixture_is_up_to_date() {
                 // what Rust answers; a key left out is a miss
                 let a: BTreeMap<&str, String> = keys
                     .iter()
-                    .filter_map(|k| Some((k.as_str(), v.try_t(k)?)))
+                    .filter_map(|k| Some((k.as_str(), v.get(k, |t| t.map(str::to_owned))?)))
                     .collect();
                 answers.insert(id.clone(), a);
                 // a page no locale has: `meta` refuses it, guest-js reads the root

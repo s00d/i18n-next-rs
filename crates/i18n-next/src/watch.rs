@@ -298,7 +298,7 @@ mod tests {
         // step 2: one reload for the burst
         assert_eq!(*seen.lock().unwrap(), [1]);
         assert_eq!(i18n.version(), 1);
-        assert_eq!(i18n.t("a"), "A");
+        assert_eq!(i18n.t("a", str::to_owned), "A");
         // step 3: with the instance gone the loop returns at its next poll
         let weak = Arc::downgrade(&i18n.inner);
         drop(i18n);
@@ -340,7 +340,9 @@ mod tests {
         assert_eq!(watched, [dir.clone(), lazy.clone()]);
         let mut poller = Poller::new(scan_dirs(&watched));
         assert_eq!(
-            i18n.with_locale("de").page("settings").t("t"),
+            i18n.with_locale("de")
+                .page("settings")
+                .t("t", str::to_owned),
             "Einstellungen"
         );
 
@@ -349,14 +351,20 @@ mod tests {
         assert!(!poller.poll(0, scan_dirs(&watched)));
         assert!(poller.poll(SETTLE_MS, scan_dirs(&watched)));
         i18n.reload().unwrap();
-        assert_eq!((i18n.t("a"), i18n.version()), ("two!".into(), 1));
+        assert_eq!(
+            (i18n.t("a", str::to_owned), i18n.version()),
+            ("two!".into(), 1)
+        );
 
         // step 2: a half-written save → the reload fails, the old answers stay
         std::fs::write(dir.join("en.json"), r#"{"a": "thr"#).unwrap();
         assert!(!poller.poll(1000, scan_dirs(&watched)));
         assert!(poller.poll(1000 + SETTLE_MS, scan_dirs(&watched)));
         assert!(i18n.reload().is_err());
-        assert_eq!((i18n.t("a"), i18n.version()), ("two!".into(), 1));
+        assert_eq!(
+            (i18n.t("a", str::to_owned), i18n.version()),
+            ("two!".into(), 1)
+        );
 
         // step 3: the lazy page changes → reloaded, read again on next use
         std::fs::write(dir.join("en.json"), r#"{"a": "three"}"#).unwrap();
@@ -364,8 +372,13 @@ mod tests {
         assert!(!poller.poll(2000, scan_dirs(&watched)));
         assert!(poller.poll(2000 + SETTLE_MS, scan_dirs(&watched)));
         i18n.reload().unwrap();
-        assert_eq!(i18n.t("a"), "three");
-        assert_eq!(i18n.with_locale("de").page("settings").t("t"), "Optionen");
+        assert_eq!(i18n.t("a", str::to_owned), "three");
+        assert_eq!(
+            i18n.with_locale("de")
+                .page("settings")
+                .t("t", str::to_owned),
+            "Optionen"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&lazy);

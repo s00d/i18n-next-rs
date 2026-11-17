@@ -195,8 +195,10 @@ fn guest_agrees(app: &App, bytes: &[u8], page: Option<&str>) -> Result<(), TestC
         None => i.with_locale(&i.locale()),
     };
     for key in KEYS {
-        let want = view(server).with_locale(&guest.locale()).t(key);
-        prop_assert_eq!(view(&guest).t(key), want, "guest {}", key);
+        let want = view(server)
+            .with_locale(&guest.locale())
+            .t(key, str::to_owned);
+        prop_assert_eq!(view(&guest).t(key, str::to_owned), want, "guest {}", key);
     }
     Ok(())
 }

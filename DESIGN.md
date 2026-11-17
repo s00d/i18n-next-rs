@@ -50,7 +50,7 @@
 | Интерполяция | `{name}` по токену `\{([^{}\s]+)\}`, `{0}` из массива; без параметра плейсхолдер остаётся (`core/src/text.ts`) | так же, токены разбираются один раз при загрузке |
 | Плюралы | `a \| b \| c`, индексное правило, случай «unmarked» по CLDR-категориям, маркер `=0 `. Теги из `iso`; неизвестный тег — индексное правило | дословный порт `pluralForm`, категории из сгенерированных правил CLDR |
 | Linked | `@:key`, `@.upper:` / `@.lower:` / `@.capitalize:`, `@:{'key'}`, разрешаются при загрузке, opt-in | так же |
-| Missing | возвращается `default \|\| key`, вызывается `missingHandler(locale, key, route)` | так же, плюс `try_t` |
+| Missing | возвращается `default \|\| key`, вызывается `missingHandler(locale, key, route)` | так же, плюс `get` (без `missing`) |
 | Форматы | `FormatService`: `Intl.*` с кешем; именованные форматы в духе Vue I18n с поиском по укороченным тегам; `timeZone`, `now`; `tdr` берёт самую крупную единицу, которая укладывается хотя бы раз; невалидная дата — `Invalid Date` | свой движок, тот же конфиг, раздел 5 |
 | `<i18n-t>` | `resolveText` + `foldTemplate`: keypath, params, plural, number, date, relativeDate, defaultValue, html, hideIfEmpty, customPluralRule, слоты | `Text`, раздел 4 |
 | API адаптеров | `I18n` (runtime) и `VueI18n`: `addTranslations`, `addRouteTranslations`, `setRoute`, сеттеры `locale` / `fallbackLocale`, `formatter.setNumberFormats` / `setDateTimeFormats` | guest-js стыкуется по этому интерфейсу |
@@ -239,10 +239,10 @@ i18n_next::tauri_guest::set_locale("de").await?;             // Rust-бэкен�
 
 ```rust
 let settings = i18n.page("settings");          // Page: дешёвый view (Arc + имя), Clone + Send + Sync
-settings.t("title");                           // page → root → fallback page → fallback root
+settings.t("title", str::to_owned);                           // page → root → fallback page → fallback root
 settings.text("hint").arg("n", 3);             // Text в контексте страницы
 i18n.text("hint").page("settings");            // то же из цепочки
-i18n.with_locale("de").page("settings").t("title");
+i18n.with_locale("de").page("settings").t("title", str::to_owned);
 
 // Rust-only область для нативного UI
 let tray = i18n.page("tray");
@@ -303,7 +303,7 @@ let i18n = I18n::builder()
 ### 4.2 Короткие вызовы (имена из JS)
 
 ```rust
-i18n.t("nav.home"); i18n.try_t("nav.home"); i18n.has("nav.home");
+i18n.t("nav.home", str::to_owned); i18n.get("nav.home", |t| t.map(str::to_owned)); i18n.has("nav.home");
 i18n.tc("apples", 5);
 i18n.tn(1234.5); i18n.tn_as(9.99, "currency");
 i18n.td(when); i18n.td_as(when, "short"); i18n.tdr(when);
@@ -540,7 +540,7 @@ Msg      = Text(Template) | Plural { marked, forms: Vec<Template> }
 tauri::Builder::default()
     .plugin(tauri_plugin_i18n_next::Builder::new(i18n.clone()).system_locale(true).build())
 t!("menu.quit");                // плагин сам делает install; .global(false) — отключить
-app.i18n().t("menu.quit");      // трейт-расширение Manager; app.state::<I18n>() тоже работает
+app.i18n().t("menu.quit", str::to_owned);      // трейт-расширение Manager; app.state::<I18n>() тоже работает
 ```
 
 ### 6.1 Передача
@@ -585,7 +585,7 @@ app.i18n().t("menu.quit");      // трейт-расширение Manager; app.
 
 Данные guest-js берёт через `fetch(convertFileSrc(…, 'i18n-next')).json()`. `<link rel="preload">` не ставится: чанк читается в том же тике, preload ничего не выигрывает. На ошибку сети (`fetch` отклоняется с `TypeError`) guest-js переходит на raw invoke; HTTP-статус (404, 500) — ошибка этого чтения, протокол остаётся. Приложению с CSP нужен `connect-src i18n-next: http://i18n-next.localhost`. URL строятся из тегов `meta` (`/{tag}/{locale}/{page}.json`); guest-js читает чанки по одному, а не bundle: тег чанка не меняется от соседей, поэтому `en`-root переиспользуется видами `de-at`, `de` и `en`. Кеш в памяти — по тегу. `410` значит, что каталог изменился между `meta` и чтением: guest-js заново читает `meta` (событие `changed` всё равно придёт). Управление идёт через команды. Если протокол недоступен, переключается на raw invoke `load` / `load_page` (6.1). Rust-гость (`tauri-guest`) делает то же через `fetch` из `js-sys`, без `web-sys`, и применяет payload (`payload::apply`, `linked` хранится отдельно, как на сервере).
 
-Цепочка fallback: JS core смотрит в локаль и один fallback, а каталог — во всю цепочку (`de-at → de → en`). Поэтому guest-js (M8) **предварительно сливает** root-вид локали по `chains[locale]` из meta, от слабого к сильному: `data` — глубоким слиянием (`null` не скрывает более слабое значение, как в lookup Rust; заменённый контейнер оставляет свои листья и узлы плоскими ключами), затем `linked` — плоскими ключами с точками поверх (собственный ключ корня в `getByPath` читается раньше обхода по точкам; `linked` отвечает только на свой ключ). Вид страницы — только её чанки цепочки одним плоским слоем по ключам с точками (контейнер — `{}`, на нём lookup останавливается, как в Rust), без ключей, на которые отвечает более сильный root; JS core читает его, а затем root-вид, как Rust читает страницу, затем root каждой локали. Root не копируется в виды страниц. Проверка — `tests/guest_random.rs` (200 случайных каталогов, фиксированный seed) и `guest_contract.rs`: ответы `connect` по обоим транспортам равны `try_t` Rust. Это повторяет ответы сервера (проверка: `tests/payload.rs` эмулирует такой lookup для `de-at → de → en`). События `changed` со старой версией guest-js отбрасывает.
+Цепочка fallback: JS core смотрит в локаль и один fallback, а каталог — во всю цепочку (`de-at → de → en`). Поэтому guest-js (M8) **предварительно сливает** root-вид локали по `chains[locale]` из meta, от слабого к сильному: `data` — глубоким слиянием (`null` не скрывает более слабое значение, как в lookup Rust; заменённый контейнер оставляет свои листья и узлы плоскими ключами), затем `linked` — плоскими ключами с точками поверх (собственный ключ корня в `getByPath` читается раньше обхода по точкам; `linked` отвечает только на свой ключ). Вид страницы — только её чанки цепочки одним плоским слоем по ключам с точками (контейнер — `{}`, на нём lookup останавливается, как в Rust), без ключей, на которые отвечает более сильный root; JS core читает его, а затем root-вид, как Rust читает страницу, затем root каждой локали. Root не копируется в виды страниц. Проверка — `tests/guest_random.rs` (200 случайных каталогов, фиксированный seed) и `guest_contract.rs`: ответы `connect` по обоим транспортам равны `get` Rust. Это повторяет ответы сервера (проверка: `tests/payload.rs` эмулирует такой lookup для `de-at → de → en`). События `changed` со старой версией guest-js отбрасывает.
 
 ```ts
 import { createI18n } from '@i18n-micro/runtime'
@@ -656,7 +656,7 @@ app.i18n().bind(&window, app.i18n().text("window.title"));
 
 | Файл | Сессия (действия) | Что предсказывает модель | Инварианты в конце |
 | --- | --- | --- | --- |
-| `catalog_model.rs` | добавить или изменить файл (root / page, битый), `reload`, `set_locale`, цепочки fallback, `pages(false)`, `page_alias`, linked, `t` / `page().t` / `with_locale().t` / `has` / `try_t`, `add_messages` | каждый ответ, каждый вызов `missing`, ошибки загрузки с путём | версия снимка только растёт; старый `Arc<Snapshot>` у читателя не меняется; после последнего `reload` ответы совпадают с моделью «с нуля» |
+| `catalog_model.rs` | добавить или изменить файл (root / page, битый), `reload`, `set_locale`, цепочки fallback, `pages(false)`, `page_alias`, linked, `t` / `page().t` / `with_locale().t` / `has` / `get`, `add_messages` | каждый ответ, каждый вызов `missing`, ошибки загрузки с путём | версия снимка только растёт; старый `Arc<Snapshot>` у читателя не меняется; после последнего `reload` ответы совпадают с моделью «с нуля» |
 | `loading_model.rs` | `lazy_dir` / `remote` + `ensure_async` на разные `(locale, page)`, ответы `FakeFetch` в случайном порядке, ошибки сети | какие файлы запрошены, что видно после каждого ответа | каждый файл успешно загружен не более одного раза; ошибка не портит словарь; два `ensure` одного файла дают один запрос |
 | `text_model.rs` | цепочки `Text` и формы макросов (`t!` с `=>` и без, `@page`, `@locale`, `@or`, `count`, `@number`, `@date`, `@html`, `hide_if_empty`, слоты `fold`) | строку и части (`parts`) как `resolveText` + `foldTemplate` | `Text` после `set_locale` показывает новую локаль; `Serialize` == `Display` |
 | `scope_model.rs` | вложенные `scope`, `wrap` нескольких задач, поллинг вперемешку на одном потоке, паника внутри `run`, `install` | локаль и страницу, которые видит каждый `t!` | стек scope пуст после каждой задачи; паника его не оставляет |
@@ -745,9 +745,8 @@ git diff origin/main.. > target/pr.diff && cargo mutants -p i18n-next --in-diff 
 - `gungraun` (бывший iai-callgrind, Valgrind, только linux) считает инструкции и обращения к кешу на тех же сценариях. CI-джоб `perf` запускает его на базовом коммите и на PR в одном джобе с одним toolchain и падает при росте инструкций горячего пути больше порога (по умолчанию 3%). Число инструкций не зависит от загрузки машины.
 - `tests/alloc.rs` (dhat в режиме testing) фиксирует число аллокаций:
   - `Display` у `Text` без параметров — 0;
-  - `t()` — 0 (`Translation`: общий `Arc<str>` текста или сам ключ при промахе);
-  - `t_ref(key, f)` — 0 (текст одалживается замыканию из снимка, без счётчика ссылок);
-  - `get(key)` — 0;
+  - `t(key, f)` — 0 (текст одалживается замыканию из снимка или сам ключ при промахе, без счётчика ссылок);
+  - `get(key, f)` — 0;
   - `write_to` в готовый буфер — 0;
   - `load_page` payload — 1.
 
@@ -823,7 +822,7 @@ README: корень (обзор и ссылки), `crates/i18n-next` (быст�
 
 | Плейграунд | Что это | Что показывает | Запуск |
 | --- | --- | --- | --- |
-| `examples/rust` (в workspace, `publish = false`) | `main.rs` — консольный тур; `bin/server.rs` — маленький axum-сервер | тур (по шагу на строку, ожидаемый текст рядом): `t` / `t_with`, страницы, `with_locale`, плюралы на `en` / `ru` / `ar`, linked messages, проверка пробелов каталога, `set_locale` и fallback, `has` / `try_t`, `add_messages`, `lazy_dir`, `extend`, `reload`, `subscribe`, `install` + `t!` / `tc!` / `key!` (и в `Display` ошибки, как пишет `thiserror`), `@html`, `scope`, `fold` для rich-текста, `negotiate`, `tn` / `tn_as` / `td` / `td_as` / `tdr`, `language_name`, запрос к серверу. Сервер: `scope().wrap` на запрос по `Accept-Language`, `Content-Language` в ответе, ответ — JSON из `Text` через `Serialize` | `cargo run -p playground-rust` (`-- --check` падает на любой ошибке или `missing`, `-- --texts` печатает тексты страниц `nuxt-site`); `cargo run -p playground-rust --bin server` |
+| `examples/rust` (в workspace, `publish = false`) | `main.rs` — консольный тур; `bin/server.rs` — маленький axum-сервер | тур (по шагу на строку, ожидаемый текст рядом): `t` / `t_with`, страницы, `with_locale`, плюралы на `en` / `ru` / `ar`, linked messages, проверка пробелов каталога, `set_locale` и fallback, `has` / `get`, `add_messages`, `lazy_dir`, `extend`, `reload`, `subscribe`, `install` + `t!` / `tc!` / `key!` (и в `Display` ошибки, как пишет `thiserror`), `@html`, `scope`, `fold` для rich-текста, `negotiate`, `tn` / `tn_as` / `td` / `td_as` / `tdr`, `language_name`, запрос к серверу. Сервер: `scope().wrap` на запрос по `Accept-Language`, `Content-Language` в ответе, ответ — JSON из `Text` через `Serialize` | `cargo run -p playground-rust` (`-- --check` падает на любой ошибке или `missing`, `-- --texts` печатает тексты страниц `nuxt-site`); `cargo run -p playground-rust --bin server` |
 | `examples/tauri-app` (свой Cargo workspace и lock, как в centrifugo) | Vue 3 + vue-router + `@i18n-micro/vue` + плагин; desktop, Android, iOS (`gen/`) | страницы `index` / `settings` / `about` с подгрузкой page-чанков через router guard; `<i18n-t>` с `plural` / `number` / `date` / `relativeDate` / слотом; переключатель локали; второе окно (синхронизация через `changed`); нативное меню, трей и заголовок окна через `bind`; команда, которая возвращает `Text`; панель «inspector»: версия, локаль, страница и транспорт, загруженные чанки, время `meta` и чтения корневого чанка, transport bench (1k / 10k / 100k ключей), пропущенные ключи | `cd examples/tauri-app && pnpm install && pnpm tauri dev` (`pnpm tauri android dev`) |
 | `examples/leptos-app` (свой workspace; Leptos CSR + trunk) | один Rust-фронт в двух режимах: в браузере сам по себе и как фронт Tauri | браузер: `remote` + `ensure_async` (fetch `/locales/...`), `t!` в компонентах, переключатель, страницы через `leptos_router`, `tn` / `td` с зоной из `Intl`, размер `.wasm` на экране. Tauri: тот же код, при наличии `__TAURI_INTERNALS__` вызывается `tauri_guest::connect`, а сообщения приходят от плагина | браузер: `trunk serve`; Tauri: `cargo tauri dev` в той же папке |
 

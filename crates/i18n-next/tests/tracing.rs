@@ -61,7 +61,7 @@ fn misses_loads_and_fetches_are_traced() {
             .build()
             .unwrap();
         // step 1: a miss → warn with locale, page, key
-        assert_eq!(i18n.page("p").t("nope"), "nope");
+        assert_eq!(i18n.page("p").t("nope", str::to_owned), "nope");
         // step 2: a reload → debug
         i18n.reload().unwrap();
         // step 3: ensure_async → a span for the fetch, then add_file's debug

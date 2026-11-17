@@ -70,5 +70,5 @@ fuzz_target!(|data: &[u8]| {
     }
     assert_eq!(i18n.t_with("k", &args), model(template, &params), "{template:?} {params:?}");
     // no parameters: the text as written
-    assert_eq!(i18n.t("k"), template);
+    assert_eq!(i18n.t("k", str::to_owned), template);
 });

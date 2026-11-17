@@ -49,10 +49,13 @@ pub fn files_and_switching() {
     // step 2: a switch is seen by the next read, nested page folders join with `-`
     i18n.set_locale("de").unwrap();
     assert_eq!(i18n.t_with("hi", &args), "Hallo, Ann!");
-    assert_eq!(i18n.page("user-profile").t("title"), "Profil");
+    assert_eq!(
+        i18n.page("user-profile").t("title", str::to_owned),
+        "Profil"
+    );
     // step 3: an added number prints as JS prints it; two changes, two versions
     i18n.add_messages("de", None, r#"{"n": 1.5e-7}"#).unwrap();
-    assert_eq!(i18n.t("n"), "1.5e-7");
+    assert_eq!(i18n.t("n", str::to_owned), "1.5e-7");
     assert_eq!(i18n.version(), 2);
 }
 
@@ -70,12 +73,15 @@ pub fn files_and_messages() {
         .build()
         .unwrap();
     // step 1: fallback, interpolation, page
-    assert_eq!(i18n.t("a"), "A");
+    assert_eq!(i18n.t("a", str::to_owned), "A");
     assert_eq!(
         i18n.t_with("hi", &Args::new().str("name", "Ann")),
         "Hallo Ann"
     );
-    assert_eq!(i18n.page("settings").t("title"), "Einstellungen");
+    assert_eq!(
+        i18n.page("settings").t("title", str::to_owned),
+        "Einstellungen"
+    );
     // step 2: a broken file is an error with its path
     let err = I18n::builder()
         .files([("de.json", b"{")])
@@ -110,19 +116,19 @@ pub fn chains_aliases_and_folding() {
         .unwrap();
     // step 1: ru → de-at → de → (ru again: stop) → en
     assert_eq!(
-        ["a", "b", "c", "d"].map(|k| i18n.t(k)),
+        ["a", "b", "c", "d"].map(|k| i18n.t(k, str::to_owned)),
         ["ru", "at", "de", "en"]
     );
     // step 2: the cycle seen from de: de → ru → de-at → en
     let de = i18n.with_locale("de");
     assert_eq!(
-        ["a", "b", "c", "d"].map(|k| de.t(k)),
+        ["a", "b", "c", "d"].map(|k| de.t(k, str::to_owned)),
         ["de", "de", "de", "en"]
     );
     assert_eq!(de.t_with("nope", &Args::new().or("{x}").str("x", "X")), "X");
     // step 3: both aliases read the target page, and are pages themselves
-    assert_eq!(i18n.page("about-us").t("title"), "О нас");
-    assert_eq!(i18n.page("company").t("title"), "О нас");
+    assert_eq!(i18n.page("about-us").t("title", str::to_owned), "О нас");
+    assert_eq!(i18n.page("company").t("title", str::to_owned), "О нас");
     assert_eq!(i18n.pages(), ["about", "about-us", "company"]);
 
     // step 4: pages(false) folds the page files of `en` into its root; the page file wins
@@ -137,7 +143,7 @@ pub fn chains_aliases_and_folding() {
         .unwrap();
     assert_eq!(folded.pages(), Vec::<String>::new());
     assert_eq!(
-        ["k", "r", "p"].map(|k| folded.t(k)),
+        ["k", "r", "p"].map(|k| folded.t(k, str::to_owned)),
         ["page", "root", "page"]
     );
 }
@@ -160,14 +166,23 @@ pub fn dir_story() {
         .build()
         .unwrap();
     // step 1: root of de (with a BOM), fallback to en
-    assert_eq!(i18n.t("nav.home"), "Startseite");
-    assert_eq!(i18n.t("nav.settings"), "Settings");
+    assert_eq!(i18n.t("nav.home", str::to_owned), "Startseite");
+    assert_eq!(i18n.t("nav.settings", str::to_owned), "Settings");
     // step 2: page layer, then root; a nested folder is `user-profile`
-    assert_eq!(i18n.page("settings").t("title"), "Einstellungen");
-    assert_eq!(i18n.page("settings").t("nav.home"), "Startseite");
-    assert_eq!(i18n.page("user-profile").t("title"), "Profile");
+    assert_eq!(
+        i18n.page("settings").t("title", str::to_owned),
+        "Einstellungen"
+    );
+    assert_eq!(
+        i18n.page("settings").t("nav.home", str::to_owned),
+        "Startseite"
+    );
+    assert_eq!(
+        i18n.page("user-profile").t("title", str::to_owned),
+        "Profile"
+    );
     // step 3: the file outside the layout is never read
-    assert_eq!(i18n.try_t("ignored"), None);
+    assert_eq!(i18n.get("ignored", |t| t.map(str::to_owned)), None);
     assert_eq!(i18n.pages(), ["settings", "user-profile"]);
     let codes: Vec<String> = i18n.locales().into_iter().map(|l| l.code).collect();
     assert_eq!(codes, ["de", "en"]);

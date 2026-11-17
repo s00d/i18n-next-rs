@@ -31,9 +31,9 @@ fn main() {
     let Ok(i18n) = I18n::builder().locale("ru").fallback("en").files(black_box(files)).build() else {
         return;
     };
-    black_box(i18n.t(black_box("nav.home")));
+    black_box(i18n.t(black_box("nav.home"), str::len));
     black_box(i18n.t_with(black_box("greeting"), &Args::new().str("name", black_box("Ann"))));
-    black_box(i18n.page(black_box("settings")).t(black_box("title")));
+    black_box(i18n.page(black_box("settings")).t(black_box("title"), str::len));
     black_box(i18n.tc(black_box("apples"), black_box(21)));
     let _ = black_box(i18n.set_locale(black_box("en")));
     let text = i18n.text(black_box("greeting")).arg("name", black_box("Ann"));

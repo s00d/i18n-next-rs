@@ -75,21 +75,21 @@ fn build(c: &mut Criterion) {
 fn lookup(c: &mut Criterion) {
     let i18n = builder(100, true).build().unwrap();
     let fr = i18n.with_locale("fr");
-    assert_eq!(i18n.t("l7"), "see word 7 and WORD 7");
-    assert_eq!(fr.t("l0"), "see mot 0 and MOT 0"); // stored for the French view
-    assert_eq!(i18n.t("s7"), i18n.t("l7"));
+    assert_eq!(i18n.t("l7", str::to_owned), "see word 7 and WORD 7");
+    assert_eq!(fr.t("l0", str::to_owned), "see mot 0 and MOT 0"); // stored for the French view
+    assert_eq!(i18n.t("s7", str::to_owned), i18n.t("l7", str::to_owned));
     c.bench_function("i18n/t/plain_hit", |b| {
-        b.iter(|| black_box(&i18n).t(black_box("s7")))
+        b.iter(|| black_box(&i18n).t(black_box("s7"), str::len))
     });
     c.bench_function("i18n/t/linked_hit", |b| {
-        b.iter(|| black_box(&i18n).t(black_box("l7")))
+        b.iter(|| black_box(&i18n).t(black_box("l7"), str::len))
     });
-    assert_eq!(fr.t("same"), fr.t("l0"));
+    assert_eq!(fr.t("same", str::to_owned), fr.t("l0", str::to_owned));
     c.bench_function("view/t/plain_view_hit", |b| {
-        b.iter(|| black_box(&fr).t(black_box("same")))
+        b.iter(|| black_box(&fr).t(black_box("same"), str::len))
     });
     c.bench_function("view/t/linked_view_hit", |b| {
-        b.iter(|| black_box(&fr).t(black_box("l0")))
+        b.iter(|| black_box(&fr).t(black_box("l0"), str::len))
     });
 }
 

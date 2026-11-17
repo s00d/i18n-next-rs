@@ -103,7 +103,14 @@ fn round_trip(c: &Catalog) -> Result<(), TestCaseError> {
         for p in PAGES {
             let (s, g) = (view(&server, l, p), view(&guest, l, p));
             for key in KEYS.iter().chain(&["d", "missing.key"]) {
-                prop_assert_eq!(g.t(key), s.t(key), "t {} {:?} {}", l, p, key);
+                prop_assert_eq!(
+                    g.t(key, str::to_owned),
+                    s.t(key, str::to_owned),
+                    "t {} {:?} {}",
+                    l,
+                    p,
+                    key
+                );
                 prop_assert_eq!(g.tc(key, 2), s.tc(key, 2), "tc {} {:?} {}", l, p, key);
                 prop_assert_eq!(g.has(key), s.has(key), "has {} {:?} {}", l, p, key);
             }
@@ -198,7 +205,7 @@ fn a_link_in_the_fallback_resolves_in_the_active_locale() {
         .linked_messages(true)
         .build()
         .unwrap();
-    assert_eq!(server.t("greet"), "Hi AcmeDE");
+    assert_eq!(server.t("greet", str::to_owned), "Hi AcmeDE");
     // step 1: the de root carries the answer for its view, apart from its data
     let (_, de) = payload::chunk(&server, "de", None);
     assert_eq!(
@@ -209,13 +216,16 @@ fn a_link_in_the_fallback_resolves_in_the_active_locale() {
     let guest = I18n::builder().fallback("en").build().unwrap();
     payload::apply(&guest, &payload::encode(&server, None, None, false).1).unwrap();
     assert_eq!(
-        (guest.t("greet"), guest.has("greet")),
+        (guest.t("greet", str::to_owned), guest.has("greet")),
         ("Hi AcmeDE".into(), false)
     );
     // step 3: Turkish case rules in the tr view
-    assert_eq!(server.with_locale("tr").t("city"), "İSTANBUL");
+    assert_eq!(
+        server.with_locale("tr").t("city", str::to_owned),
+        "İSTANBUL"
+    );
     payload::apply(&guest, &payload::encode(&server, Some("tr"), None, false).1).unwrap();
-    assert_eq!(guest.with_locale("tr").t("city"), "İSTANBUL");
+    assert_eq!(guest.with_locale("tr").t("city", str::to_owned), "İSTANBUL");
 }
 
 /// What the M8 front end does with a payload (DESIGN 6.2): per view, the chunks of the
@@ -294,7 +304,7 @@ fn the_front_end_premerges_the_chain_from_the_meta() {
         let js = js_view(&payload, "de-at", page);
         let s = view(&server, "de-at", page);
         for key in ["a", "b", "c", "brand", "hi", "nav.x", "t", "n"] {
-            let want = s.try_t(key);
+            let want = s.get(key, |t| t.map(str::to_owned));
             assert_eq!(js.get(key), want.as_ref(), "{page:?} {key}");
         }
     }

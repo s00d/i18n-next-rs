@@ -67,7 +67,7 @@ fn guard_finish_checks_in_any_order() {
         .build()
         .unwrap();
     guard.allow("en|index|nope");
-    assert_eq!(i18n.t("nope"), "nope");
+    assert_eq!(i18n.t("nope", str::to_owned), "nope");
     guard.finish();
     drop(guard);
     drop(i18n);

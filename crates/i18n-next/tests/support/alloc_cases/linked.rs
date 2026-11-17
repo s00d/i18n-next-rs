@@ -30,8 +30,8 @@ pub fn linked_lookups_allocate_like_plain_ones() {
         .build()
         .unwrap();
     let de = i18n.with_locale("de");
-    assert_eq!(de.t("title"), "Welcome to Akme"); // a text stored for the German view
-    let _ = i18n.t("plain");
+    assert_eq!(de.t("title", str::to_owned), "Welcome to Akme"); // a text stored for the German view
+    let _ = i18n.t("plain", str::len);
     let ann = Args::new().str("name", "Ann");
 
     let _profiler = dhat::Profiler::builder().testing().build();
@@ -43,16 +43,16 @@ pub fn linked_lookups_allocate_like_plain_ones() {
         (&de, "title"),
     ] {
         let n = blocks(|| {
-            std::hint::black_box(view.t(key));
+            std::hint::black_box(view.t(key, str::len));
         });
         dhat::assert_eq!(n, 0, "t({})", key);
     }
 
     // case: get / has → 0 blocks, linked or not.
     let n = blocks(|| {
-        std::hint::black_box(i18n.get("plain"));
-        std::hint::black_box(i18n.get("title"));
-        std::hint::black_box(de.get("title"));
+        std::hint::black_box(i18n.get("plain", |t| t.map(str::len)));
+        std::hint::black_box(i18n.get("title", |t| t.map(str::len)));
+        std::hint::black_box(de.get("title", |t| t.map(str::len)));
         std::hint::black_box(de.has("title"));
     });
     dhat::assert_eq!(n, 0);

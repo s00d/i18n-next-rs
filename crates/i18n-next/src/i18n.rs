@@ -17,7 +17,6 @@ use crate::lazy::{Layer, LazyCtl};
 use crate::loader::{self, Config};
 use crate::plural::{self, Plural};
 use crate::source::{self, Pair, Sources};
-use crate::translation::Translation;
 use std::cell::RefCell;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -688,10 +687,10 @@ enum Found {
 ///     .messages("de", None, r#"{"nav": {"home": "Startseite"}}"#)
 ///     .messages("de", Some("settings"), r#"{"title": "Einstellungen"}"#)
 ///     .build()?;
-/// assert_eq!(i18n.t("nav.home"), "Startseite");
-/// assert_eq!(i18n.t("nav.about"), "About");          // from the fallback
-/// assert_eq!(i18n.page("settings").t("title"), "Einstellungen");
-/// assert_eq!(i18n.try_t("nav.nope"), None);
+/// assert_eq!(i18n.t("nav.home", str::to_owned), "Startseite");
+/// assert_eq!(i18n.t("nav.about", str::to_owned), "About");          // from the fallback
+/// assert_eq!(i18n.page("settings").t("title", str::to_owned), "Einstellungen");
+/// assert_eq!(i18n.get("nav.nope", |t| t.map(str::to_owned)), None);
 /// # Ok::<(), i18n_next::Error>(())
 /// ```
 #[derive(Clone)]
@@ -753,35 +752,9 @@ impl I18n {
         Builder::default()
     }
 
-    /// `resolve` without parameters: the stored text shared, the key on a miss.
-    fn translate<'k>(
-        &self,
-        locale: Option<&str>,
-        page: Option<&str>,
-        key: &'k str,
-    ) -> Translation<'k> {
-        if key.is_empty() {
-            return Translation::key(key);
-        }
-        let report = self.inner.missing.is_some() || crate::trace::MISSES;
-        let found = self.inner.read(|s| match s.lookup(locale, page, key) {
-            // a subtree has no text: the key, not reported
-            Some(e) => Ok(e.text().cloned()),
-            None => Err((report && locale.is_none()).then(|| s.locale.clone())),
-        });
-        match found {
-            Ok(Some(text)) => Translation::shared(text),
-            Ok(None) => Translation::key(key),
-            Err(active) => {
-                self.report(locale.or(active.as_deref()), page, key);
-                Translation::key(key)
-            }
-        }
-    }
-
-    /// [`I18n::translate`] handing the text to `f` instead of returning it: the stored
-    /// string is borrowed from the snapshot, so no reference count is touched.
-    fn translate_ref<R>(
+    /// `resolve` without parameters, the text lent to `f`: the stored string borrowed from
+    /// the snapshot (no reference count touched), the key on a miss.
+    fn translate<R>(
         &self,
         locale: Option<&str>,
         page: Option<&str>,
@@ -897,53 +870,47 @@ impl I18n {
         }
     }
 
-    fn try_resolve(&self, locale: Option<&str>, page: Option<&str>, key: &str) -> Option<String> {
-        self.inner.read(|s| {
-            s.lookup(locale, page, key)
-                .and_then(Entry::text)
-                .map(|t| String::from(&**t))
-        })
-    }
-
-    fn get_in(&self, locale: Option<&str>, page: Option<&str>, key: &str) -> Option<Arc<str>> {
-        self.inner
-            .read(|s| s.lookup(locale, page, key).and_then(Entry::text).cloned())
+    fn peek<R>(
+        &self,
+        locale: Option<&str>,
+        page: Option<&str>,
+        key: &str,
+        f: impl FnOnce(Option<&str>) -> R,
+    ) -> R {
+        // `read` calls its closure exactly once (see `translate`).
+        let mut f = Some(f);
+        let r = self.inner.read(|s| {
+            let text = s.lookup(locale, page, key).and_then(Entry::text);
+            f.take().map(|f| f(text.map(|t| &**t)))
+        });
+        r.expect("Inner::read calls its closure once")
     }
 
     fn has_in(&self, locale: Option<&str>, page: Option<&str>, key: &str) -> bool {
         self.inner.read(|s| s.has(locale, page, key))
     }
 
-    /// The text of `key` in the active locale: page layers, root, then the fallback chain.
+    /// The text of `key` in the active locale (page layers, root, then the fallback chain),
+    /// lent to `f` as a `&str` borrowed from the current catalog: valid inside the call, no
+    /// allocation, no reference count. `str::to_owned` keeps a copy.
     ///
-    /// No interpolation (`{name}` stays as written). A number or boolean comes back as JS
-    /// prints it. A miss calls `missing(locale, key, "index")` and returns the key; a
-    /// subtree returns the key without calling it; `t("")` is `""`.
-    ///
-    /// The [`Translation`] shares the stored text (or borrows the key): no allocation.
-    #[must_use]
-    pub fn t<'k>(&self, key: &'k str) -> Translation<'k> {
-        self.translate(None, None, key)
-    }
-
-    /// [`I18n::t`] without the [`Translation`]: `f` gets the text as a `&str` borrowed
-    /// from the current catalog, valid only inside the call. Touches no reference count,
-    /// the cheapest way to read a text that is used right away (written, measured,
-    /// compared). Misses are reported as for [`I18n::t`].
-    ///
-    /// `f` may call into this `I18n` again, `t_ref` included.
+    /// No interpolation (`{name}` stays as written). A number or boolean comes as JS prints
+    /// it. A miss calls `missing(locale, key, "index")` and gives the key; a subtree gives
+    /// the key without calling it; `t("")` gives `""`. `f` may call into this `I18n` again
+    /// (`t`, `set_locale`).
     ///
     /// ```
     /// use i18n_next::I18n;
     /// let i18n = I18n::builder().messages("en", None, r#"{"hi": "Hello"}"#).build()?;
-    /// assert_eq!(i18n.t_ref("hi", str::len), 5);
+    /// assert_eq!(i18n.t("hi", str::len), 5);
+    /// assert_eq!(i18n.t("hi", str::to_owned), "Hello");
     /// let mut out = String::new();
-    /// i18n.t_ref("nope", |text| out.push_str(text));
+    /// i18n.t("nope", |text| out.push_str(text));
     /// assert_eq!(out, "nope");
     /// # Ok::<(), i18n_next::Error>(())
     /// ```
-    pub fn t_ref<R>(&self, key: &str, f: impl FnOnce(&str) -> R) -> R {
-        self.translate_ref(None, None, key, f)
+    pub fn t<R>(&self, key: &str, f: impl FnOnce(&str) -> R) -> R {
+        self.translate(None, None, key, f)
     }
 
     /// [`I18n::t`] with parameters and an optional default ([`Args::or`]). Strings are
@@ -952,12 +919,6 @@ impl I18n {
     #[must_use]
     pub fn t_with(&self, key: &str, args: &Args<'_>) -> String {
         self.resolve(None, None, key, Some(args))
-    }
-
-    /// The text of `key`, `None` on a miss or a subtree. Never calls `missing`.
-    #[must_use]
-    pub fn try_t(&self, key: &str) -> Option<String> {
-        self.try_resolve(None, None, key)
     }
 
     /// The plural form of `key` for `count`, with `{count}` filled (JS `tc(key, count)`).
@@ -1014,10 +975,18 @@ impl I18n {
         self.resolve_count(None, None, key, count.into(), Some(args))
     }
 
-    /// The raw stored text of `key` (no interpolation), shared: no allocation.
-    #[must_use]
-    pub fn get(&self, key: &str) -> Option<Arc<str>> {
-        self.get_in(None, None, key)
+    /// The raw stored text of `key` (no interpolation) lent to `f`, `None` on a miss or a
+    /// subtree. Never calls `missing`; no allocation, no reference count.
+    ///
+    /// ```
+    /// use i18n_next::I18n;
+    /// let i18n = I18n::builder().messages("en", None, r#"{"hi": "Hello"}"#).build()?;
+    /// assert_eq!(i18n.get("hi", |t| t.map(str::to_owned)), Some("Hello".into()));
+    /// assert!(i18n.get("nope", |t| t.is_none()));
+    /// # Ok::<(), i18n_next::Error>(())
+    /// ```
+    pub fn get<R>(&self, key: &str, f: impl FnOnce(Option<&str>) -> R) -> R {
+        self.peek(None, None, key, f)
     }
 
     /// Whether the active locale itself has `key` (a subtree counts), not its fallbacks.
@@ -1202,7 +1171,7 @@ impl I18n {
     /// let i18n = I18n::builder().messages("en", None, r#"{"a": "A"}"#).build()?;
     /// i18n.add_messages("en", None, r#"{"a": "patched"}"#)?;
     /// i18n.reload()?;
-    /// assert_eq!((i18n.t("a"), i18n.version()), ("A".into(), 2));
+    /// assert_eq!((i18n.t("a", str::to_owned), i18n.version()), ("A".into(), 2));
     /// # Ok::<(), i18n_next::Error>(())
     /// ```
     ///
@@ -1360,9 +1329,9 @@ fn put(slot: &mut LocaleData, page: Option<&str>, chunk: Layer) {
 ///     .messages("de", Some("settings"), r#"{"title": "Einstellungen"}"#)
 ///     .build()?;
 /// let settings = i18n.page("settings");
-/// assert_eq!(settings.t("title"), "Settings");
-/// assert_eq!(settings.t("ok"), "OK");                       // page → root
-/// assert_eq!(i18n.with_locale("de").page("settings").t("title"), "Einstellungen");
+/// assert_eq!(settings.t("title", str::to_owned), "Settings");
+/// assert_eq!(settings.t("ok", str::to_owned), "OK");                       // page → root
+/// assert_eq!(i18n.with_locale("de").page("settings").t("title", str::to_owned), "Einstellungen");
 /// # Ok::<(), i18n_next::Error>(())
 /// ```
 #[derive(Clone)]
@@ -1387,16 +1356,9 @@ impl View {
     }
 
     /// [`I18n::t`] in this view.
-    #[must_use]
-    pub fn t<'k>(&self, key: &'k str) -> Translation<'k> {
+    pub fn t<R>(&self, key: &str, f: impl FnOnce(&str) -> R) -> R {
         let (l, p) = self.parts();
-        self.i18n.translate(l, p, key)
-    }
-
-    /// [`I18n::t_ref`] in this view.
-    pub fn t_ref<R>(&self, key: &str, f: impl FnOnce(&str) -> R) -> R {
-        let (l, p) = self.parts();
-        self.i18n.translate_ref(l, p, key, f)
+        self.i18n.translate(l, p, key, f)
     }
 
     /// [`I18n::t_with`] in this view.
@@ -1404,13 +1366,6 @@ impl View {
     pub fn t_with(&self, key: &str, args: &Args<'_>) -> String {
         let (l, p) = self.parts();
         self.i18n.resolve(l, p, key, Some(args))
-    }
-
-    /// [`I18n::try_t`] in this view.
-    #[must_use]
-    pub fn try_t(&self, key: &str) -> Option<String> {
-        let (l, p) = self.parts();
-        self.i18n.try_resolve(l, p, key)
     }
 
     /// [`I18n::tc`] in this view: the plural rules of this view's locale.
@@ -1428,10 +1383,9 @@ impl View {
     }
 
     /// [`I18n::get`] in this view.
-    #[must_use]
-    pub fn get(&self, key: &str) -> Option<Arc<str>> {
+    pub fn get<R>(&self, key: &str, f: impl FnOnce(Option<&str>) -> R) -> R {
         let (l, p) = self.parts();
-        self.i18n.get_in(l, p, key)
+        self.i18n.peek(l, p, key, f)
     }
 
     /// [`I18n::has`] in this view: this view's locale only, page then root.
@@ -1490,7 +1444,7 @@ enum ConfigSource {
 ///         ("de-at.json", br#"{"a": "at"}"#),
 ///     ])
 ///     .build()?;
-/// assert_eq!([i18n.t("a"), i18n.t("b"), i18n.t("c")], ["at", "de", "en"]);
+/// assert_eq!([i18n.t("a", str::to_owned), i18n.t("b", str::to_owned), i18n.t("c", str::to_owned)], ["at", "de", "en"]);
 /// # Ok::<(), i18n_next::Error>(())
 /// ```
 #[derive(Default)]
@@ -1748,7 +1702,7 @@ impl Builder {
     ///     .lazy_files([("en.json", br#"{"a": "A"}"#.as_slice()), ("pages/big/en.json", br#"{"b": "B"}"#)])
     ///     .build()?;
     /// assert_eq!(i18n.pages(), ["big"]);              // known from the name, not read yet
-    /// assert_eq!(i18n.page("big").t("b"), "B");       // read now
+    /// assert_eq!(i18n.page("big").t("b", str::to_owned), "B");       // read now
     /// # Ok::<(), i18n_next::Error>(())
     /// ```
     #[must_use]
@@ -1791,7 +1745,7 @@ impl Builder {
     ///     .extend([("en.json", br#"{"ui": {"ok": "OK", "cancel": "Cancel"}}"#.as_slice())])
     ///     .files([("en.json", br#"{"ui": {"ok": "Fine"}}"#.as_slice())])
     ///     .build()?;
-    /// assert_eq!((i18n.t("ui.ok"), i18n.t("ui.cancel")), ("Fine".into(), "Cancel".into()));
+    /// assert_eq!((i18n.t("ui.ok", str::to_owned), i18n.t("ui.cancel", str::to_owned)), ("Fine".into(), "Cancel".into()));
     /// # Ok::<(), i18n_next::Error>(())
     /// ```
     #[must_use]
@@ -1894,9 +1848,9 @@ impl Builder {
     ///     .messages("en", None, r#"{"brand": "acme", "title": "Welcome to @:brand",
     ///                              "shout": "@.upper:brand", "intro": "@.capitalize:{'brand'}."}"#)
     ///     .build()?;
-    /// assert_eq!(i18n.t("title"), "Welcome to acme");
-    /// assert_eq!(i18n.t("shout"), "ACME");
-    /// assert_eq!(i18n.t("intro"), "Acme.");
+    /// assert_eq!(i18n.t("title", str::to_owned), "Welcome to acme");
+    /// assert_eq!(i18n.t("shout", str::to_owned), "ACME");
+    /// assert_eq!(i18n.t("intro", str::to_owned), "Acme.");
     /// # Ok::<(), i18n_next::Error>(())
     /// ```
     #[must_use]

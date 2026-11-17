@@ -19,7 +19,7 @@ fn rust_and_front_end_misses_land_in_one_report() {
         .build()
         .unwrap();
     // step 1: a miss before the plugin exists is kept
-    assert_eq!(i18n.t("early"), "early");
+    assert_eq!(i18n.t("early", str::to_owned), "early");
     let dir = data_dir("missing");
     let app = App::with(plugin(i18n).data_dir(&dir));
     let file = dir.join("i18n-missing.json");
@@ -34,7 +34,7 @@ fn rust_and_front_end_misses_land_in_one_report() {
     );
     // step 2: a Rust miss → one event per window
     let h = app.handle();
-    assert_eq!(h.page("settings").t("nope"), "nope");
+    assert_eq!(h.page("settings").t("nope", str::to_owned), "nope");
     let event = json!({ "locale": "en", "page": "settings", "key": "nope", "count": 1 });
     assert_eq!(
         (drain(&main), drain(&second)),
@@ -53,7 +53,7 @@ fn rust_and_front_end_misses_land_in_one_report() {
         [json!({ "locale": "en", "page": "index", "key": "js.only", "count": 1 })]
     );
     // step 4: a found key reports nothing; the file has everything, sorted
-    assert_eq!(h.t("ok"), "OK");
+    assert_eq!(h.t("ok", str::to_owned), "OK");
     assert!(drain(&main).is_empty());
     assert_eq!(
         report(),

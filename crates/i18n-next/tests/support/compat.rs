@@ -7,9 +7,9 @@
 //! back as `call → result`; the produced file is compared with the golden as a whole.
 //! The Rust contract of `fixtures/compat/README.md` maps the markers on both sides:
 //! - a number or boolean result is the JS spelling as a string (`1e+21` → `"1e+21"`);
-//! - `<object>` and `<array>` are both `<node>`: `try_t` is `None` and `t` returns the key
+//! - `<object>` and `<array>` are both `<node>`: `get` is `None` and `t` returns the key
 //!   without calling `missing` (Rust cannot tell the two apart, and need not);
-//! - `<null>` is `<missing>`: `try_t` is `None` and `t` calls `missing` (or the key is
+//! - `<null>` is `<missing>`: `get` is `None` and `t` calls `missing` (or the key is
 //!   `""`, which `t` answers with `""` and never reports).
 #![allow(dead_code)]
 
@@ -370,7 +370,7 @@ impl Probe {
         Ok(Probe { i18n, misses })
     }
 
-    /// Runs `t`-like `f` and tells a miss from a subtree when `try_t` found nothing.
+    /// Runs `t`-like `f` and tells a miss from a subtree when `get` found nothing.
     fn answer(&self, view: &View, key: &str, f: impl FnOnce() -> String) -> String {
         let before = self.misses.load(Ordering::Relaxed);
         let out = f();
@@ -389,7 +389,7 @@ impl Probe {
         spell(&out)
     }
 
-    /// Raw lookup: `try_t`, or which kind of nothing.
+    /// Raw lookup: `get`, or which kind of nothing.
     fn lookup(&self, view: &View, key: &str) -> String {
         match view.get(key).map(str::to_owned) {
             Some(s) => spell(&s),

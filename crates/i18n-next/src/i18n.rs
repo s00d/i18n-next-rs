@@ -1796,7 +1796,7 @@ impl Builder {
     }
 
     /// Called on every miss of `t` / `t_with` / `tc` / `tc_with` with `(locale, key, page)`;
-    /// the root page is `"index"`. Not called for `try_t`, `get`, `has`, a subtree, a
+    /// the root page is `"index"`. Not called for `get`, `has`, a subtree, a
     /// boolean under `tc` or `t("")`. It runs with no lock held, so it may call the
     /// catalog, writes included (`add_messages`).
     ///

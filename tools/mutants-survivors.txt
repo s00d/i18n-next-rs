@@ -336,7 +336,6 @@ crates/i18n-next/src/i18n.rs:765:51: replace || with && in I18n::resolve
 crates/i18n-next/src/i18n.rs:778:41: replace && with || in I18n::resolve
 crates/i18n-next/src/i18n.rs:813:51: replace || with && in I18n::resolve_count
 crates/i18n-next/src/i18n.rs:828:45: replace && with || in I18n::resolve_count
-crates/i18n-next/src/i18n.rs:879:9: replace I18n::try_t -> Option<String> with None
 crates/i18n-next/src/i18n.rs:990:36: replace + with * in I18n::set_locale
 crates/i18n-next/src/i18n.rs:991:34: replace + with * in I18n::set_locale
 crates/i18n-next/src/json.rs:141:26: replace - with + in Reader<'a>::rest

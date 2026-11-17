@@ -267,7 +267,7 @@ fn answer(i18n: &I18n, page: &str, key: &str) -> JsValue {
 /// Given the contract the plugin recorded for guest-js (a regional chain, pages, linked
 /// messages, `null`s, own dotted keys, leaf/object conflicts, formats in the catalog's zone),
 /// when the guest walks every locale and page over the protocol and then over raw invoke,
-/// then every key reads what Rust `try_t` read and dates show in `Asia/Tokyo`.
+/// then every key reads what Rust `get` read and dates show in `Asia/Tokyo`.
 #[wasm_bindgen_test]
 async fn contract_fixture_reads_as_rust_over_both_transports() {
     let fx = JSON::parse(CONTRACT).unwrap();

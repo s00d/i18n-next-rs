@@ -137,7 +137,7 @@ fn reference(all: &[File], loaded: &BTreeSet<usize>, active: &str) -> I18n {
         .unwrap()
 }
 
-/// `try_t` through the same view on any instance.
+/// `get` through the same view on any instance.
 fn ask(i: &I18n, locale: Option<usize>, page: Option<usize>, key: usize) -> Option<String> {
     let view = match locale {
         Some(l) => i.with_locale(LOCALES[l]),

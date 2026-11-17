@@ -1,5 +1,5 @@
 // Random catalogs (fixed seed) recorded by `tests/guest_random.rs`: per catalog the chunk
-// tags of every view, the protocol chunk bodies and what Rust `try_t` answers. `connect`
+// tags of every view, the protocol chunk bodies and what Rust `get` answers. `connect`
 // replays each catalog into a real `@i18n-micro/runtime` instance over the protocol and over
 // raw invoke, and every key of every view must read what Rust reads.
 import { createI18n } from '@i18n-micro/runtime'

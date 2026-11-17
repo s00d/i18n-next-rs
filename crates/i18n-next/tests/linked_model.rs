@@ -6,7 +6,7 @@
 //!
 //! Keys are flat (no subtrees, no `null`), so the premerge and the crate's layer walk read
 //! the same values: any difference is the resolution's. After `build`: every view × key
-//! answers like the reference (`try_t`), `has` sees only the locale's own keys, the same
+//! answers like the reference (`get`), `has` sees only the locale's own keys, the same
 //! catalog without `linked_messages` reads the raw premerge, and every `BrokenLink` of
 //! `check()` names a link its message still shows. Two counters prove the space reaches
 //! what matters: answers where a view's result differs from the stored result of the layer

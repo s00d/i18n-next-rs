@@ -1,7 +1,7 @@
 //! Random catalogs against guest-js (DESIGN 6.2): a fixed-seed generator builds catalogs over
 //! the chain `x → de-at → de → en` with pages, `null`s, leaf/object conflicts, own dotted
 //! keys, arrays, linked messages and plurals, and records, per catalog, the chunk tags `meta`
-//! sends for every view, the protocol chunk bodies and what Rust `try_t` answers for every
+//! sends for every view, the protocol chunk bodies and what Rust `get` answers for every
 //! key in every view. `tests/guest-js/random.test.ts` replays each catalog through `connect`
 //! over the protocol and over raw invoke and must answer the same.
 //!

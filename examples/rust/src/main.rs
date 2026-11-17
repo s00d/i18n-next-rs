@@ -134,7 +134,7 @@ fn tour(misses: &Arc<Mutex<Vec<String>>>) -> Result<Vec<Stop>, Error> {
             ),
         ),
         (
-            "try_t",
+            "get",
             expect(format!("{:?}", i18n.get("nav").map(str::to_owned)), "None"),
         ),
     ]);

@@ -14,7 +14,7 @@
 //!
 //! Actions: `add_messages` (also through an alias and into a new locale), re-adding a chunk
 //! added before, `set_locale`, lookups through every entry point (`t` / `t_with` with
-//! named, duplicate, list, `{01}`, `.or` and overflowing parameters / `try_t` / `has` /
+//! named, duplicate, list, `{01}`, `.or` and overflowing parameters / `get` / `has` /
 //! `get` / `tc` / `tc_with` with integer and `f64` counts, on `page()` and `with_locale()`
 //! views) with keys drawn mostly from the keys
 //! already written, a lookup of a key written in both the page and the root of one
@@ -226,7 +226,6 @@ impl ArgsKind {
 enum Via {
     T,
     TWith(ArgsKind),
-    TryT,
     Has,
     Get,
     /// `tc` (no args) / `tc_with`, with the count at this index of [`counts`].
@@ -343,9 +342,8 @@ fn via() -> impl Strategy<Value = Via> {
     prop_oneof![
         3 => Just(Via::T),
         2 => kind.prop_map(Via::TWith),
-        1 => Just(Via::TryT),
         2 => Just(Via::Has),
-        1 => Just(Via::Get),
+        2 => Just(Via::Get),
         4 => (0u8..16, prop::option::of(kind2())).prop_map(|(c, k)| Via::Tc(c, k)),
     ]
 }
@@ -1507,13 +1505,11 @@ fn check_lookup(
             prop_assert_eq!(got, want, "{}", what);
             Ok(miss)
         }
-        Via::TryT | Via::Get => {
-            let got = match (&view, via) {
-                (Some(v), Via::TryT) => v.get(key).map(str::to_owned),
-                (Some(v), _) => v.get(key).map(str::to_owned),
-                (None, Via::TryT) => i18n.get(key).map(str::to_owned),
-                (None, _) => i18n.get(key).map(str::to_owned),
-            };
+        Via::Get => {
+            let got = view
+                .as_ref()
+                .map_or_else(|| i18n.get(key), |v| v.get(key))
+                .map(str::to_owned);
             let want = m.lookup(vloc, page, key).and_then(|h| h.text());
             prop_assert_eq!(got, want, "{}", what);
             Ok(None)
